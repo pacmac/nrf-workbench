@@ -51,6 +51,11 @@ def unit_text(prefix, user, serial_group):
         "Description=nrf-workbench service (dashboard and HTTP API)",
         "Wants=network-online.target",
         "After=network-online.target",
+        # 5 starts, each ~2.7 s apart (RestartSec 2 s + ~0.7 s to start, measured on the bench Pi) = 13.5 s;
+        # a 30 s window is 2.2x that, so a slower start still trips it. systemd's default window is 10 s,
+        # which a 2 s restart never fills (measured: 16 starts in 33 s, never stopped).
+        "StartLimitIntervalSec=30s",
+        "StartLimitBurst=5",
         "",
         "[Service]",
         "Type=simple",

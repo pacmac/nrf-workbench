@@ -450,6 +450,10 @@ class ServiceUnit(unittest.TestCase):
             self.assertNotIn(absent, text)
         self.assertIn("Restart=on-failure", text)
         self.assertIn("RestartSec=2s", text)
+        # systemd's default 10 s window is never filled by a 2 s restart (measured), so a failing
+        # service would loop for ever: the window must be explicit and wider than 5 restart cycles.
+        self.assertIn("\nStartLimitIntervalSec=30s\n", text)
+        self.assertIn("\nStartLimitBurst=5\n", text)
         self.assertIn("WantedBy=multi-user.target", text)
 
     def test_non_root_owner_gets_user_and_the_serial_group_read_from_the_host(self):
@@ -533,6 +537,19 @@ class ServiceUnit(unittest.TestCase):
         run = FakeRun()
         self.assertTrue(applymod.link_unit(self.pfx, self.root, self.log, self.ui, self.links, run))
         self.assertEqual(run.calls, [])
+
+    def test_a_rewritten_linked_unit_is_reloaded_and_an_unchanged_one_is_not(self):
+        applymod.write_unit(self.pfx, self.root, self.log)
+        self.link(planmod.unit_path(self.pfx))
+        run = FakeRun()
+        applymod.link_unit(self.pfx, self.root, self.log, self.ui, self.links, run, changed=False)
+        self.assertEqual(run.calls, [])
+        applymod.link_unit(self.pfx, self.root, self.log, self.ui, self.links, run, changed=True)
+        self.assertEqual(run.calls, [["systemctl", "daemon-reload"]])
+        run2 = FakeRun()
+        applymod.link_unit(self.pfx, dict(self.root, root=False), self.log, self.ui, self.links, run2, changed=True)
+        self.assertEqual(run2.calls, [], "not root: the command is printed, not run")
+        self.assertIn("systemctl daemon-reload", "\n".join(self.ui.said))
 
     def test_link_owned_by_another_install_is_refused_not_replaced(self):
         self.link("/other/install/systemd/nrf-workbench.service")

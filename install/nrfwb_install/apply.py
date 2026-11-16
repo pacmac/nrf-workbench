@@ -160,12 +160,21 @@ def write_unit(prefix, host, log):
     return "created" if have is None else "updated"
 
 
-def link_unit(prefix, host, log, ui, link_dir=SYSTEM_UNIT_DIR, run=run_logged):
+def link_unit(prefix, host, log, ui, link_dir=SYSTEM_UNIT_DIR, run=run_logged, changed=False):
     """Link the unit into place. Returns True if it is linked afterwards. Linking needs root: otherwise the
-    exact command is printed and nothing is applied, like a system package."""
+    exact command is printed and nothing is applied, like a system package. `changed` says the unit file was
+    just rewritten: systemd keeps the old text until it is told to reload, so an already-linked unit reloads."""
     state = link_state(prefix, link_dir)
     if state == "ours":
         ui.say("      already linked")
+        if changed:
+            if not host["root"]:
+                ui.say("      the unit changed; as root run:  systemctl daemon-reload")
+            else:
+                rc, _out = run(["systemctl", "daemon-reload"], log, ui)
+                if rc != 0:
+                    raise ApplyError("`systemctl daemon-reload` failed (exit %d)" % rc)
+                ui.say("      reloaded; a running service keeps its old unit until it is restarted")
         return True
     if state != "absent":
         raise ApplyError("%s is linked to another install (%s); not replaced" % (UNIT_NAME, state[len("other:"):]))

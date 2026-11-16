@@ -209,8 +209,9 @@ def main(argv=None):
             elif sid == "config":
                 applymod.write_config(prefix, log)
             elif sid == "unit":
-                ui.say("      unit file: " + applymod.write_unit(prefix, h, log))
-                linked = applymod.link_unit(prefix, h, log, ui)
+                written = applymod.write_unit(prefix, h, log)
+                ui.say("      unit file: " + written)
+                linked = applymod.link_unit(prefix, h, log, ui, changed=(written == "updated"))
             elif sid == "record":
                 applymod.write_record(prefix, ctx, log)
         if args.add_user:

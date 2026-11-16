@@ -223,10 +223,17 @@ what the service needs, not copied from the transient unit.
   nothing, and least privilege says a capability is added when a port needs it, not before. A
   non-root service later pointed at port 80 fails to bind and systemd shows why; that is a visible
   failure, not a silent one. **[gap: the listen task adds the capability beside the port check]**
-- **`Restart=on-failure`, `RestartSec=2s`.** A crash comes back in 2 s, the value the transient
-  unit has run with. systemd's default start limit is 5 starts in 10 s: five failures at 2 s
-  spacing take 8 s, inside the window, so a configuration error stops after five tries and stays
-  stopped instead of looping for ever.
+- **`Restart=on-failure`, `RestartSec=2s`, `StartLimitIntervalSec=30s`, `StartLimitBurst=5`.** A
+  crash comes back in 2 s, the value the transient unit has run with; **[measured on the bench Pi:
+  kill -9, serving again 2.7 s later]**. The first draft of this spec leaned on systemd's default
+  limit of 5 starts in 10 s and said a configuration error would stop after five tries. **That was
+  wrong [measured: a unit that always fails, restarted every 2 s, made 16 starts in 33 s and was
+  never stopped]**: 2 s spacing puts exactly five starts in any 10 s, which never exceeds the
+  limit. With the window set explicitly the same probe stopped after 5 starts **[measured]**. The
+  numbers: one cycle is 2 s plus about 0.7 s to start, so five cycles are 13.5 s, and a 30 s window
+  is 2.2 times that, so a slower start still trips it. Five tries is systemd's own burst and covers
+  a service waiting 13 s for the network or a device node; a configuration error then stays
+  stopped and visible instead of looping for ever.
 - **`After=` and `Wants=network-online.target`.** A `host.yaml` may name one address, which exists
   only once the network is up. With `0.0.0.0` this costs nothing.
 - **`[Install] WantedBy=multi-user.target`**, the ordinary place for a service that is not a
