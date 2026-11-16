@@ -130,7 +130,12 @@ writes DTR or RTS.** It records, as named capabilities:
 - platform: architecture, OS, Python version, whether this is a Raspberry Pi (device-tree model)
 - USB event source: whether udev events are available (`devices.md`)
 - GPIO: the `libgpiod` chips present, if any; the Pi `/dev/mem` path is **not** used (`nrf-workbench.md`
-  section 5b: its behaviour on Pi 5 is **[unknown]**)
+  section 5b: its behaviour on Pi 5 is **[unknown]**). **A gpiochip, and a readable `/dev/mem`, are
+  not evidence of a Pi header.** [verified: the bare-metal x86_64 Proxmox host has `/dev/gpiochip0`
+  and a read-write `/dev/mem`, and is not a Pi.] The Pi backend is offered only when the
+  device-tree model says Raspberry Pi; upstream's helper maps BCM2835 registers through
+  `/dev/mem`, which on any other machine would write arbitrary physical memory. The probe records
+  each chip's label and line count so a motherboard chip is not mistaken for a header.
 - Bluetooth: controllers present, and whether a dedicated nRF52840 radio is attached
 - debug probes: CMSIS-DAP or other SWD probes on USB
 - external tools: presence and version of `pio`, `adafruit-nrfutil`, `nrfutil`, `openocd`, `pyocd`,

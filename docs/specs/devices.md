@@ -209,9 +209,20 @@ safety rules, so SWD and USB flashing cannot diverge.
   board model before its profile sets `serial_stable_across_modes: true`. RAK4631 is the only one
   with a recorded observation.
 - **`802a` role:** read the Adafruit board file for this board and state what each id is.
-- **Event source: resolved for this host.** udev is unavailable here (no `/run/udev`); inotify on
-  the node directory is the baseline. Still **[unknown]** on a Pi, a PVE host and a plain VM, where
-  udev is expected and should be probed, not assumed.
+- **Event source, two hosts probed (2026-11-16).** The dev LXC has no `/run/udev`: inotify on the
+  node directory is the baseline there. The bare-metal Proxmox host has `/run/udev` and `udevadm`
+  257, so udev is available there. **Event delivery itself is untested on both** (a mode change
+  was not made). Still **[unknown]** on a Pi and a plain VM; probe, never assume.
+- **Node resolver on the Proxmox host [verified by `probe_host.py`]:** the RAK4631 in app mode is
+  `/dev/ttyACM1` (`166:1`), reachable by `/dev/serial/by-id/...<serial>-if00` and by two
+  `by-path` names (`usb-0:3:1.0` and `usbv2-0:3:1.0`, the same node), with udev `ID_SERIAL_SHORT`
+  equal to the sysfs serial and `ID_PATH` `pci-0000:0d:00.0-usb-0:3:1.0` as a hub-port slot key.
+  So the tty-link and by-id resolvers both work there and the join by `major:minor` is real. Two
+  `by-path` names for one node means a slot key must be normalised, not compared as a string.
+- **`unrecognised` is not hypothetical.** The same host has `/dev/ttyUSB0` as a non-character
+  entry (`major:minor` `0:0`, no udev properties), most likely a regular file created by something
+  that wrote to a path before a device existed. The state table's refusal for "a node that is not a
+  character device" would have caught it.
 - A `two`, `unrecognised` and `absent` state each reproduced against the fake `/dev` fixtures
   (harness), with no hardware.
 - A re-enumeration during a held lock leaves state unchanged and restarts nothing.

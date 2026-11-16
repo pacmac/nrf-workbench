@@ -88,6 +88,29 @@ Run by the author on the dev host; the clone host's results are still to come.
   `--max-s`, and reports "no event arrived" when nothing changes. Whether this container receives
   kernel uevents at all is **unproven** until a real mode change is made.
 
+## Results, the clone host (2026-11-16; serials and hostnames not recorded)
+
+The clone host is **the bare-metal Proxmox host itself**, not a Pi: x86_64, Python 3.13.5, Debian
+13, `systemd-detect-virt` reports `none`. It is the machine the board is physically attached to.
+So everything Pi-specific is still unprobed.
+
+- **udev is present:** `/run/udev` exists and `udevadm` is 257. `pyudev` is not installed.
+- **The board is a normal `/dev/ttyACM1`** (`166:1`), with by-id and by-path names and a udev serial
+  equal to the sysfs serial. See `devices.md` for what this settles about node resolution.
+- **A non-character `/dev/ttyUSB0`** is present (`0:0`): a real example of the `unrecognised` state.
+- **GPIO:** `/dev/gpiochip0` exists and `/dev/mem` is readable and writable, on a machine that is
+  not a Pi (`/proc/device-tree/model` is absent). **A gpiochip and `/dev/mem` are not evidence of
+  a Pi header**, and upstream's `/dev/mem` BCM helper would be unsafe here. See `core.md`. The
+  probe now records each chip's label and line count (probe version 2), unrun on this host.
+- **Tools:** `bluetoothctl` 5.82, `btmgmt` and `hciconfig` present; **no** `pio` and no
+  `adafruit-nrfutil` on this host, so a flash cannot be driven from it as it stands.
+- **Libraries:** `pyserial` and `PyYAML` only; `mcp`, `starlette`, `uvicorn`, `websockets`, `bleak`
+  are absent from that interpreter (they installed fine in the throwaway venv).
+- **`try_stack.sh` passes** here too: same pinned stack, both smoke tests ok. Same CPU and Python as
+  the dev host, so this is not evidence about arm64.
+- **Still unsettled:** serial stability and the id sets across the mode change (needs the probe, or
+  `observe_usb.py`, run once per mode); udev event delivery; everything on a Pi.
+
 ## How results come back
 
 The repo is public and a report holds hostnames, serial numbers and USB paths, so **reports are

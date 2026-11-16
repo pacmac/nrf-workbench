@@ -22,7 +22,7 @@ import subprocess
 import sys
 import time
 
-PROBE_VERSION = 1
+PROBE_VERSION = 2   # 2: gpio section records each chip's label and line count
 
 # name -> argv after the program. A tool NOT listed here is only looked for, never run
 # (JLinkExe is interactive; btmgmt and hciconfig are not version-queries).
@@ -187,9 +187,19 @@ def section_nodes(bound, have_udev):
 
 
 def section_gpio():
+    """A gpiochip is NOT evidence of a Pi header: a bare-metal x86 host (verified) has
+    /dev/gpiochip0 for a motherboard controller. So record each chip's label and line count, read
+    best-effort from sysfs (the path varies by kernel), and let the reader decide."""
     chips = sorted(glob.glob("/dev/gpiochip*"))
-    return {"gpiochips": chips,
-            "gpiochip_readable": {c: os.access(c, os.R_OK) for c in chips}}
+    detail = {}
+    for c in chips:
+        name = os.path.basename(c)
+        info = {"readable": os.access(c, os.R_OK), "label": None, "ngpio": None}
+        for base in ("/sys/bus/gpio/devices/%s" % name, "/sys/class/gpio/%s" % name):
+            info["label"] = info["label"] or read(base + "/label")
+            info["ngpio"] = info["ngpio"] or read(base + "/ngpio")
+        detail[c] = info
+    return {"gpiochips": chips, "detail": detail}
 
 
 def section_bluetooth():
