@@ -1,0 +1,257 @@
+"""The composition root (docs/specs/architecture.md): the ONE module that wires the service together.
+
+It builds the concrete Host, loads the board profiles and the per-unit exceptions, derives which
+capabilities this host has, lets each area register its commands, applies the listen rules, checks the
+port, and runs uvicorn. Run it:  python -m nrf_workbench.service [--listen ADDR:PORT] ...
+
+Safety, in the order it is applied before anything listens:
+  * a non-loopback address with no token refuses to start (token_missing), whatever the access mode;
+  * a port below the unprivileged limit, without root, refuses (port_privileged), the limit read from /proc;
+  * a port another process holds refuses (port_in_use) and names the holder, read from /proc.
+The token is never printed, logged or echoed; only whether one is required.
+
+Exit codes: 0 ran and stopped, 1 refused to start, 2 bad configuration or usage.
+"""
+import argparse
+import errno
+import os
+import socket
+import sys
+import threading
+
+import yaml
+
+from .api.app import build_app
+from .api.auth import Auth
+from .core import config as cfgmod
+from .core.registry import Registry
+from .core.result import Result
+from .devices import commands as device_commands
+from .devices import profile as profilemod
+from .programmer import commands as programmer_commands
+from .programmer import flash_file
+
+# The profiles ship with the product (they are data about boards, not a host path).
+PACKAGE_PROFILES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "profiles")
+UNPRIVILEGED_LIMIT = "/proc/sys/net/ipv4/ip_unprivileged_port_start"
+
+
+class Host(object):
+    """The contract programmer/commands.py documents, made concrete."""
+
+    def __init__(self, config, profiles, units, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
+        self.config, self.profiles, self.units = config, profiles, units
+        self.sysfs, self.devroot, self.proc = sysfs, devroot, proc
+        self.lock_path = config["paths"]["lock"]
+        self.hooks = hooks or {}
+        self._services, self._guard = {}, threading.Lock()
+
+    def service(self, name, factory):
+        with self._guard:                       # handlers run in worker threads
+            if name not in self._services:
+                self._services[name] = factory()
+            return self._services[name]
+
+
+# -- data the host loads -------------------------------------------------------------------------
+def load_profiles(directory):
+    if not os.path.isdir(directory):
+        raise cfgmod.ConfigError("the profile directory %s does not exist" % directory)
+    profiles = [profilemod.load(os.path.join(directory, n)) for n in sorted(os.listdir(directory))
+                if n.endswith((".yaml", ".yml")) and not n.startswith("_") and n != "usb_ids.yaml"]
+    if not profiles:
+        raise cfgmod.ConfigError("no board profile was found in %s" % directory)
+    return profiles
+
+
+def load_units(path):
+    """Per-serial exceptions (`protected`, a declared `return_path`). A board not named is flashable."""
+    if not path:
+        return {}
+    try:
+        with open(path, "r") as fh:
+            data = yaml.safe_load(fh) or {}
+    except OSError as exc:
+        raise cfgmod.ConfigError("the units file %s cannot be read: %s" % (path, exc))
+    if not isinstance(data, dict) or not all(isinstance(v, dict) for v in data.values()):
+        raise cfgmod.ConfigError("%s: expected a mapping of serial to settings" % path)
+    return dict((str(k), v) for k, v in data.items())
+
+
+def capabilities(host):
+    caps = set()
+    if os.path.isdir(os.path.join(host.sysfs, "bus", "usb", "devices")):
+        caps.add("sysfs")
+    if host.config["paths"]["firmware"]:
+        caps.add("firmware_store")
+    if host.hooks.get("tool") or flash_file.find_tool():
+        caps.add("uploader")
+    return caps
+
+
+def build(cfg, token=None, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
+    """(app, host, registry, capabilities) from a loaded configuration."""
+    profiles = load_profiles(cfg["paths"]["profiles"] or PACKAGE_PROFILES)
+    host = Host(cfg, profiles, load_units(cfg["paths"]["units"]), sysfs, devroot, proc, hooks)
+    registry = Registry()
+    programmer_commands.register(registry, host)
+    device_commands.register(registry, host)
+    caps = capabilities(host)
+    return build_app(registry, host, Auth(token, cfg["service"]["access"]), caps), host, registry, caps
+
+
+# -- the port --------------------------------------------------------------------------------------
+def _read_int(path):
+    try:
+        with open(path) as fh:
+            return int(fh.read().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _listening_inodes(port, proc):
+    inodes = set()
+    for name in ("net/tcp", "net/tcp6"):
+        try:
+            with open(os.path.join(proc, name)) as fh:
+                lines = fh.read().splitlines()[1:]
+        except OSError:
+            continue
+        for line in lines:
+            f = line.split()
+            if len(f) > 9 and f[3] == "0A" and int(f[1].rsplit(":", 1)[1], 16) == port:     # 0A is LISTEN
+                inodes.add(f[9])
+    return inodes
+
+
+def port_holder(port, proc="/proc"):
+    """{pid, cmdline} of the process listening on `port`, or None when nobody is, or when the owner is
+    not visible to this user. Read-only: /proc/net/tcp and the process table."""
+    inodes = _listening_inodes(port, proc)
+    if not inodes:
+        return None
+    wanted = set("socket:[%s]" % i for i in inodes)
+    try:
+        pids = sorted(int(p) for p in os.listdir(proc) if p.isdigit())
+    except OSError:
+        return None
+    for pid in pids:
+        fd_dir = os.path.join(proc, str(pid), "fd")
+        try:
+            names = os.listdir(fd_dir)
+        except OSError:
+            continue
+        for name in names:
+            try:
+                target = os.readlink(os.path.join(fd_dir, name))
+            except OSError:
+                continue
+            if target in wanted:
+                try:
+                    with open(os.path.join(proc, str(pid), "cmdline"), "rb") as fh:
+                        cmd = fh.read().replace(b"\0", b" ").decode("utf-8", "replace").strip()
+                except OSError:
+                    cmd = ""
+                return {"pid": pid, "cmdline": cmd}
+    return None
+
+
+def check_port(host, port, euid=None, proc="/proc", limit_path=UNPRIVILEGED_LIMIT):
+    """None if the service can bind (host, port); else the refusal. Nothing is assumed: the privilege
+    limit and the holder are read from the machine, and the bind is actually tried."""
+    euid = os.geteuid() if euid is None else euid
+    limit = _read_int(limit_path)
+    if limit is not None and port < limit and euid != 0:
+        return Result.refused("port_privileged",
+                              "port %d is below this machine's unprivileged limit (%d) and the service is not "
+                              "root; choose a higher port" % (port, limit), {"port": port, "limit": limit})
+    sock = socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)        # as uvicorn does
+        sock.bind((host, port))
+    except OSError as exc:
+        if exc.errno == errno.EADDRINUSE:
+            holder = port_holder(port, proc)
+            return Result.refused("port_in_use", "port %d is already in use" % port,
+                                  {"port": port, "holder": holder or "not visible to this user"})
+        if exc.errno == errno.EACCES:
+            return Result.refused("port_privileged", "this user may not bind port %d" % port,
+                                  {"port": port, "limit": limit})
+        if exc.errno == errno.EADDRNOTAVAIL:
+            return Result.refused("capability_missing", "this machine has no address %s" % host, {"address": host})
+        raise
+    finally:
+        sock.close()
+    return None
+
+
+# -- the entry point -----------------------------------------------------------------------------------
+def _parser():
+    p = argparse.ArgumentParser(prog="python -m nrf_workbench.service",
+                                description="Run the nrf-workbench service (HTTP API).")
+    p.add_argument("--config", help="a configuration file that must exist (YAML)")
+    p.add_argument("--listen", help="addr:port; with none set the service listens on 127.0.0.1:8080 only")
+    p.add_argument("--access", choices=cfgmod.ACCESS_MODES, help="token (default) or open-read")
+    p.add_argument("--token-file", dest="token_file", help="a file holding the token (readable only by its owner)")
+    p.add_argument("--firmware-dir", dest="firmware_dir", help="the firmware store directory")
+    p.add_argument("--lock", help="the host lock file")
+    p.add_argument("--profiles", help="a directory of board profiles (default: the ones shipped with the product)")
+    p.add_argument("--units", help="a units file: per-serial settings such as protected")
+    return p
+
+
+def main(argv=None, run=None, env=None):
+    args = _parser().parse_args(argv)
+    overrides = {"service": {}, "paths": {}}
+    for flag, section, key in (("listen", "service", "listen"), ("access", "service", "access"),
+                               ("token_file", "service", "token_file"), ("firmware_dir", "paths", "firmware"),
+                               ("lock", "paths", "lock"), ("profiles", "paths", "profiles"),
+                               ("units", "paths", "units")):
+        if getattr(args, flag):
+            overrides[section][key] = getattr(args, flag)
+    try:
+        cfg, problems = cfgmod.load(required_files=[args.config] if args.config else [], env=env, overrides=overrides)
+    except cfgmod.ConfigError as exc:
+        print("configuration error: %s" % exc, file=sys.stderr)
+        return 2
+    if problems:
+        for p in problems:
+            print("configuration error: %s" % p, file=sys.stderr)
+        return 2
+
+    token, note = cfgmod.read_token(cfg["service"]["token_file"])
+    if cfg["service"]["token_file"] and token is None:
+        print("refused to start: %s" % (note or "the token file is empty"), file=sys.stderr)
+        return 1
+    if note:
+        print("warning: %s" % note, file=sys.stderr)
+    host_addr, port = cfgmod.parse_listen(cfg["service"]["listen"])
+    for check in (lambda: cfgmod.check_listen(cfg["service"]["listen"], token), lambda: check_port(host_addr, port)):
+        refusal = check()                       # in order: the cheap, no-I/O rule first
+        if refusal is not None:
+            print("refused to start (%s): %s" % (refusal.code, refusal.message), file=sys.stderr)
+            return 1
+    try:
+        app, host, registry, caps = build(cfg, token=token)
+    except (cfgmod.ConfigError, profilemod.ProfileError) as exc:
+        print("configuration error: %s" % exc, file=sys.stderr)
+        return 2
+
+    loopback = cfgmod.is_loopback(host_addr)
+    print("nrf-workbench listening on %s:%d (%s%s)" % (
+        host_addr, port, "loopback only" if loopback else "NETWORK, UNENCRYPTED http",
+        "; token required" if token and cfg["service"]["access"] == "token" else
+        "; reads open, writes need the token" if token else "; no token"), flush=True)
+    print("commands: %s" % ", ".join(c.name for c in registry.commands(caps)), flush=True)
+    absent = [c.name for c in registry.commands() if registry.unmet(c, caps)]
+    if absent:
+        print("absent here (GET /api/capabilities says why): %s" % ", ".join(absent), flush=True)
+    if run is None:
+        import uvicorn
+        run = uvicorn.run
+    run(app, host=host_addr, port=port, log_level="info")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

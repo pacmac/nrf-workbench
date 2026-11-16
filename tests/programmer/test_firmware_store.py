@@ -29,14 +29,19 @@ from nrf_workbench.programmer.firmware_store import Store  # noqa: E402
 
 def pkg(seed=0, image_bytes=1152, softdevice=(182,), manifest=True):
     """A DFU package as bytes. `seed` makes different images hash differently."""
+    # A FIXED timestamp: a zip made with the current time hashes differently every two seconds, which made a
+    # test that depended on the first hex characters of the hash pass or fail by the clock.
+    def entry(name):
+        return zipfile.ZipInfo(name, date_time=(2020, 1, 1, 0, 0, 0))
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         if manifest:
-            z.writestr("manifest.json", json.dumps({"manifest": {"application": {
+            z.writestr(entry("manifest.json"), json.dumps({"manifest": {"application": {
                 "bin_file": "firmware.bin", "dat_file": "firmware.dat",
                 "init_packet_data": {"softdevice_req": list(softdevice), "device_type": 82}}}}))
-        z.writestr("firmware.bin", bytes([seed]) * image_bytes)
-        z.writestr("firmware.dat", b"\0" * 14)
+        z.writestr(entry("firmware.bin"), bytes([seed]) * image_bytes)
+        z.writestr(entry("firmware.dat"), b"\0" * 14)
     return buf.getvalue()
 
 
@@ -288,7 +293,10 @@ class Resolve(Base):
 
     def test_a_short_unknown_malformed_or_hostile_id_is_firmware_unknown(self):
         s = self.put(pkg()).data["sha256"]
-        for bad in (s[:7], "deadbeef", "DEADBEEF", s[:8].upper(), "../" + s[:8], "", None, 12345678, s + "0"):
+        letters = "abcdef12" + "0" * 56             # an id that certainly has letters, so its capitals differ
+        self.plant(letters)
+        self.assertEqual(self.store.resolve("abcdef12"), (letters, None))
+        for bad in (s[:7], "deadbeef", "DEADBEEF", "ABCDEF12", "../" + s[:8], "", None, 12345678, s + "0"):
             sha_hex, refusal = self.store.resolve(bad)
             self.assertIsNone(sha_hex, bad)
             self.assertEqual((refusal.cls, refusal.code), ("refused", "firmware_unknown"), bad)

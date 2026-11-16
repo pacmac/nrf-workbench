@@ -41,6 +41,22 @@ the login page and cookie (they belong with the dashboard), the MCP server, the 
 listen-port holder and privilege checks, and `service.py`, the composition root that wires it.
 `api` imports only `core` and the web framework.
 
+**Files for the composition root (added 2026-11-16, Peter: "go"):** `nrf_workbench/service.py` (the ONE
+module that imports `api` and the areas and wires them, `architecture.md`) and `tests/service/`. It holds the
+concrete `Host`, loads profiles (the package's own `profiles/` unless `paths.profiles` says otherwise: they
+ship with the product, they are not a host path) and `units`, derives the capability set, applies the
+listen rules from `core.config`, checks the port (`port_in_use` naming its holder from `/proc`,
+`port_privileged` from the limit read in `/proc/sys`), and runs uvicorn. It never prints the token.
+
+**Built and tested, 2026-11-16: `service.py`** (42 tests; 27 mutants caught). The listen rules and the port
+checks are applied in order before anything listens, cheapest first (a test proves the port is not even
+touched when the token rule has already refused): `token_missing`; `port_privileged` from the limit read in
+`/proc/sys` (an unreadable limit is **not guessed**: only the bind may say no); `port_in_use` naming
+its holder from `/proc/net/tcp` and the process table (a holder the user cannot see is said to be
+invisible, not omitted). The probe socket is closed explicitly on every path (a mutant that left it to the
+garbage collector survived until a test recorded the `close()`). The token is never printed: a test
+scans stdout and stderr. **Not built:** a systemd unit, the login page, TLS.
+
 **Built and tested, 2026-11-16:** `api/auth.py`, `api/body.py`, `api/app.py`: 71 tests (auth 12, the body
 bridge 9, the app 33, the registered commands over real HTTP 13, and 4 against a real uvicorn server on a
 loopback socket). 24 mutants of the guards were caught; the one that survived the ASGI test client
