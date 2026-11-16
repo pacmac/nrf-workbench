@@ -33,6 +33,14 @@ Area: `devices` (library). Depends only on `core`.
 
 ---
 
+## Files this spec allows
+
+The files the entry-method build task may create, and nothing else:
+`nrf_workbench/__init__.py`; `nrf_workbench/core/__init__.py`, `core/result.py`;
+`nrf_workbench/devices/__init__.py`, `devices/profile.py`, `devices/identity.py`,
+`devices/events.py`, `devices/entry.py`; `nrf_workbench/guards/__init__.py`, `guards/lock.py`,
+`guards/checks.py`; `profiles/rak4631.yaml`; `tests/devices/`, `tests/guards/`, `tests/core/`.
+
 ## TOOL what a device is
 
 A **device** is one physical board, identified by its **USB serial** (udev `ID_SERIAL_SHORT`). A
@@ -210,6 +218,32 @@ Rules:
   `console.md`) must advance by exactly 1 for the transition.
 - **The probes never do it.** Observing a mode change (serial stability, the id sets) uses the
   profile's method through the driver once it exists, or the manual fallback until then.
+
+### The way back, and the authorisation (added 2026-11-16)
+
+**GAP: with only USB, the touch has no software way back.** Putting a board into its bootloader
+leaves it there until something resets it. With nothing wired (Peter, 2026-11-16: USB only) there
+is no reset line, no DFU pin and no SWD probe, so the only software way out is a flash, which ends
+with the bootloader activating the image and resetting; or a power cycle. A board stranded in the
+bootloader is the 2026-07-27 incident (a RAK parked in DFU for seven hours, an overnight
+measurement lost). So **the entry method refuses unless the unit declares how it comes back**:
+
+- `return_path` is declared per unit (host configuration, `units.yaml`) as one of `flash` (a DFU
+  package that is a zip containing `manifest.json`, checked to exist and to be shaped as a package),
+  `reset-line`, `swd`, or `power-cycle` (only where per-port power control exists and is declared).
+- Without one, `enter_bootloader()` refuses with **`no_return_path`**, before it touches anything.
+- It does not perform the return itself: the return is the programmer's flash (`programmer.md`),
+  which keeps exactly one actor per transition. Entry only guarantees there is a way.
+- **Which package returns a given unit is Peter's call**: flashing writes firmware, and a package
+  from another build may differ from what the unit runs. A built package for the RAK exists in the
+  `mt-alarm` project (`.pio/build/v3/firmware.zip`), but which build the unit runs is not known.
+
+**Authorisation.** Peter authorised `RAK_PORT_OK` for `nrf_workbench/devices/entry.py` **only**
+(2026-11-16, "yes authorised"). The port-guard hook passes a file whose own text carries the marker,
+so it lives in that file's header with this record (the precedent is `rak-dongle.py`, 2026-08-12).
+It is never placed on a command, and it does not cover any other file; each further file that trips
+the hook is reported and needs its own yes. The code names no port path anywhere: the node is found
+by identity, so no command that runs it contains one.
 
 ## TOOL protected
 

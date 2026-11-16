@@ -1,0 +1,279 @@
+#!/usr/bin/env python3
+"""Tests for identity, the guards and enter_bootloader(), against a fake sysfs.
+
+The point of most of them: a REFUSAL opens nothing. The touch is injected as a recorder, so each
+test can state exactly how many times the port was opened (zero for every refusal, one for a
+success, and one, never two, for a touch that did not work). Run:  python3 tests/devices/test_entry.py
+"""
+import os
+import re
+import sys
+import tempfile
+import unittest
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
+sys.path.insert(0, ROOT)
+sys.path.insert(0, HERE)
+
+from fakes import SERIAL, Tree, make_dfu_zip  # noqa: E402
+from nrf_workbench.devices import entry, identity, profile  # noqa: E402
+from nrf_workbench.guards import checks  # noqa: E402
+from nrf_workbench.guards.lock import HostLock, LockHeld  # noqa: E402
+
+PROFILE = profile.load(os.path.join(ROOT, "profiles", "rak4631.yaml"))
+
+
+class Touch(object):
+    """Records every open of the port. The real one opens a serial port; this one only counts."""
+
+    def __init__(self, on_touch=None, raises=None):
+        self.calls = []
+        self.on_touch = on_touch
+        self.raises = raises
+
+    def __call__(self, node):
+        self.calls.append(node)
+        if self.raises:
+            raise self.raises
+        if self.on_touch:
+            self.on_touch()
+
+
+class FakeWatcher(object):
+    """Stands in for the uevent socket: waits by evaluating the level, as the real one does."""
+
+    def __init__(self, reachable=True, elapsed=0.25):
+        self.reachable, self.elapsed, self.opened, self.closed = reachable, elapsed, False, False
+
+    def open(self):
+        self.opened = True
+
+    def wait(self, predicate, bound_s):
+        from nrf_workbench.devices.events import WaitResult
+        ok = predicate() if self.reachable else False
+        return WaitResult(ok, self.elapsed, "fake", "" if ok else "bound reached")
+
+    def close(self):
+        self.closed = True
+
+
+class Base(unittest.TestCase):
+    def setUp(self):
+        self.t = Tree()
+        self.addCleanup(self.t.close)
+        self.lock = os.path.join(self.t.root, "lock")
+        self.zip = make_dfu_zip(os.path.join(self.t.root, "app.zip"))
+        self.units = {SERIAL: {"return_path": {"method": "flash", "package": self.zip}}}
+
+    def attach_app(self):
+        self.t.node("ttyACM0", 166, 0)
+        self.t.app_board()
+
+    def go(self, touch=None, watcher=None, **kw):
+        touch = touch or Touch()
+        args = dict(units=self.units, sysfs=self.t.sysfs, devroot=self.t.dev, proc=self.t.proc,
+                    lock_path=self.lock, touch=touch, watcher=watcher or FakeWatcher())
+        args.update(kw)
+        serial = args.pop("serial", SERIAL)
+        bound = args.pop("bound", 5.0)
+        return touch, entry.enter_bootloader(PROFILE, serial, bound, **args)
+
+
+class Identity(Base):
+    def test_state_and_node_join(self):
+        self.attach_app()
+        inv = identity.inventory(self.t.sysfs)
+        self.assertEqual(identity.state(PROFILE, SERIAL, inv), "app")
+        self.assertEqual(identity.state(PROFILE, "OTHER", inv), "absent")
+        node, why = identity.node_for(identity.board_devices(PROFILE, inv)[0], self.t.dev)
+        self.assertEqual(node, os.path.join(self.t.dev, "ttyACM0"), why)
+
+    def test_attached_but_no_node_is_not_absent(self):
+        self.t.app_board()                    # sysfs lists it, /dev has no node
+        inv = identity.inventory(self.t.sysfs)
+        self.assertEqual(identity.state(PROFILE, SERIAL, inv), "app")
+        node, why = identity.node_for(identity.board_devices(PROFILE, inv)[0], self.t.dev)
+        self.assertIsNone(node)
+        self.assertIn("no such node", why)
+
+    def test_a_node_that_is_not_a_char_device_is_refused(self):
+        self.t.app_board()
+        open(os.path.join(self.t.dev, "ttyACM0"), "w").close()      # a regular file with the right name
+        node, why = identity.node_for(identity.board_devices(PROFILE, identity.inventory(self.t.sysfs))[0], self.t.dev)
+        self.assertIsNone(node)
+        self.assertIn("not a character device", why)
+
+    def test_a_wrong_device_number_is_refused(self):
+        self.t.node("ttyACM0", 166, 9)
+        self.t.app_board(majmin="166:0")
+        node, why = identity.node_for(identity.board_devices(PROFILE, identity.inventory(self.t.sysfs))[0], self.t.dev)
+        self.assertIsNone(node)
+        self.assertIn("different device number", why)
+
+    def test_two_modes_at_once(self):
+        self.t.app_board(name="1-3")
+        self.t.bootloader_board(name="1-4")
+        self.assertEqual(identity.state(PROFILE, SERIAL, identity.inventory(self.t.sysfs)), "two")
+
+
+class Refusals(Base):
+    """Every refusal: nothing was opened."""
+
+    def refused(self, code, **kw):
+        touch, r = self.go(**kw)
+        self.assertEqual((r.cls, r.code), ("refused", code), r.to_json())
+        self.assertEqual(touch.calls, [], "a refusal must not open the port")
+        return r
+
+    def test_no_bound(self):
+        self.attach_app()
+        self.refused("no_bound", bound=None)
+        self.refused("no_bound", bound=0)
+
+    def test_board_absent(self):
+        self.refused("node_absent")
+
+    def test_attached_no_node(self):
+        self.t.app_board()
+        r = self.refused("node_absent")
+        self.assertEqual(r.evidence["state"], "attached_no_node")
+
+    def test_wrong_serial(self):
+        self.attach_app()
+        self.refused("node_absent", serial="SOMETHINGELSE")
+
+    def test_no_serial_named(self):
+        self.attach_app()
+        self.refused("serial_unverifiable", serial="")
+
+    def test_device_exposes_no_serial(self):
+        self.t.node("ttyACM0", 166, 0)
+        self.t.app_board(serial=None)
+        self.refused("node_absent")                      # nothing can match a serial it does not have
+
+    def test_protected(self):
+        self.attach_app()
+        self.units[SERIAL]["protected"] = True
+        self.refused("protected")
+
+    def test_no_return_path(self):
+        self.attach_app()
+        self.units = {SERIAL: {}}
+        self.refused("no_return_path")
+
+    def test_return_package_missing_or_not_a_package(self):
+        self.attach_app()
+        self.units[SERIAL]["return_path"]["package"] = os.path.join(self.t.root, "nope.zip")
+        self.refused("no_return_path")
+        self.units[SERIAL]["return_path"]["package"] = make_dfu_zip(os.path.join(self.t.root, "bad.zip"), with_manifest=False)
+        self.refused("no_return_path")
+
+    def test_port_held_by_another_process_even_through_another_alias(self):
+        self.attach_app()
+        alias = self.t.node("ttyACM5", 166, 0)             # a second node for the SAME device number
+        self.t.hold(4242, alias, "python3 monitor.py")
+        r = self.refused("port_held")
+        self.assertEqual(r.evidence["holders"][0]["pid"], 4242)
+
+    def test_lock_held_by_another_instance(self):
+        self.attach_app()
+        other = HostLock(self.lock).acquire("flashing")
+        self.addCleanup(other.release)
+        r = self.refused("lock_held")
+        self.assertIn("flashing", r.evidence["holder"])
+
+    def test_entry_method_not_implemented_for_the_profile(self):
+        self.attach_app()
+        other = dict(PROFILE, bootloader=dict(PROFILE["bootloader"], entry="gpio-on-reset"))
+        touch = Touch()
+        r = entry.enter_bootloader(other, SERIAL, 5.0, units=self.units, sysfs=self.t.sysfs, devroot=self.t.dev,
+                                   proc=self.t.proc, lock_path=self.lock, touch=touch, watcher=FakeWatcher())
+        self.assertEqual(r.code, "capability_missing")
+        self.assertEqual(touch.calls, [])
+
+
+class Touching(Base):
+    def reenumerate(self):
+        """What the board does after the touch: the app disappears, the bootloader appears."""
+        self.t.unplug("1-3")
+        self.t.bootloader_board()
+
+    def test_success_touches_exactly_once_and_measures(self):
+        self.attach_app()
+        touch = Touch(on_touch=self.reenumerate)
+        _, r = self.go(touch=touch)
+        self.assertEqual(r.cls, "ok", r.to_json())
+        self.assertEqual(touch.calls, [os.path.join(self.t.dev, "ttyACM0")], "exactly one touch, on the node found by identity")
+        self.assertEqual(r.data["before"]["id"], "239a:8029")
+        self.assertEqual(r.data["after"]["id"], "239a:0029")
+        self.assertIs(r.data["serial_same"], True)
+        self.assertIn("handover_s", r.data)
+
+    def test_serial_that_changes_across_the_mode_is_reported(self):
+        self.attach_app()
+        touch = Touch(on_touch=lambda: (self.t.unplug("1-3"), self.t.bootloader_board(serial="DIFFERENT")))
+        _, r = self.go(touch=touch)
+        self.assertEqual(r.cls, "ok", r.to_json())
+        self.assertIs(r.data["serial_same"], False, "a changed serial must be reported, not hidden")
+
+    def test_a_touch_that_does_not_reach_the_bootloader_is_not_retried(self):
+        self.attach_app()
+        touch = Touch()                                         # the board never re-enumerates
+        w = FakeWatcher(reachable=False)
+        _, r = self.go(touch=touch, watcher=w)
+        self.assertEqual((r.cls, r.code), ("failed", "bootloader_not_reached"), r.to_json())
+        self.assertEqual(len(touch.calls), 1, "never retry: a retry is another reset")
+        self.assertTrue(w.opened and w.closed, "the event source is opened before the touch and closed after")
+
+    def test_a_failing_touch_is_one_attempt_and_is_reported(self):
+        self.attach_app()
+        touch = Touch(raises=OSError("device busy"))
+        _, r = self.go(touch=touch)
+        self.assertEqual((r.cls, r.code), ("failed", "touch_failed"))
+        self.assertEqual(len(touch.calls), 1)
+
+    def test_already_in_the_bootloader_touches_nothing(self):
+        self.t.node("ttyACM0", 166, 0)
+        self.t.bootloader_board()
+        touch, r = self.go()
+        self.assertEqual(r.cls, "ok")
+        self.assertTrue(r.data["already_in_bootloader"])
+        self.assertEqual(touch.calls, [])
+
+    def test_the_lock_is_released_so_a_second_call_can_run(self):
+        self.attach_app()
+        self.go(touch=Touch(on_touch=self.reenumerate))
+        other = HostLock(self.lock).acquire("next")         # would raise LockHeld if entry kept the lock
+        other.release()
+
+
+class OnlyEntryTouches(unittest.TestCase):
+    def test_no_other_module_opens_a_port_at_the_touch_baud_or_imports_a_serial_library(self):
+        # Fragments, so this file does not trip the host's port guard itself.
+        bad = re.compile("|".join(["serial" + r"\.Serial", "import " + "serial", "term" + "ios",
+                                   "TOUCH" + "_BAUD", r"\b1200\b"]))
+        offenders = []
+        for dirpath, _dirs, files in os.walk(os.path.join(ROOT, "nrf_workbench")):
+            for name in files:
+                if name.endswith(".py") and name != "entry.py":
+                    with open(os.path.join(dirpath, name)) as fh:
+                        if bad.search(fh.read()):
+                            offenders.append(os.path.join(dirpath, name))
+        self.assertEqual(offenders, [], "only entry.py is authorised to do this")
+
+    def test_the_authorised_file_carries_its_authorisation_record(self):
+        with open(os.path.join(ROOT, "nrf_workbench", "devices", "entry.py")) as fh:
+            head = fh.read(2500)
+        self.assertIn("AUTHORISED BY PETER", head)
+        self.assertIn("THIS FILE", head)
+
+    def test_entry_takes_no_port_path_as_an_input(self):
+        import inspect
+        params = inspect.signature(entry.enter_bootloader).parameters
+        self.assertFalse([p for p in params if "port" in p.lower() or p.lower() in ("path", "tty", "node")],
+                         "the node must be found by identity, never passed in")
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

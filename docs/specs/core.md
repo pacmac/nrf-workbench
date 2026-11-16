@@ -101,6 +101,9 @@ returned, never a tail. **[brief]**
 | `voltage_unverified` | refused | the link's voltage domain has not been measured | the link |
 | `dtr_rts_unsafe` | refused | DTR or RTS reach the DUT's reset or boot line | the link |
 | `no_reply` | failed | a sent verb got no reply within the caller's bound | the bound, the elapsed time |
+| `no_return_path` | refused | the unit declares no way back from the bootloader (or the declared package is missing or not a DFU zip), so it will not be sent there (`devices.md`) | the allowed methods, or the package |
+| `touch_failed` | failed | the bootloader touch could not be performed (the one attempt failed); nothing is known to have changed | the error |
+| `bootloader_not_reached` | failed | the touch was made once and no bootloader appeared within the caller's bound | the bound, the elapsed time, the event source |
 | `port_in_use` | refused | the service's listen port is held by another process (`api.md`) | the holder, or "not visible to this user" |
 | `port_privileged` | refused | the listen port is below the unprivileged limit and the service has neither root nor the capability | the port, the limit read from the host |
 | `token_missing` | refused | a non-loopback listen address was configured with no token | the address |
