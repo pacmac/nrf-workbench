@@ -53,9 +53,29 @@ it) and a test that only passed because garbage collection released the lock by 
 fixed. One mutant is **equivalent and left alone**: removing the outer empty-serial check changes
 nothing, because the entry step refuses an empty serial first with the same code and before any touch.
 
-**Not built yet:** `programmer.flash_stream`, the registry rows and every
-front end (HTTP, CLI, MCP), and the bench step. **Not tested, on purpose or by limit:** the order in
-which `delete` removes the two files (a crash-timing property: record first, so a crash leaves an
+**Files for the registration unit (added 2026-11-16, Peter: "go"):**
+`nrf_workbench/programmer/commands.py` (the six rows below, registered through `register(registry,
+host)` as `architecture.md` requires), `nrf_workbench/devices/commands.py` (`devices.list`, because a caller
+cannot name a serial to flash without being able to read which boards are attached), and
+`tests/programmer/test_commands.py`. The rows go through the registry, so the same handlers will serve
+HTTP, the CLI and the MCP. **`host` is a small contract, not a class:** `config`, `sysfs`, `devroot`, `proc`,
+`lock_path`, `profiles`, `units`, `hooks` (test seams: touch, runner, tool, watcher, ledger; empty in
+production) and `service(name, factory)` (a cached lazily-built singleton). The concrete host belongs
+to the composition root (`service.py`), not to an area.
+
+**Built and tested, 2026-11-16: the six rows and `devices.list`, registered through the registry**
+(`programmer/commands.py`, `devices/commands.py`; 37 tests through `Registry.call` with a fake host;
+19 mutants caught). `programmer.flash_stream` is built here too: **a test proves the whole file is in the
+store, complete, before the board is touched**, that a refused flash (an absent board, a held lock) **keeps
+the upload** and reports its id so the retry is by id, and that an invalid upload, a wrong checksum or
+a missing length is refused before any touch. Three survivors at first were real test gaps (one
+profile, one mode at a time, one board) and are fixed: the profile that claims the board is used, not
+the first one loaded.
+
+**Not built yet:** the HTTP service, the CLI and the MCP front ends, the concrete host (the composition
+root), and the bench step.
+
+**Not tested, on purpose or by limit:** the order in which `delete` removes the two files (a crash-timing property: record first, so a crash leaves an
 unlisted image and never a listed entry with no image), and the `fsync` calls (a disk-level effect a
 unit test cannot see). The package check reuses `guards.checks.dfu_package` with an empty profile, so
 the SoftDevice comparison is skipped at upload and made at flash, exactly as specified.
