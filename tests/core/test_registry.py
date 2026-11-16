@@ -167,6 +167,16 @@ class Validation(unittest.TestCase):
         with self.assertRaises(UsageError):
             self.v({"serial": "S", "bound_s": 1, "count": True})
 
+    def test_null_for_an_optional_argument_means_not_given_and_for_a_required_one_is_an_error(self):
+        got = self.v({"serial": "S", "bound_s": 1, "count": None, "dry": None})
+        self.assertEqual((got["count"], got["dry"]), (3, False), "the defaults, as if they were never sent")
+        with self.assertRaises(UsageError):
+            self.v({"serial": None, "bound_s": 1})
+        with self.assertRaises(UsageError):
+            self.v({"serial": "S", "bound_s": None})
+        # a validated result can be validated again (the CLI does exactly this on its way to call())
+        self.assertEqual(self.v(self.v({"serial": "S", "bound_s": 1})), self.v({"serial": "S", "bound_s": 1}))
+
     def test_an_int_is_a_float_in_json(self):
         got = self.v({"serial": "S", "bound_s": 2})
         self.assertEqual(got["bound_s"], 2.0)

@@ -89,15 +89,30 @@ def capabilities(host):
     return caps
 
 
-def build(cfg, token=None, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
-    """(app, host, registry, capabilities) from a loaded configuration."""
+def build_host(cfg, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
+    """(host, registry, capabilities): everything except the HTTP app. The CLI's local mode uses this, so
+    it runs the very same commands in-process with no service."""
     profiles = load_profiles(cfg["paths"]["profiles"] or PACKAGE_PROFILES)
     host = Host(cfg, profiles, load_units(cfg["paths"]["units"]), sysfs, devroot, proc, hooks)
     registry = Registry()
     programmer_commands.register(registry, host)
     device_commands.register(registry, host)
-    caps = capabilities(host)
+    return host, registry, capabilities(host)
+
+
+def build(cfg, token=None, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
+    """(app, host, registry, capabilities) from a loaded configuration."""
+    host, registry, caps = build_host(cfg, sysfs, devroot, proc, hooks)
     return build_app(registry, host, Auth(token, cfg["service"]["access"]), caps), host, registry, caps
+
+
+def local(config_path=None, env=None):
+    """(registry, host, capabilities) for the CLI's local mode. Raises ConfigError on a bad configuration."""
+    cfg, problems = cfgmod.load(required_files=[config_path] if config_path else [], env=env)
+    if problems:
+        raise cfgmod.ConfigError("; ".join(problems))
+    host, registry, caps = build_host(cfg)
+    return registry, host, caps
 
 
 # -- the port --------------------------------------------------------------------------------------

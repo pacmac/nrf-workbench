@@ -41,6 +41,34 @@ the login page and cookie (they belong with the dashboard), the MCP server, the 
 listen-port holder and privilege checks, and `service.py`, the composition root that wires it.
 `api` imports only `core` and the web framework.
 
+**Files for the CLI and the MCP (added 2026-11-16, Peter: "yes", CLI and MCP before the dashboard):**
+`nrf_workbench/core/remote.py` (the client of the service: stdlib only, ONE definition of how a registry row
+becomes an HTTP request and how a response becomes a `Result`; it lives in `core` because `cli` and `api`
+may import only `core`, so sharing it there keeps them from importing each other),
+`nrf_workbench/cli/__init__.py` and `cli/app.py` (the command line, generated from the rows),
+`nrf_workbench/__main__.py` (the composition for local mode), `nrf_workbench/api/mcp_server.py`
+(the MCP server, a thin client of the HTTP service, tools registered from `GET /api/commands`), the small
+refactor of `nrf_workbench/service.py` that lets local mode build the host and registry without an HTTP
+app, and their tests (`tests/core/test_remote.py`, `tests/cli/`, `tests/api/test_mcp.py`). **The client
+has no default timeout** (the derive rule: the service decides nothing about a caller's bound, and the
+caller's bound is inside the call); a caller may pass one.
+
+**Built and tested, 2026-11-16: the client and the CLI** (`core/remote.py`, `cli/app.py`, `__main__.py`,
+and the `service.build_host` / `service.local` split): 24 tests for the client against a stub server that
+records what goes over the wire, 37 for the CLI in local mode, 23 for the CLI in remote mode against a
+real uvicorn server, 6 running `python -m nrf_workbench` as a real process; 38 mutants caught. How it
+behaves: the commands come from the registry rows (in-process, or the service's own list with `--host`);
+arguments are validated by the registry's own validator, so a bad value is exit 2 with the API's message;
+`--json` is the Result the API sends (a test proves the two modes give equal JSON, and the same refusal
+has the same exit code over the wire: a 404 carrying a Result is still "refused", exit 1); the CLI
+computes and sends the SHA-256 of an upload itself (a corrupt transfer is caught), unless the user gave
+one; an unreachable service is a **refusal** `service_not_running`, exit 1; the token comes from a file or
+the environment, never the command line, and is never printed (a test scans stdout and stderr for it); there
+is no default timeout. **Real faults the tests found in my own code:** optional arguments given as `null`
+were rejected on the way into `call()` (the registry now treats `null` for an optional argument as "not
+given"), and one malformed assertion of mine. **Not exercised on the Pi:** the CLI against the real service
+there (the same code ran against a real server on this host).
+
 **Files for the composition root (added 2026-11-16, Peter: "go"):** `nrf_workbench/service.py` (the ONE
 module that imports `api` and the areas and wires them, `architecture.md`) and `tests/service/`. It holds the
 concrete `Host`, loads profiles (the package's own `profiles/` unless `paths.profiles` says otherwise: they

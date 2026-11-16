@@ -196,6 +196,45 @@ class Build(Base):
         self.assertEqual(client.post("/api/firmware/delete", json={"id": "deadbeef"}).status_code, 401)
 
 
+class LocalMode(Base):
+    """What the CLI's local mode builds: the same host and registry, with no HTTP app."""
+
+    def test_local_builds_the_registry_and_host_from_the_environment(self):
+        registry, host, caps = service.local(None, env={"NRFWB_FIRMWARE_DIR": self.path("fw")})
+        self.assertIn("firmware_store", caps)
+        names = [c.name for c in registry.commands(caps)]
+        self.assertIn("firmware.put", names)
+        self.assertIn("devices.list", names)
+        self.assertEqual(host.config["paths"]["firmware"], self.path("fw"))
+
+    def test_without_a_firmware_directory_the_store_commands_are_absent(self):
+        registry, host, caps = service.local(None, env={})
+        self.assertNotIn("firmware_store", caps)
+        self.assertNotIn("firmware.put", [c.name for c in registry.commands(caps)])
+
+    def test_a_config_file_is_read_and_a_missing_one_is_an_error(self):
+        cfg = self.write("c.yaml", "paths:\n  firmware: %s\n" % self.path("fw2"))
+        _r, host, _c = service.local(cfg, env={})
+        self.assertEqual(host.config["paths"]["firmware"], self.path("fw2"))
+        with self.assertRaises(cfgmod.ConfigError):
+            service.local(self.path("nope.yaml"), env={})
+
+    def test_problems_in_the_configuration_are_an_error_naming_them(self):
+        cfg = self.write("c.yaml", "service:\n  listn: 0.0.0.0:80\n")
+        with self.assertRaises(cfgmod.ConfigError) as caught:
+            service.local(cfg, env={})
+        self.assertIn("service.listn", str(caught.exception))
+
+    def test_build_and_local_register_the_same_commands(self):
+        t = Tree()
+        self.addCleanup(t.close)
+        cfg, _ = cfgmod.load(env={}, overrides={"paths": {"firmware": self.path("fw")}})
+        _app, _h, registry_a, caps_a = service.build(cfg, sysfs=t.sysfs, hooks={"tool": "/fake"})
+        host, registry_b, caps_b = service.build_host(cfg, sysfs=t.sysfs, hooks={"tool": "/fake"})
+        self.assertEqual(caps_a, caps_b)
+        self.assertEqual([c.name for c in registry_a.commands()], [c.name for c in registry_b.commands()])
+
+
 class Holder(Base):
     def proc(self, listening=True, state="0A", port=8080, owned=True):
         import shutil

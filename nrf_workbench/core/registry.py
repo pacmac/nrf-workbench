@@ -195,6 +195,9 @@ class Registry(object):
                 out[arg.name] = arg.default
                 continue
             value = raw[arg.name]
+            if value is None and not arg.required:
+                out[arg.name] = arg.default             # null for an optional argument means "not given"
+                continue
             if from_text and isinstance(value, str):
                 out[arg.name] = _parse_text(arg, value)
             else:
