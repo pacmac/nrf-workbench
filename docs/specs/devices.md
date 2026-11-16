@@ -383,7 +383,17 @@ safety rules, so SWD and USB flashing cannot diverge.
 - **Serial stability, per family:** read the serial in app mode and in bootloader mode on each
   board model before its profile sets `serial_stable_across_modes: true`. RAK4631 is the only one
   with a recorded observation.
-- **`802a` role:** read the Adafruit board file for this board and state what each id is.
+- **`802a` role, partly answered (2026-11-16):** the project's own board file
+  (`mt-alarm/device/rak/boards/wiscore_rak4631.json`) lists exactly four `hwids`:
+  `239A:8029`, `239A:0029`, `239A:002A` and `239A:802A`, with `usb_product` "WisCore RAK4631 Board",
+  `use_1200bps_touch` true and `wait_for_upload_port` true. 8029 is the application (observed), 0029
+  and 002A are bootloaders (both observed, on two units or two bootloader builds). So `802A` is the
+  fourth id of the same board family, with the same pattern as 8029 (a high-bit application-style
+  PID), but **its role is still not established** by any run, so it stays out of the profile until a
+  unit is seen enumerating as it. The file confirms the touch is the board's own entry method.
+- **The RAK's LEDs (read from the project's variant, 2026-11-16):** `LED_GREEN` is pin 35 and
+  `LED_BLUE` pin 36, both active high (`LED_STATE_ON 1`). This is what a parking image can blink as
+  a human-visible "the application is running" signal (see `testpartner`).
 - **Event source, two hosts probed (2026-11-16).** The dev LXC has no `/run/udev`: inotify on the
   node directory is the baseline there. The bare-metal Proxmox host has `/run/udev` and `udevadm`
   257, so udev is available there. **Event delivery itself is untested on both** (a mode change
