@@ -166,8 +166,8 @@ This host today (probed by hand, 2026-11-16): x86_64, Python 3.13, with `pio` an
 ## TOOL configuration
 
 Layered, later layers override earlier: built-in defaults, a host file (`<prefix>/config/`, where
-`<prefix>` is the install folder, normally `/usr/share/pac/nrf-workbench`; **not** `/etc`, since
-`/usr/share/pac` is Peter's working and install folder, `install.md`), a user file, environment,
+`<prefix>` is the folder the user chose at install, `install.md`; **not** `/etc`, so one
+self-contained folder holds the whole install; no folder is assumed), a user file, environment,
 command-line flags. YAML. Two kinds of content:
 
 - **host settings:** lock path, profile directory, service bind address
