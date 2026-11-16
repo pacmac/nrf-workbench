@@ -108,8 +108,6 @@ export default function App() {
     return <Login name={name} expired={expired} onDone={() => { setExpired(false); refreshSession(); }} />;
   }
 
-  const flashCommand = info.commands ? info.commands.find((c) => c.name === "programmer.flash") : null;
-
   return (
     <div className="mx-auto max-w-6xl px-4 pb-12">
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 py-4">
@@ -155,7 +153,7 @@ export default function App() {
         {page === "commands" && <Commands commands={info.commands} onDone={onCommandDone} />}
       </div>
 
-      {flashing && <FlashDialog board={flashing} command={flashCommand} onDone={onCommandDone} onClose={() => setFlashing(null)} />}
+      {flashing && <FlashDialog board={flashing} commands={info.commands || []} onDone={onCommandDone} onClose={() => setFlashing(null)} />}
     </div>
   );
 }

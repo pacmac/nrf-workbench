@@ -155,6 +155,47 @@ class RealSource(unittest.TestCase):
             self.assertIn(call, text)
 
 
+class FlashDerivation(unittest.TestCase):
+    """The flash bounds are derived (docs/specs/dashboard.md, "The flash flow"), so the numbers and the arithmetic
+    that justifies them must stay together: change one without the other and this fails."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(SRC, "format.js")) as fh:
+            cls.fmt = fh.read()
+        with open(os.path.join(ROOT, "docs", "specs", "dashboard.md")) as fh:
+            cls.spec = fh.read()
+
+    def test_the_constants_are_the_measured_ones(self):
+        for line in ("THROUGHPUT_SLOWEST_BPS = 12350;", "THROUGHPUT_FASTEST_BPS = 15420;", "FLASH_BOUND_FACTOR = 2;",
+                     "ENTER_BOUND_S = 2;"):
+            self.assertIn(line, self.fmt)
+
+    def test_each_constant_carries_its_arithmetic(self):
+        for text in ("2 x 332,092 / 12,350 = 53.8 s", "21.554 s", "3 x 0.589 = 1.77 s", "12.35 to 15.42 kB/s"):
+            self.assertIn(text, self.fmt)
+
+    def test_the_spec_states_the_same_numbers(self):
+        for text in ("12 350 B/s", "2 x image_bytes / 12 350", "53.8 s", "0.589 s x 3 = 1.77 s", "12.35 to 15.42 kB/s"):
+            self.assertIn(text, self.spec)
+
+    def test_the_arithmetic_is_right(self):
+        self.assertAlmostEqual(2 * 332092 / 12350, 53.78, places=2)
+        self.assertAlmostEqual(2 * 332092 / 12350 / 21.554, 2.5, places=2)
+        self.assertAlmostEqual(3 * 0.589, 1.767, places=3)
+        self.assertAlmostEqual(332092 / 15420, 21.5, places=1)
+
+    def test_a_flash_is_never_preselected_and_never_prefilled_from_the_old_product(self):
+        with open(os.path.join(SRC, "FlashDialog.jsx")) as fh:
+            dialog = fh.read()
+        self.assertIn("const NONE = \"\";", dialog)
+        self.assertIn("useState(NONE)", dialog)
+        self.assertIn("useState(\"\")", dialog)                      # the product check starts empty
+        self.assertNotIn("useState(board.product", dialog)
+        self.assertNotIn("setChosen(", dialog.split("onChange={(e) => setChosen(e.target.value)}")[0],
+                         "the package is set only by the person's choice")
+
+
 class BadSource(unittest.TestCase):
     """Each rule must fire on a source that breaks it."""
 

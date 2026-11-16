@@ -17,6 +17,7 @@ for a person to LOOK at: a rendered element is not a verified one.
 Exit 0 only if every check passed.
 """
 import argparse
+import math
 import os
 import re
 import socket
@@ -29,6 +30,7 @@ import urllib.parse
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tests", "devices"))
+sys.path.insert(0, os.path.join(ROOT, "tests", "programmer"))
 
 import uvicorn  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
@@ -37,7 +39,11 @@ from nrf_workbench import service  # noqa: E402
 from nrf_workbench.core import config as cfgmod  # noqa: E402
 from nrf_workbench.devices import commands as device_commands  # noqa: E402
 from nrf_workbench.devices.monitor import DeviceMonitor  # noqa: E402
+from nrf_workbench.guards.ledger import TouchLedger  # noqa: E402
 from fakes import SERIAL, Tree  # noqa: E402
+from test_firmware_store import pkg  # noqa: E402
+from test_flash import FakeWatcher, Runner  # noqa: E402
+from test_flash_firmware import Touch  # noqa: E402
 
 TOKEN = "verify-dashboard-token-%d" % os.getpid()
 BENCH = "verify-bench"
@@ -71,11 +77,25 @@ class Bench(object):
         self.tree = Tree()
         self.tmp = tempfile.mkdtemp(prefix="nrfwb-verify-")
         self.tree.app_board()
+        self.tree.node("ttyACM0", 166, 0)            # the board's device node, so a flash can find it
+        self.poke_r, self.poke_w = socket.socketpair()
+        # A fake flash: the touch makes the board re-enumerate as its bootloader, the fake uploader makes it come
+        # back as its application, and each change pokes the fake uevent source so the page sees it live.
+        # The host lock and the touch ledger default to ONE shared path on the machine; this bench gets its own, so a
+        # run never inherits (or leaves) a "touch pending" for a fake board.
+        self.lock_path = os.path.join(self.tmp, "lock")
+        hooks = {"tool": "/fake/adafruit-nrfutil", "watcher": FakeWatcher(),
+                 "touch": Touch(on_touch=self._to_bootloader), "runner": Runner(on_run=self._to_app),
+                 "ledger": TouchLedger(self.lock_path + ".touches.json")}
         cfg, _ = cfgmod.load(env={}, overrides={
             "paths": {"firmware": os.path.join(self.tmp, "fw")}, "service": {"bench_name": BENCH},
             "streams": {"events": {"retain": 100, "max_age_days": 1}, "activity": {"retain": 100, "max_age_days": 1}}})
-        self.app, self.host, _registry, _caps = service.build(cfg, token=TOKEN, sysfs=self.tree.sysfs, hooks={"tool": "/fake"})
-        self.poke_r, self.poke_w = socket.socketpair()
+        self.app, self.host, _registry, _caps = service.build(cfg, token=TOKEN, sysfs=self.tree.sysfs, devroot=self.tree.dev,
+                                                                  proc=self.tree.proc, hooks=hooks)
+        self.host.lock_path = self.lock_path
+        self.package = os.path.join(self.tmp, "package.zip")
+        with open(self.package, "wb") as fh:
+            fh.write(pkg())
         self.monitor = DeviceMonitor(lambda: device_commands.boards(self.host), self.host.streams.events.publish,
                                      open_source=lambda: self.poke_r)
         self.monitor.start()
@@ -88,6 +108,16 @@ class Bench(object):
         self.thread = threading.Thread(target=lambda: self.server.run(sockets=[self.sock]), daemon=True)
         self.thread.start()
         self.url = "http://127.0.0.1:%d/" % self.port
+
+    def _to_bootloader(self):
+        self.tree.unplug("1-3")
+        self.tree.bootloader_board()
+        self.poke_w.send(b"x")
+
+    def _to_app(self):
+        self.tree.unplug("1-3")
+        self.tree.app_board()
+        self.poke_w.send(b"x")
 
     def attach_second(self):
         self.tree.bootloader_board(name="1-4", tty="ttyACM1", majmin="166:1", serial=OTHER)
@@ -110,9 +140,84 @@ def overflow(page):
     return page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
 
 
+def open_flash(page, band):
+    band.get_by_role("button", name="Flash…").first.click()
+    dialog = page.get_by_role("dialog")
+    dialog.wait_for()
+    return dialog
+
+
+def wait_or_show(dialog, locator, what):
+    """Wait for `locator`; if it never comes, say what the dialog showed instead (then fail loudly)."""
+    try:
+        locator.wait_for(timeout=15000)
+    except Exception:
+        print("DIALOG at %s:\n%s" % (what, dialog.inner_text()), flush=True)
+        raise
+
+
+def flash_flows(page, bench, band, shot, tag):
+    """Flash the fake board through the dialog three ways: an uploaded file, a stored package, and a refusal."""
+    flash_button = lambda d: d.get_by_role("button", name=re.compile("Erase and flash"))   # noqa: E731
+
+    # 1. a file from this computer (the store is empty, so the dialog says so)
+    dialog = open_flash(page, band)
+    wait_or_show(dialog, dialog.get_by_text("The store is empty"), "empty store")
+    check("%s flash: an empty store is said, not shown as an empty list" % tag, True)
+    dialog.get_by_label("A file from this computer").check()
+    dialog.get_by_label("Package file").set_input_files(bench.package)
+    size = os.path.getsize(bench.package)
+    dialog.get_by_text("This erases").wait_for()
+    check("%s flash: the confirmation names the board, the package and its size" % tag,
+          SERIAL in dialog.inner_text() and "package.zip" in dialog.inner_text() and ("{:,} bytes".format(size)) in dialog.inner_text())
+    dialog.locator("summary").click()
+    want = math.ceil(2 * size / 12350 * 10) / 10
+    got = dialog.get_by_label(re.compile("Write and come back")).input_value()
+    check("%s flash: the write bound is derived, 2 x %d / 12350 = %s s" % (tag, size, want), abs(float(got) - want) < 1e-9, got)
+    check("%s flash: the enter bound is 2 s" % tag, dialog.get_by_label(re.compile("Enter the bootloader within")).input_value() == "2")
+    shot("8b-flash-ready")
+    flash_button(dialog).click()
+    wait_or_show(dialog, dialog.get_by_role("status").filter(has_text="packets").first, "flash by upload")
+    check("%s flash by upload: the verdict line says packets and that it came back" % tag,
+          "came back as" in dialog.inner_text(), dialog.inner_text()[-400:])
+    check("%s flash by upload: the Result is shown whole, class ok" % tag, dialog.get_by_text("ok", exact=True).count() >= 1)
+    dialog.screenshot(path=os.path.join(bench.shots, "%s-9-flash-done.png" % tag))
+    dialog.get_by_role("button", name="Close", exact=True).click()
+    dialog.wait_for(state="hidden")
+    band.locator("ul").get_by_text(SERIAL).first.wait_for()
+    check("%s flash by upload: the board is back in the live band" % tag, band.locator("ul").get_by_text("app", exact=True).count() >= 1)
+
+    # 2. from the store: the uploaded package is now listed; nothing is preselected
+    dialog = open_flash(page, band)
+    select = dialog.get_by_label("Stored package")
+    select.wait_for()
+    check("%s flash from the store: nothing is preselected" % tag, select.input_value() == "")
+    check("%s flash from the store: the button is disabled until one is chosen" % tag, flash_button(dialog).is_disabled())
+    check("%s flash from the store: the entry shows its name and short id" % tag,
+          "package.zip" in select.inner_text() or "unnamed" in select.inner_text(), select.inner_text())
+    select.select_option(index=1)
+    check("%s flash from the store: choosing one enables the button" % tag, not flash_button(dialog).is_disabled())
+    flash_button(dialog).click()
+    dialog.get_by_role("status").filter(has_text="packets").first.wait_for()
+    check("%s flash from the store: it flashed" % tag, "came back as" in dialog.inner_text())
+
+    # 3. a refusal: the board comes back as something other than what was expected
+    dialog.get_by_label(re.compile("The board must come back as")).fill("a-product-it-will-not-be")
+    flash_button(dialog).click()
+    dialog.get_by_text("flash_suspect").first.wait_for()
+    check("%s flash refusal: the code is shown by name" % tag, dialog.get_by_text("flash_suspect").count() >= 1)
+    check("%s flash refusal: it is not drawn as a success" % tag, "came back as" not in dialog.locator("[role=status]").last.inner_text()
+          or dialog.get_by_text("suspect", exact=True).count() >= 1)
+    shot("9b-flash-refused")
+    dialog.get_by_role("button", name="Close", exact=True).click()
+    dialog.wait_for(state="hidden")
+
+
 def run_viewport(browser, bench, theme, size, shots, first):
     label, width, height = size
     tag = "%s-%s" % (theme, label)
+    bench.shots = shots
+    refusals_expected = list(EXPECTED_REFUSALS)
     context = browser.new_context(viewport={"width": width, "height": height}, color_scheme=theme)
     page = context.new_page()
     errors, refusals = [], []
@@ -205,6 +310,25 @@ def run_viewport(browser, bench, theme, size, shots, first):
     check("%s commands: a write by cookie+CSRF reached the command, which refused it by name" % tag, True)
     shot("6-command-result")
 
+    # the flash dialog: opens from the band, board fixed, nothing preselected, nothing sent until chosen
+    dialog = open_flash(page, band)
+    check("%s flash dialog: names the board and says to choose a package" % tag,
+          SERIAL in dialog.inner_text() and "Choose a package" in dialog.inner_text(), dialog.inner_text()[:200])
+    check("%s flash dialog: the flash button is disabled until a package is chosen" % tag,
+          dialog.get_by_role("button", name=re.compile("Erase and flash")).is_disabled())
+    check("%s flash dialog: it is not offering raw fields (no serial, no firmware id, no bound inputs visible)" % tag,
+          dialog.get_by_label(re.compile(r"^serial")).count() == 0 and dialog.get_by_label(re.compile(r"^firmware")).count() == 0
+          and not dialog.get_by_label(re.compile("Enter the bootloader within")).is_visible())
+    check("%s flash dialog: the product check starts empty, not prefilled from the OLD firmware's product" % tag,
+          dialog.get_by_label(re.compile("The board must come back as")).input_value() == "")
+    check("%s flash dialog: no horizontal scroll inside it" % tag, dialog.evaluate("e => e.scrollWidth - e.clientWidth") <= 0)
+    dialog.screenshot(path=os.path.join(shots, "%s-8-flash-dialog.png" % tag))
+    dialog.get_by_role("button", name="Close", exact=True).click()
+    dialog.wait_for(state="hidden")
+    if first:
+        refusals_expected.append(("POST", "/api/programmer/flash", 500))
+        flash_flows(page, bench, band, shot, tag)
+
     # the activity log names this caller
     page.get_by_role("navigation", name="Pages").get_by_role("button", name="Activity").click()
     page.get_by_text("devices.list").first.wait_for()
@@ -238,7 +362,7 @@ def run_viewport(browser, bench, theme, size, shots, first):
     r = page.request.get(bench.url + "api/devices/list")
     check("%s logout: the old session no longer works" % tag, r.status == 401, r.status)
     check("%s no console or page errors" % tag, not errors, errors)
-    check("%s the only failed requests were the two on purpose" % tag, refusals == EXPECTED_REFUSALS, refusals)
+    check("%s the only failed requests were the ones on purpose" % tag, refusals == refusals_expected, refusals)
     context.close()
 
 

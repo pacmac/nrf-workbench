@@ -11,6 +11,37 @@ export const ROWS_PER_STEP = 100;
 // mode change (app, handover, bootloader, handover, app) and what came just before it.
 export const TICKER_LINES = 8;
 
+// ---- the flash bounds (docs/specs/dashboard.md, "The flash flow") -------------------------------------------
+// The service requires both bounds and has no default for either (programmer spec). The page derives them.
+//
+// Measured on the real RAK4631 over native USB: the 332,092-byte image took 21.554 s, and the throughput across
+// the runs was 12.35 to 15.42 kB/s. Handover into the bootloader took 0.362 to 0.589 s.
+export const THROUGHPUT_SLOWEST_BPS = 12350;     // bytes/s, the slowest measured run
+export const THROUGHPUT_FASTEST_BPS = 15420;     // bytes/s, the fastest measured run
+// 2x the slowest-throughput time: one slow USB host or a burst of packet acknowledgements. For 332,092 bytes:
+// 2 x 332,092 / 12,350 = 53.8 s, which is 2.5x the 21.554 s measured (the programmer spec asks 2 to 3x).
+export const FLASH_BOUND_FACTOR = 2;
+// 3x the worst measured handover (3 x 0.589 = 1.77 s), rounded up to a whole second.
+export const ENTER_BOUND_S = 2;
+
+export function flashBoundS(imageBytes) {
+  return Math.ceil((FLASH_BOUND_FACTOR * imageBytes) / THROUGHPUT_SLOWEST_BPS * 10) / 10;   // one decimal, rounded up
+}
+
+// What a person should expect to wait: the measured range, fastest to slowest.
+export function expectedRangeS(imageBytes) {
+  return [imageBytes / THROUGHPUT_FASTEST_BPS, imageBytes / THROUGHPUT_SLOWEST_BPS];
+}
+
+export function rangeText([lo, hi]) {
+  if (hi < 1) return "under a second";
+  return `about ${Math.max(1, Math.round(lo))} to ${Math.max(1, Math.round(hi))} s`;
+}
+
+export function bytesText(n) {
+  return n == null ? "" : `${Number(n).toLocaleString("en-US")} bytes`;
+}
+
 export function clock(epochSeconds) {
   if (epochSeconds == null) return "";
   return new Date(epochSeconds * 1000).toLocaleTimeString();

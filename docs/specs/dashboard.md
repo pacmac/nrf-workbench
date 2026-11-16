@@ -78,8 +78,62 @@ activity log naming the dashboard, logout, and a foreign-Origin login, in light 
 wide: **225 checks, 0 failed**, screenshots looked at. A live attach showed in 4 to 26 ms. The checks found and
 this commit fixes: a `/favicon.ico` 404 on every page load, a duplicated command summary, "took 0.000 s", a
 wrapped phone nav. **Not yet checked on the Pi with a real board** (the verification uses a fake bus), and a flash
-from the browser has not been run; the form is the generated one and the flash itself is unchanged and proven.
+from the browser has not been run. **That first flash form was unusable (a generated form of raw fields): see
+"The flash flow", which replaces it.**
 The development container's fontconfig maps `system-ui` to a monospace face, so named sans fonts come first.
+
+## The flash flow (added 2026-11-16, after Peter tried it: "a modal that has lots of fields to manually complete, completely unusable")
+
+**The defect.** The first UI opened the generated command form for `programmer.flash`: eight raw fields (serial,
+a firmware id typed by hand, two bounds, a product string). A person flashing a board knows three things: which
+board, which package, and whether they are sure. Nothing else should be asked. The Commands page keeps the
+generated form (it is the escape hatch); **Flash on a board is a purpose-built flow** in `ui/src/FlashDialog.jsx`:
+
+1. **The board is fixed** (serial, product, mode, profile shown, not editable). A board already in its bootloader
+   says so; the flash goes on regardless.
+2. **The package is chosen, never typed**: a list of what the store holds (name, size, short id, when uploaded)
+   from `firmware.list`, **with nothing preselected** (a stray click must not flash the newest image), or **a file
+   from the person's computer**, sent with `programmer.flash_stream` (one call, stored and flashed). With no store
+   the upload is the only choice; with no flash command the dialog says why.
+3. **The product check is one optional line**: "the board must come back as" the string the new image announces.
+   Empty means no check. It is **not prefilled from the board's current product**: that is the OLD image's string.
+4. **The two bounds are derived, shown, and hidden under Advanced.** The service requires them (no default, by
+   design); the page computes them from the package, writes the arithmetic beside them, and lets a person change
+   them:
+   `flash_bound_s = 2 x image_bytes / 12 350 B/s` (slowest measured throughput, 12.35 kB/s; 2x: one missed
+   packet-ack burst or a slow USB host; for the 332 092-byte image 53.8 s, 2.5x the 21.554 s measured, inside the
+   2 to 3x the programmer spec asks for once a baseline exists);
+   `enter_bound_s = 2 s` (worst measured handover 0.589 s x 3 = 1.77 s, rounded up).
+   An uploaded zip's own size stands in for `image_bytes` (it is larger by the manifest, 0.24% on the real
+   image), so the bound is a hair long, never short.
+5. **It says what it will do before it does it**: "Erases <serial> (<product>) and writes <package> (<bytes>).
+   The board enters its bootloader by itself; no button. Expect about <lo> to <hi> s (12.35 to 15.42 kB/s
+   measured)." The button reads "Erase and flash". There is **no timer on the page**, so there is no ticking
+   progress: it shows when the flash started and the expected range, **the band updates live as the board
+   re-enumerates**, and the dialog cannot be closed while the request is open. (A progress feed is not built.)
+6. **The result is the whole Result** (class, code, message, every byte of data and evidence), with a one-line
+   verdict first: duration against the expected range, packets, whether the bootloader was entered, and what the
+   board came back as.
+
+Files: `ui/src/FlashDialog.jsx`, `ui/src/format.js` (the constants, each with its derivation), `ui/src/App.jsx`,
+`ui/src/Commands.jsx` (the result view is shared), `scripts/verify_dashboard.py`, `tests/dashboard/test_ui_rules.py`,
+and the rebuilt `nrf_workbench/dashboard/static/`. The browser check flashes a fake board through the dialog on the
+fake bench (the service's real routes with the programmer tests' fake runner and touch): choose from the store,
+upload a file, refuse with nothing chosen, a refused flash shown with its code. **No flash on the real board
+without Peter.**
+
+**Built and checked, 2026-11-16.** The browser check now flashes the fake board through the dialog three ways (an
+uploaded file, a stored package, a refusal shown by code), and in every viewport opens the dialog and checks: the
+board is named, nothing is preselected, the button is disabled until a package is chosen, no raw serial or firmware
+field is offered, the product check starts empty, no horizontal scroll: **269 checks, 0 failed**. 9 mutants of the
+dialog (preselect the newest, prefill the old product, wrong bound factor, wrong enter bound, no verdict, a literal
+write path, an upload with no body, a hidden result) were caught by the unit checks, the browser check or both; the one
+survivor (the button also stays disabled while the derived bound is empty) is equivalent. The check found and fixed:
+"Expect about 0 to 0 s" on a small package (now "under a second"). **Not exercised: a flash of the real board from the
+browser, and the dialog being unclosable while a request is open** (the fake flash answers at once, and there is no
+timer to hold it); both need a real flash, which waits for Peter. The service's own refusal text for `flash_suspect`
+reads "...was written The board was sent..." with a missing full stop: that string is the programmer's, not the UI's,
+and is reported to its owner here, not changed.
 
 ## Files for the UI (added 2026-11-16, Peter: "get this completed")
 
