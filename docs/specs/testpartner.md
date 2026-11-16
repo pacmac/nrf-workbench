@@ -70,6 +70,22 @@ nothing **[verified]**, which does not say whether the wire, the dongle or the p
 - **Why bit-banged:** the core builds `Serial2` for one fixed pin pair at compile time. The line is
   written from the cycle counter (exact to a cycle, 64 MHz) with interrupts masked for the ~87 us of a
   byte. Non-active pins are inputs, so a pin that is wired to the dongle's TX is never driven against it.
+- **Research, 2026-11-16 (Peter named the base: RAK19003 WisBlock Mini Base Board; both RAK datasheet
+  pages read):** the RAK19003 header **J7 is `1 RX1 | 2 TX1 | 3 GND | 4 BOOT`**; its 40-pin core
+  connector carries the UART pair on connector pins 33 and 34. The RAK4631 page names connector pins
+  33/34 `UART2_TX`/`UART2_RX`, which is nRF **P0.16 (TX) and P0.15 (RX)**, and this repository's
+  variant names the same two pins `PIN_SERIAL1_TX 16`/`PIN_SERIAL1_RX 15` (the core's `Serial1`). **The two
+  datasheets disagree on the UART numbers** (the base calls those connector pins UART1, the module calls
+  them UART2) and the base page gives **no direction** for the J7 labels and labels connector pin 33
+  `TXD1` yet describes it "RX". So the pins are firm (gpio16 out, gpio15 in) and which J7 hole each lands on
+  is not stated. Both were in the first scan and nothing was heard, so the bit-banged timing is the next
+  thing to remove: pinscan now also sends on the core's hardware `Serial1` (gpio16).
+- **Result of the hardware-UART run, 2026-11-16 [verified on the bench]:** pinscan with the core's
+  `Serial1` sending `NRFWB-HWUART1 TX=16` was flashed (4.654 s, 113 of 113 marks, product confirmed) and
+  the dongle read for 20 s (four rounds): **nothing received again**. Two negative runs on the J7 pair,
+  one bit-banged and one hardware, so timing is no longer the likeliest cause. What is left is physical
+  and not visible from software: the dongle's RX is not on the RAK's gpio16 net, or the ground is not
+  common, or the two signal wires are crossed. The unit was restored to the mt-alarm package afterwards.
 - **Receive side (dongle TX to a RAK pin) is a later step**; this finds the transmit pin only.
 - **Result, 2026-11-16 [verified on the bench]:** pinscan flashed (4.428 s, 108 of 108 marks, product
   string confirmed), the dongle read for 30 s (six scan rounds) and **received nothing from any of the

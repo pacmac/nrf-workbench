@@ -37,6 +37,11 @@ void setup() {
   // USB CDC. Nothing is ever written to it; opening it is what keeps the device a normal,
   // touchable USB serial device.
   Serial.begin(115200);
+#ifdef PINSCAN
+  // The core's own hardware UART on the J7 pair (variant: PIN_SERIAL1_TX 16, PIN_SERIAL1_RX 15). It
+  // takes the bit-banging timing out of the question for the pair the RAK19003 header uses.
+  Serial1.begin(115200);
+#endif
 }
 
 #ifdef PINSCAN
@@ -89,8 +94,11 @@ static void pinscan_round() {
     counter_on = true;
   }
   for (size_t k = 0; k < sizeof CANDIDATES; k++) {
+    if (CANDIDATES[k] == PIN_SERIAL1_TX || CANDIDATES[k] == PIN_SERIAL1_RX) continue;   // owned by Serial1
     for (int rep = 0; rep < 2; rep++) { announce(CANDIDATES[k]); delay(20); }
   }
+  // The hardware UART, on gpio16, as the RAK19003 J7 header would carry it.
+  for (int rep = 0; rep < 2; rep++) { Serial1.print("NRFWB-HWUART1 TX=16\r\n"); Serial1.flush(); delay(20); }
 }
 #endif
 
