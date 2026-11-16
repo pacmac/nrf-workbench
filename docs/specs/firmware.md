@@ -19,6 +19,23 @@ names: `docs/specs/core.md` (the new result codes), `docs/specs/api.md` and
 follows once Peter has agreed it**, in `nrf_workbench/programmer/firmware_store.py` and the registry
 rows, with `tests/programmer/test_firmware_store.py`.
 
+## Status
+
+**Built and tested, 2026-11-16 (Peter: "go"):** the store library, `nrf_workbench/programmer/firmware_store.py`
+(`put`, `list`, `show`, `delete`, `resolve`, `verify`), with 42 tests that run on any host with no
+hardware. Twenty mutants of its guards were each caught by a test (the read bound, the free-space
+check and its boundary, the short-body check, the checksum compare and its order before the package
+check, the package check, temp-file cleanup, idempotence, the re-hash, the in-use check, the id
+prefix floor, the stale-temp lock and the lock held past the write handle, the record-id check, the
+ordering, the length checks, the full-disk branch and the path scrub).
+
+**Not built yet:** `programmer.flash` by id, `programmer.flash_stream`, the registry rows and every
+front end (HTTP, CLI, MCP), and the bench step. **Not tested, on purpose or by limit:** the order in
+which `delete` removes the two files (a crash-timing property: record first, so a crash leaves an
+unlisted image and never a listed entry with no image), and the `fsync` calls (a disk-level effect a
+unit test cannot see). The package check reuses `guards.checks.dfu_package` with an empty profile, so
+the SoftDevice comparison is skipped at upload and made at flash, exactly as specified.
+
 ## GAP defects first
 
 1. **Today a flash needs the file already on the host's disk, put there by hand.** The proven path
