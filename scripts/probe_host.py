@@ -22,7 +22,7 @@ import subprocess
 import sys
 import time
 
-PROBE_VERSION = 3   # 2: gpio records each chip's label and line count; 3: uart section
+PROBE_VERSION = 4   # 2: gpio chip label/lines; 3: uart section; 4: gpio dedupe + gpiodetect, btmgmt phy/advinfo
 
 # name -> argv after the program. A tool NOT listed here is only looked for, never run
 # (JLinkExe is interactive; btmgmt and hciconfig are not version-queries).
@@ -186,20 +186,35 @@ def section_nodes(bound, have_udev):
             "note": "a node with no udev serial means the serial interlock cannot run for it"}
 
 
-def section_gpio():
+def section_gpio(bound):
     """A gpiochip is NOT evidence of a Pi header: a bare-metal x86 host (verified) has
     /dev/gpiochip0 for a motherboard controller. So record each chip's label and line count, read
     best-effort from sysfs (the path varies by kernel), and let the reader decide."""
-    chips = sorted(glob.glob("/dev/gpiochip*"))
+    # Verified on a Pi 4B: the sysfs label paths were empty, while libgpiod's `gpiodetect` named
+    # each chip ("gpiochip0 [pinctrl-bcm2711] (58 lines)"). And a glob listed gpiochip4 although
+    # gpiodetect reported two chips, so a path can be an alias for another: dedupe by realpath.
+    found = {}
+    for c in sorted(glob.glob("/dev/gpiochip*")):
+        found.setdefault(os.path.realpath(c), []).append(c)
+    detect = {}
+    if shutil.which("gpiodetect"):
+        ok, text = run_bounded(["gpiodetect"], bound)
+        if ok:
+            for line in text.splitlines():
+                parts = line.split()
+                if len(parts) >= 3 and parts[1].startswith("["):
+                    detect[parts[0]] = {"label": parts[1].strip("[]"), "ngpio": parts[2].strip("(")}
     detail = {}
-    for c in chips:
-        name = os.path.basename(c)
-        info = {"readable": os.access(c, os.R_OK), "label": None, "ngpio": None}
+    for real, names in sorted(found.items()):
+        name = os.path.basename(real)
+        info = {"names": [os.path.basename(n) for n in names], "readable": os.access(real, os.R_OK),
+                "label": None, "ngpio": None}
+        info.update(detect.get(name, {}))
         for base in ("/sys/bus/gpio/devices/%s" % name, "/sys/class/gpio/%s" % name):
             info["label"] = info["label"] or read(base + "/label")
             info["ngpio"] = info["ngpio"] or read(base + "/ngpio")
-        detail[c] = info
-    return {"gpiochips": chips, "detail": detail}
+        detail[real] = info
+    return {"gpiochips": sorted(found), "detail": detail}
 
 
 def section_uart(bound):
@@ -241,10 +256,18 @@ def section_uart(bound):
     }
 
 
-def section_bluetooth():
+def section_bluetooth(bound):
+    """Which BLE features the onboard controller really has. Read-only management queries only:
+    `btmgmt phy` and `btmgmt advinfo`. Deliberately NOT `btmgmt info`, which prints the adapter's
+    address. On a Pi 4B, root: phy listed only LE1MTX/LE1MRX (no 2M, no Coded) and advinfo gave a
+    31-byte advertising limit (no extended advertising)."""
     ctl = sorted(os.listdir("/sys/class/bluetooth")) if os.path.isdir("/sys/class/bluetooth") else []
-    return {"controllers": ctl,
-            "note": "BLE 5 features (coded PHY, extended advertising) are NOT probed here"}
+    out = {"controllers": ctl, "btmgmt_phy": None, "btmgmt_advinfo": None}
+    if ctl and shutil.which("btmgmt"):
+        for key, sub in (("btmgmt_phy", "phy"), ("btmgmt_advinfo", "advinfo")):
+            ok, text = run_bounded(["btmgmt", sub], bound)
+            out[key] = text.splitlines()[:8] if ok else text
+    return out
 
 
 def section_libs():
@@ -292,9 +315,9 @@ def main():
     report["udev"] = udev
     report["usb"] = section_usb()
     report["nodes"] = section_nodes(bound, udev["run_udev_dir_exists"] and bool(udev["udevadm"]))
-    report["gpio"] = section_gpio()
+    report["gpio"] = section_gpio(bound)
     report["uart"] = section_uart(bound)
-    report["bluetooth"] = section_bluetooth()
+    report["bluetooth"] = section_bluetooth(bound)
     report["python_libs"] = section_libs()
     report["tools"] = section_tools(bound)
     json.dump(report, sys.stdout, indent=2, sort_keys=True)

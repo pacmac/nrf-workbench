@@ -101,11 +101,20 @@ links:
   dongle tool's `DONGLE_MARK` and serial name the same product, so it is almost certainly the
   dongle. **[probe + prior art; not run]**
 - **`pi-uart`:** the Pi's header UART (GPIO14 and 15 on the 40-pin header, usually `serial0`).
-  **[recalled]** Everything about it is unverified here and must be probed on a real Pi: which UART
-  `serial0` maps to on each model, whether the Bluetooth controller holds the better UART, whether
-  `enable_uart` is set, and whether a login `getty` is bound to it (it would fight for the port).
-  The header pins this uses are **claimed** and must be hidden from the GPIO pin layer
+  **Probed on the Pi 4B [verified, `probes.md`]:** `serial0` is `/soc/serial@7e215040` and `serial1`
+  is `/soc/serial@7e201000`; `cmdline.txt` has `console=serial0,115200`; `enable_uart` is unset; no
+  `serial0` node exists and no serial getty runs. So the header UART is **off, and the kernel
+  console would claim it the moment it is enabled** (the console must be removed from
+  `cmdline.txt` first). Which of the two addresses is the mini-UART and which the PL011, and that
+  the mini-UART's baud is tied to the core clock, are **[recalled]**.
+  **Proposal, not decided:** use a spare PL011 from the overlays that exist on this Pi (`uart2` to
+  `uart5`, GPIOs 0-1, 4-5, 8-9 or 12-13, **[verified: `dtoverlay -h`]**) rather than the header's
+  GPIO14 and 15. It leaves both the kernel console and the Bluetooth controller alone. Which pins
+  to wire is Peter's choice, because it is wiring.
+  The pins a link uses are **claimed** and must be hidden from the GPIO pin layer
   (`nrf-workbench.md` section 5b refuses already-claimed Pi pins).
+- **The probe's `uart` section is now run on a Pi** and its "unrun" caveat no longer applies; what
+  is still unrun is any traffic on the link.
 - A Pi can also use a USB adapter; a PVE host cannot use the header. The backend is chosen by the
   link, and offered only where the host has it (capability, see `core.md`).
 

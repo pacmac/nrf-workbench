@@ -3,3 +3,4 @@ probes/
 __pycache__/
 *.pyc
 .venv/
+.venv-try/

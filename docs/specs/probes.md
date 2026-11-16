@@ -112,6 +112,46 @@ So everything Pi-specific is still unprobed.
 - **Still unsettled:** serial stability and the id sets across the mode change (needs the probe, or
   `observe_usb.py`, run once per mode); udev event delivery; everything on a Pi.
 
+## Results, the Pi (2026-11-16; serials and addresses not recorded)
+
+Run over SSH on the new Pi, in `/usr/share/pac/nrf-workbench`. A Raspberry Pi 4 Model B Rev 1.4,
+aarch64, kernel `6.18.50+rpt-rpi-v8`, Debian 13, system Python 3.13.5, user root, udev present,
+lock directory writable.
+
+- **Both devices are plugged into the Pi's USB hub and seen at every level:** the RAK4631 in app
+  mode (`239a:8029`) and the debug dongle (`1a86:55d4`) appear in sysfs, udev, by-id, by-path and as
+  tty nodes. These are the same two devices as on the Proxmox host, moved.
+- **The device numbering swapped between hosts.** On the Proxmox host the dongle was `ttyACM0` and
+  the board `ttyACM1`; on the Pi the board is `ttyACM0` and the dongle `ttyACM1`. Same two devices,
+  numbered by plug order. Direct evidence for "never open by a `/dev` name". The hub-port keys
+  (`ID_PATH` ending `usb-0:1.3:1.0` for the board, `usb-0:1.1:1.0` for the dongle) differ from the
+  Proxmox host's, so slot keys are per host. Two `by-path` names per node again (`usb` and
+  `usbv2`).
+- **Only "plugged in" is known.** Whether the dongle is wired to the RAK's debug UART, with which
+  wires, is not stated and not probed; nothing was sent to either device.
+- **GPIO:** `gpiochip0` is `pinctrl-bcm2711` (58 lines) and `gpiochip1` is `raspberrypi-exp-gpio`
+  (8 lines). The probe's glob also listed `gpiochip4`, but `gpiodetect` reports two chips, so that
+  path is an alias; probe version 4 dedupes by real path and reads labels from `gpiodetect`.
+  `/dev/mem` is readable and writable as root, and this host really is a Pi. The Python
+  `gpiod` is **2.2.0** and `gpioinfo` **2.2.1**, so the libgpiod **v2** API is what is present.
+- **UART:** the device tree aliases `serial0` to `/soc/serial@7e215040` and `serial1` to
+  `/soc/serial@7e201000`. `cmdline.txt` carries `console=serial0,115200`, `config.txt` has no
+  `enable_uart`, no `serial0` node exists, and no serial getty runs. So the header UART is
+  **disabled today, and the kernel console would claim it if enabled.** The overlays `uart2` to
+  `uart5` exist and give a spare UART each on GPIOs 0-1, 4-5, 8-9 and 12-13 (RTS and CTS on the
+  next two), BCM2711 only **[verified: `dtoverlay -h`]**. See `console.md`.
+- **Bluetooth, the onboard controller (`hci0`), verified:** `btmgmt phy` lists only `LE1MTX` and
+  `LE1MRX`, so **no LE 2M and no LE Coded PHY**; `btmgmt advinfo` gives a **31-byte** advertising
+  limit and no extended-advertising flags. It supports `le`, `advertising`, `secure-conn` and
+  `phy-configuration`. It is a BLE 4.x-class radio. This settles the brief's open question and
+  backs the decision for a dedicated nRF52840 radio.
+- **Tools and libraries on the Pi:** `bluetoothctl` 5.82, `btmgmt`, `hciconfig` and `gpioinfo`
+  present; no `pio`, `adafruit-nrfutil`, `nrfutil`, `openocd` or `pyocd`; Python libraries `gpiod`
+  and `PyYAML` only.
+- **Not yet run on the Pi:** `try_stack.sh` (the first attempt was stopped because the clone was in
+  the wrong folder; the script now builds its scratch venv inside the checkout, not `/tmp`), and any
+  mode change for serial stability.
+
 ## How results come back
 
 The repo is public and a report holds hostnames, serial numbers and USB paths, so **reports are

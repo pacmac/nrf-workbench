@@ -5,13 +5,16 @@
 # do websockets work. A failed install is itself the answer (e.g. the host's Python is older than
 # the SDK's 3.10 floor), so each step is reported and the script carries on to the next.
 #
-# Touches nothing outside a mktemp directory, which is removed on exit. Needs the network for pip.
+# Touches nothing outside a scratch venv inside this checkout, removed on exit. Needs the network.
 # The bound on a hung download is the human's Ctrl-C; pip applies its own retry limits.
 #
 # The pins are the versions verified TOGETHER on x86_64 / CPython 3.13 (2026-11-16).
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
-tmp=$(mktemp -d)
+# The scratch venv lives INSIDE this checkout, not in /tmp: on Peter's hosts /usr/share/pac is the
+# working and install folder. It is gitignored and removed on exit.
+tmp="$here/../.venv-try"
+rm -rf "$tmp"; mkdir -p "$tmp"
 trap 'rm -rf "$tmp"' EXIT
 
 echo "host: $(uname -m), $(python3 --version 2>&1)"

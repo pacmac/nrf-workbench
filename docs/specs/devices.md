@@ -276,6 +276,12 @@ safety rules, so SWD and USB flashing cannot diverge.
   equal to the sysfs serial and `ID_PATH` `pci-0000:0d:00.0-usb-0:3:1.0` as a hub-port slot key.
   So the tty-link and by-id resolvers both work there and the join by `major:minor` is real. Two
   `by-path` names for one node means a slot key must be normalised, not compared as a string.
+- **Numbering is not stable across hosts, measured.** The same two devices (the board and the
+  debug dongle) were `ttyACM1` and `ttyACM0` on the Proxmox host and `ttyACM0` and `ttyACM1` on
+  the Pi, numbered by plug order. The hub-port keys differ per host too (the Pi's end
+  `usb-0:1.3:1.0` and `usb-0:1.1:1.0`, behind the Pi's own USB hub). So **identity is the serial
+  and the ids; the node number and the hub-port key are both host-local outputs**, and a slot is a
+  per-host mapping from a hub-port key to a label, learned on each host. **[verified, `probes.md`]**
 - **`unrecognised` is not hypothetical.** The same host has `/dev/ttyUSB0` as a non-character
   entry (`major:minor` `0:0`, no udev properties), most likely a regular file created by something
   that wrote to a path before a device existed. The state table's refusal for "a node that is not a
