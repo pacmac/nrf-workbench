@@ -1,0 +1,36 @@
+{
+  "_comment": "Feature manifest read by the stdlib-only installer, so JSON and not YAML. Each pin is the version VERIFIED to install and run; change one only when re-verified (docs/specs/install.md).",
+  "pins_verified": "service stack: x86_64 CPython 3.13 ran the smoke tests, aarch64 wheels resolved for CPython 3.10/3.11/3.13 (docs/specs/api.md); PyYAML, pyserial, click, ecdsa, platformio resolved for aarch64 cp313 on 2026-11-16; adafruit-nrfutil builds from source (no wheel on PyPI) and ran on x86_64 3.13 only",
+  "default": ["core", "flash", "console"],
+  "features": {
+    "core": {
+      "summary": "the virtual environment and the pinned service stack",
+      "pip": ["mcp==2.3.0", "uvicorn==0.54.0", "websockets==17.4", "starlette==1.10.0", "PyYAML==6.0.3"],
+      "verify": {
+        "imports": ["mcp", "starlette", "uvicorn", "websockets", "yaml"],
+        "smoke": ["scripts/smoke_mcp_dynamic.py", "scripts/smoke_ws.py"]
+      }
+    },
+    "flash": {
+      "summary": "write a prebuilt DFU zip (adafruit-nrfutil, built from source: pure Python, no compiler)",
+      "needs": ["core"],
+      "pip": ["adafruit-nrfutil==0.5.3.post16"],
+      "verify": {"commands": [["adafruit-nrfutil", "version"]]}
+    },
+    "console": {
+      "summary": "the debug-link console",
+      "needs": ["core"],
+      "pip": ["pyserial==3.5"],
+      "verify": {"imports": ["serial"]}
+    },
+    "build": {
+      "summary": "PlatformIO, to build firmware (its toolchain downloads on first build; the size is not measured)",
+      "needs": ["core"],
+      "pip": ["platformio==6.2.0"],
+      "verify": {"commands": [["pio", "--version"]]}
+    },
+    "swd": {"summary": "SWD programming and debug", "status": "later"},
+    "ble": {"summary": "BLE scan, GATT and DFU", "status": "later"},
+    "gpio": {"summary": "pin I/O, only where the device-tree model says Raspberry Pi", "status": "later"}
+  }
+}

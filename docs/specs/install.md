@@ -62,9 +62,16 @@ Area: `install` (tool). Files: `install/` (the installer and its feature manifes
 ## Files this spec allows
 
 The only files its build task may create: `install/install.sh` (the POSIX bootstrap),
-`install/install.py` (the installer), `install/features.yaml` (the feature manifest),
-`tests/install/**` (tests and the simulated-absence harness), and a top-level `README.md` that
-carries the one-liner and the careful download-then-read path.
+`install/install.py` (the thin entry point), `install/nrfwb_install/*.py` (the installer, split by
+responsibility: `ui`, `host`, `prefix`, `features`, `plan`, `apply`, `verify`, and `cli` for the
+orchestration),
+`install/features.json` (the feature manifest), `tests/install/**` (tests and the
+simulated-absence harness), and a top-level `README.md` that carries the one-liner and the careful
+download-then-read path.
+
+**The manifest is JSON, not YAML** (this corrects the first draft, which said `features.yaml`).
+The installer is stdlib-only because it must run before anything is installed, and the standard
+library has no YAML parser; PyYAML is one of the things being installed.
 
 ## TOOL what it is
 
