@@ -248,6 +248,109 @@ class Touching(Base):
         other.release()
 
 
+class NeverTouchTwice(Base):
+    """Peter, 2026-11-16: a second call must never touch a board already in DFU. The cases: after a
+    success, after a timeout, after a failure, with no readable enumeration, with a broken ledger."""
+
+    def ledger_path(self):
+        return self.lock + ".touches.json"
+
+    def reenumerate_to_bootloader(self):
+        self.t.unplug("1-3")
+        self.t.bootloader_board()
+
+    def test_called_again_after_success_touches_nothing(self):
+        self.attach_app()
+        touch = Touch(on_touch=self.reenumerate_to_bootloader)
+        _, first = self.go(touch=touch)
+        self.assertEqual(first.cls, "ok")
+        _, second = self.go(touch=touch)
+        self.assertEqual((second.cls, second.code), ("ok", "ok"))
+        self.assertTrue(second.data.get("already_in_bootloader"))
+        self.assertEqual(len(touch.calls), 1, "the second call must not touch a board already in the bootloader")
+
+    def test_a_second_call_after_a_timeout_is_refused_not_retried(self):
+        self.attach_app()
+        touch = Touch()                                           # the board never re-enumerates
+        _, first = self.go(touch=touch, watcher=FakeWatcher(reachable=False))
+        self.assertEqual(first.code, "bootloader_not_reached")
+        _, second = self.go(touch=touch, watcher=FakeWatcher(reachable=False))
+        self.assertEqual((second.cls, second.code), ("refused", "touch_pending"), second.to_json())
+        self.assertEqual(len(touch.calls), 1, "a retry on the same enumeration is a second reset")
+
+    def test_allowed_again_once_the_board_has_re_enumerated(self):
+        self.attach_app()
+        touch = Touch()
+        self.go(touch=touch, watcher=FakeWatcher(reachable=False))
+        self.t.unplug("1-3")
+        self.t.app_board()                                        # a NEW enumeration: the earlier one resolved
+        touch.on_touch = self.reenumerate_to_bootloader
+        _, third = self.go(touch=touch)
+        self.assertEqual(third.cls, "ok", third.to_json())
+        self.assertEqual(len(touch.calls), 2)
+
+    def test_a_failed_touch_blocks_the_next_one(self):
+        self.attach_app()
+        touch = Touch(raises=OSError("device busy"))
+        _, first = self.go(touch=touch)
+        self.assertEqual(first.code, "touch_failed")
+        import json
+        with open(self.ledger_path()) as fh:
+            self.assertEqual(json.load(fh)[SERIAL]["outcome"], "touch_failed", "the ledger must say what happened")
+        _, second = self.go(touch=touch)
+        self.assertEqual((second.cls, second.code), ("refused", "touch_pending"))
+        self.assertEqual(second.evidence["earlier"]["outcome"], "touch_failed")
+        self.assertEqual(len(touch.calls), 1)
+
+    def test_an_unreadable_enumeration_blocks_a_repeat(self):
+        self.t.node("ttyACM0", 166, 0)
+        self.t.app_board(devnum="")                               # the host exposes no devnum
+        touch = Touch()
+        self.go(touch=touch, watcher=FakeWatcher(reachable=False))
+        _, second = self.go(touch=touch, watcher=FakeWatcher(reachable=False))
+        self.assertEqual(second.code, "touch_pending")
+        self.assertIn("cannot be read", second.message)
+        self.assertEqual(len(touch.calls), 1)
+
+    def test_a_corrupt_ledger_fails_closed(self):
+        self.attach_app()
+        with open(self.ledger_path(), "w") as fh:
+            fh.write("{ not json")
+        touch, r = self.go()
+        self.assertEqual((r.cls, r.code), ("refused", "touch_pending"))
+        self.assertEqual(touch.calls, [], "an untrustworthy ledger must block, never allow")
+
+    def test_the_ledger_is_written_before_the_touch(self):
+        self.attach_app()
+        seen = []
+
+        def at_touch():
+            import json
+            with open(self.ledger_path()) as fh:
+                seen.append(json.load(fh)[SERIAL]["outcome"])
+            self.reenumerate_to_bootloader()
+
+        self.go(touch=Touch(on_touch=at_touch))
+        self.assertEqual(seen, ["touching"], "write-ahead: the record must exist when the touch is made")
+
+    def test_forgetting_a_touch_is_explicit_and_touches_nothing(self):
+        self.attach_app()
+        touch = Touch()
+        self.go(touch=touch, watcher=FakeWatcher(reachable=False))
+        self.assertEqual(self.go(touch=touch)[1].code, "touch_pending")
+        import io
+        import contextlib
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = entry.main(["--profile", os.path.join(ROOT, "profiles", "rak4631.yaml"), "--serial", SERIAL,
+                             "--bound-s", "1", "--lock", self.lock, "--forget-touch"])
+        self.assertEqual(rc, 0)
+        self.assertIn("nothing was touched", out.getvalue())
+        self.assertEqual(len(touch.calls), 1, "forgetting must not touch")
+        touch.on_touch = self.reenumerate_to_bootloader
+        self.assertEqual(self.go(touch=touch)[1].cls, "ok", "after an explicit forget a touch is allowed again")
+
+
 class OnlyEntryTouches(unittest.TestCase):
     def test_no_other_module_opens_a_port_at_the_touch_baud_or_imports_a_serial_library(self):
         # Fragments, so this file does not trip the host's port guard itself.

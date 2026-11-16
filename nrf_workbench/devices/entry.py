@@ -33,6 +33,7 @@ import time
 
 from ..core.result import Result
 from ..guards import checks
+from ..guards.ledger import TouchLedger
 from ..guards.lock import DEFAULT_PATH, HostLock, LockHeld, LockVoid
 from . import identity
 from . import profile as profilemod
@@ -53,7 +54,7 @@ def _brief(dev):
 
 
 def enter_bootloader(prof, serial_no, bound_s, units=None, unit=None, sysfs="/sys", devroot="/dev",
-                     proc="/proc", lock_path=DEFAULT_PATH, touch=default_touch, watcher=None):
+                     proc="/proc", lock_path=DEFAULT_PATH, touch=default_touch, watcher=None, ledger=None):
     """Returns a Result. `touch` and `watcher` are injectable so the guards can be proven without
     hardware; the real defaults are the touch above and the kernel uevent socket."""
     if prof["bootloader"].get("entry") != "1200-baud-touch":
@@ -73,12 +74,13 @@ def enter_bootloader(prof, serial_no, bound_s, units=None, unit=None, sysfs="/sy
     except LockVoid as exc:
         return Result.refused("lock_void", str(exc))
     try:
-        return _enter(prof, serial_no, bound_s, units, unit, sysfs, devroot, proc, touch, watcher)
+        ledger = ledger if ledger is not None else TouchLedger(lock_path + ".touches.json")
+        return _enter(prof, serial_no, bound_s, units, unit, sysfs, devroot, proc, touch, watcher, ledger)
     finally:
         lock.release()
 
 
-def _enter(prof, serial_no, bound_s, units, unit, sysfs, devroot, proc, touch, watcher):
+def _enter(prof, serial_no, bound_s, units, unit, sysfs, devroot, proc, touch, watcher, ledger):
     inv = identity.inventory(sysfs)
     st = identity.state(prof, serial_no, inv)
     mine = [d for d in identity.board_devices(prof, inv) if d["serial"] == serial_no]
@@ -99,6 +101,11 @@ def _enter(prof, serial_no, bound_s, units, unit, sysfs, devroot, proc, touch, w
                     checks.return_path_declared(unit)):
         if refusal is not None:
             return refusal
+
+    # Never touch the same enumeration twice (docs/specs/devices.md, "never touching it twice").
+    pending = ledger.blocks(serial_no, dev["enum"])
+    if pending is not None:
+        return pending
 
     node, why = identity.node_for(dev, devroot)
     if node is None:
@@ -122,16 +129,24 @@ def _enter(prof, serial_no, bound_s, units, unit, sysfs, devroot, proc, touch, w
     watcher = watcher if watcher is not None else UeventWatcher()
     watcher.open()                    # open the event source BEFORE the touch, so no event is missed
     try:
+        # Write-ahead: the ledger records the touch BEFORE it is made, so a crash cannot lose it.
+        try:
+            ledger.record(serial_no, dev["enum"], "touching")
+        except OSError as exc:
+            return Result.refused("touch_pending", "the touch ledger cannot be written, so no touch is made",
+                                  {"reason": str(exc)})
         t0 = time.monotonic()
         try:
             touch(node)               # exactly one touch. Never retried.
         except Exception as exc:      # the touch itself failed: nothing is known to have changed
+            ledger.record(serial_no, dev["enum"], "touch_failed")
             return Result.failed("touch_failed", "the touch could not be performed: %r" % (exc,),
                                  {"device": _brief(dev)})
         res = watcher.wait(reached, bound_s)
     finally:
         watcher.close()
 
+    ledger.record(serial_no, dev["enum"], "ok" if res.reached else "bootloader_not_reached")
     if not res.reached:
         return Result.failed("bootloader_not_reached",
                              "the touch was made once, and no bootloader appeared within the bound",
@@ -153,11 +168,20 @@ def main(argv=None):
     p.add_argument("--serial", required=True, help="the serial of the board to act on")
     p.add_argument("--bound-s", required=True, type=float, dest="bound_s",
                    help="REQUIRED ceiling in seconds for the handover; derive it from a measurement")
-    p.add_argument("--return-package", dest="return_package", required=True,
-                   help="the DFU zip that brings this unit back (its declared return path)")
+    p.add_argument("--return-package", dest="return_package",
+                   help="the DFU zip that brings this unit back (its declared return path); required")
     p.add_argument("--protected", action="store_true", help="treat this unit as protected (it will refuse)")
     p.add_argument("--lock", default=DEFAULT_PATH, help="the host lock file")
+    p.add_argument("--forget-touch", action="store_true", dest="forget_touch",
+                   help="clear the touch ledger for this serial and exit WITHOUT touching; only after "
+                        "you have confirmed by other means that the board is not mid-transition")
     a = p.parse_args(argv)
+    if a.forget_touch:
+        existed = TouchLedger(a.lock + ".touches.json").forget(a.serial)
+        print(Result.success({"forgotten": a.serial, "had_a_record": existed}, "nothing was touched").to_json())
+        return 0
+    if not a.return_package:
+        p.error("--return-package is required: a unit must declare how it comes back")
     prof = profilemod.load(a.profile)
     units = {a.serial: {"protected": a.protected,
                         "return_path": {"method": "flash", "package": a.return_package}}}

@@ -39,7 +39,7 @@ The files the entry-method build task may create, and nothing else:
 `nrf_workbench/__init__.py`; `nrf_workbench/core/__init__.py`, `core/result.py`;
 `nrf_workbench/devices/__init__.py`, `devices/profile.py`, `devices/identity.py`,
 `devices/events.py`, `devices/entry.py`; `nrf_workbench/guards/__init__.py`, `guards/lock.py`,
-`guards/checks.py`; `profiles/rak4631.yaml`; `tests/devices/`, `tests/guards/`, `tests/core/`.
+`guards/checks.py`, `guards/ledger.py`; `profiles/rak4631.yaml`; `tests/devices/`, `tests/guards/`, `tests/core/`.
 
 ## TOOL what a device is
 
@@ -244,6 +244,57 @@ so it lives in that file's header with this record (the precedent is `rak-dongle
 It is never placed on a command, and it does not cover any other file; each further file that trips
 the hook is reported and needs its own yes. The code names no port path anywhere: the node is found
 by identity, so no command that runs it contains one.
+
+### How a board leaves the bootloader, and never touching it twice (researched 2026-11-16)
+
+Peter asked for two things: that a second call must never touch a board already in DFU ("I recall
+that can brick it / make it unresponsive"), and to search the net for a programmatic exit. The
+answers below are read from the bootloader's own source (`Adafruit_nRF52_Bootloader`, `master`,
+fetched that day), the family the RAK4631 uses. **[unknown]**: the RAK's build may differ from
+`master`.
+
+**The exit, from the source:**
+
+1. The serial DFU protocol has four packet types only: START, INIT, DATA and STOP_DATA
+   (`dfu_transport_serial.c`). There is **no reset, exit or boot-the-app command.**
+2. **A START packet erases the application** (`dfu_start_pkt_handle` calls
+   `dfu_prepare_func_app_erase`), so "start an update and abort it", which a forum thread suggests,
+   is not an exit: it leaves an erased app and the bootloader waiting. Never send DFU packets unless
+   a complete valid image follows.
+3. **Every reset runs the boot decision (`check_dfu_mode`).** With a valid app, no DFU magic in
+   `GPREGRET`, no double-reset marker and no DFU button, it starts the app. So the exit IS a reset.
+   A reset can come from a RESET pin, SWD, a power cycle, **or a completed flash**: STOP_DATA
+   validates and activates the image, the transfer ends and the board starts the app.
+4. A timeout exists only for a board entered by the application's single-tap, UF2 or serial-only
+   magic, and **only while USB has not enumerated** (3000 ms, cancelled once USB enumerates:
+   `bootloader_dfu_start(.., 3000, true)`). On USB power the board stays. A board entered by double
+   reset has no timeout. This matches the 60 s passive watch in which the RAK did not leave.
+5. `DFU_MAGIC_SKIP` in `GPREGRET` makes the next boot skip DFU, but only the application or SWD
+   can write it. The ESPHome and Zephyr "reboot" behaviour found in a search is application-side.
+
+**So with USB only, the one software exit is a completed flash of a valid package.** A reset line,
+an SWD probe or a power cycle would also work; none exists on this bench. That is why
+`no_return_path` exists.
+
+**The "brick" worry, honestly:** the bootloader's sources contain no handler for a baud change or
+line state, so a second touch against a board already in the bootloader changes nothing there. **I
+could not confirm a brick from the source.** What the source does show is that an interrupted
+transfer leaves an invalid or erased application with the bootloader still alive (recoverable by
+another flash). The rule stands regardless, because a repeat touch is unnecessary risk and brief
+rule 2 says exactly one transition.
+
+**What prevents a second touch (all tested):**
+
+- A board **already in the bootloader** is never touched: the state is read first and the call
+  returns `already_in_bootloader`.
+- **A touch ledger** records, before the touch is made (write-ahead), the board's serial and its
+  **USB enumeration** (`busnum:devnum`, which changes on every re-enumeration). A later call for
+  the same serial is refused with **`touch_pending`** while the board is still on that same
+  enumeration, because a second touch then would be a second reset in quick succession (the
+  double-reset detector). It is allowed again once the board has re-enumerated, which is
+  evidence the first transition resolved. If the enumeration cannot be read, it is refused, never
+  guessed. A touch that fails or times out also blocks until then. Clearing the ledger is an
+  explicit human decision (`--forget-touch`), never automatic.
 
 ## TOOL protected
 

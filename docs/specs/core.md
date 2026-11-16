@@ -102,6 +102,7 @@ returned, never a tail. **[brief]**
 | `dtr_rts_unsafe` | refused | DTR or RTS reach the DUT's reset or boot line | the link |
 | `no_reply` | failed | a sent verb got no reply within the caller's bound | the bound, the elapsed time |
 | `no_return_path` | refused | the unit declares no way back from the bootloader (or the declared package is missing or not a DFU zip), so it will not be sent there (`devices.md`) | the allowed methods, or the package |
+| `touch_pending` | refused | this board's current USB enumeration was already touched once and it has not re-enumerated since (or the enumeration cannot be read), so a second touch would be a second reset in quick succession (`devices.md`) | the serial, the enumeration, the earlier outcome |
 | `touch_failed` | failed | the bootloader touch could not be performed (the one attempt failed); nothing is known to have changed | the error |
 | `bootloader_not_reached` | failed | the touch was made once and no bootloader appeared within the caller's bound | the bound, the elapsed time, the event source |
 | `port_in_use` | refused | the service's listen port is held by another process (`api.md`) | the holder, or "not visible to this user" |

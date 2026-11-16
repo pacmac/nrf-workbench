@@ -24,14 +24,22 @@ class Tree(object):
         self.proc = os.path.join(self.root, "proc")
         for d in (os.path.join(self.sysfs, "bus", "usb", "devices"), self.dev, self.proc):
             os.makedirs(d)
+        self._devnum = 4                      # the kernel gives every (re-)enumeration a NEW number
 
     def close(self):
         shutil.rmtree(self.root, ignore_errors=True)
 
     # --- USB devices as sysfs shows them -----------------------------------------------------
-    def usb(self, name, ids, product, serial=SERIAL, manufacturer="RAKwireless", tty=None, majmin=None):
+    def usb(self, name, ids, product, serial=SERIAL, manufacturer="RAKwireless", tty=None, majmin=None,
+            devnum=None):
         d = os.path.join(self.sysfs, "bus", "usb", "devices", name)
         os.makedirs(d, exist_ok=True)
+        if devnum != "":                      # "" simulates a host that does not expose it
+            self._devnum += 1
+            with open(os.path.join(d, "busnum"), "w") as fh:
+                fh.write("1\n")
+            with open(os.path.join(d, "devnum"), "w") as fh:
+                fh.write("%s\n" % (devnum or self._devnum))
         for fname, val in (("idVendor", ids[0]), ("idProduct", ids[1]), ("product", product),
                            ("manufacturer", manufacturer)):
             with open(os.path.join(d, fname), "w") as fh:
@@ -49,8 +57,8 @@ class Tree(object):
     def unplug(self, name):
         shutil.rmtree(os.path.join(self.sysfs, "bus", "usb", "devices", name), ignore_errors=True)
 
-    def app_board(self, name="1-3", tty="ttyACM0", majmin="166:0", serial=SERIAL):
-        return self.usb(name, APP_ID, "WisCore RAK4631 Board", serial=serial, tty=tty, majmin=majmin)
+    def app_board(self, name="1-3", tty="ttyACM0", majmin="166:0", serial=SERIAL, devnum=None):
+        return self.usb(name, APP_ID, "WisCore RAK4631 Board", serial=serial, tty=tty, majmin=majmin, devnum=devnum)
 
     def bootloader_board(self, name="1-3", tty="ttyACM0", majmin="166:0", serial=SERIAL):
         return self.usb(name, BOOT_ID, "WisBlock RAK4631", serial=serial, tty=tty, majmin=majmin)

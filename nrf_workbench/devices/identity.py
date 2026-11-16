@@ -32,10 +32,14 @@ def inventory(sysfs="/sys"):
         vid, pid = _read(os.path.join(path, "idVendor")), _read(os.path.join(path, "idProduct"))
         if not vid or not pid:
             continue
+        bus, num = _read(os.path.join(path, "busnum")), _read(os.path.join(path, "devnum"))
         out.append({"name": name, "path": path, "id": "%s:%s" % (vid, pid),
                     "manufacturer": _read(os.path.join(path, "manufacturer")),
                     "product": _read(os.path.join(path, "product")),
-                    "serial": _read(os.path.join(path, "serial"))})
+                    "serial": _read(os.path.join(path, "serial")),
+                    # busnum:devnum changes on EVERY re-enumeration, so it tells one appearance of a
+                    # device from the next. None if the host does not expose it (never guessed).
+                    "enum": "%s:%s" % (bus, num) if bus and num else None})
     return out
 
 

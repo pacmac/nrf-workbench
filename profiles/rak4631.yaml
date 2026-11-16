@@ -7,8 +7,9 @@ chip: nrf52840
 
 # One id SET per mode. The same board shows different ids and product strings in each mode.
 # Sources: the app id and the bootloader id 239a:0029 are from lsusb (Peter, 2026-11-16) and the
-# probes; 239a:002a is from the brief and is kept in the set; 239a:802a is deliberately NOT listed
-# (its role is unknown).
+# probes. 239a:002a was OBSERVED on this bench: after the software touch the unit on the Pi
+# enumerated as 239a:002a (2026-11-16), so both bootloader ids are real and stay in the set.
+# 239a:802a is deliberately NOT listed (its role is unknown).
 modes:
   app:
     ids: ["239a:8029"]
@@ -28,4 +29,6 @@ memory:
   softdevice: {name: S140, version: "6.1.1", fwid: 182}   # fwid 182 = S140 6.1.1 (brief)
 
 # null means UNKNOWN. It is set true or false only from a measurement taken across a mode change.
-serial_stable_across_modes: null
+# true: measured 2026-11-16 by enter_bootloader() on one unit on a Raspberry Pi 4B: the USB serial
+# was identical in the app (239a:8029) and the bootloader (239a:002a). n=1 unit, n=1 transition.
+serial_stable_across_modes: true
