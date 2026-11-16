@@ -337,6 +337,12 @@ safety rules, so SWD and USB flashing cannot diverge.
   node directory is the baseline there. The bare-metal Proxmox host has `/run/udev` and `udevadm`
   257, so udev is available there. **Event delivery itself is untested on both** (a mode change
   was not made). Still **[unknown]** on a Pi and a plain VM; probe, never assume.
+  **Dry run on the Pi, 2026-11-16 [verified]:** the product code read the board's identity from
+  sysfs (app mode, serial present, node joined by device number, held by nobody), passed the whole
+  guard chain, called a RECORDER in place of the touch exactly once (no port opened), and waited
+  1.004 s on the real kernel uevent socket against a 1.0 s bound before reporting
+  `bootloader_not_reached`. So the uevent socket **opens** on a bare-metal Pi as root; whether it
+  **delivers** the re-enumeration event is still unproven until a real mode change.
 - **Node resolver on the Proxmox host [verified by `probe_host.py`]:** the RAK4631 in app mode is
   `/dev/ttyACM1` (`166:1`), reachable by `/dev/serial/by-id/...<serial>-if00` and by two
   `by-path` names (`usb-0:3:1.0` and `usbv2-0:3:1.0`, the same node), with udev `ID_SERIAL_SHORT`
