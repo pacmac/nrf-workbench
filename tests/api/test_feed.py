@@ -54,6 +54,13 @@ def make_registry():
     r.add(Command("demo.refuse", "refuse", refuse), module="t")
     r.add(Command("demo.crash", "crash", crash), module="t")
     r.add(Command("demo.write", "write", lambda ctx: Result.success(), effect="write"), module="t")
+    r.add(Command("demo.typed", "typed", lambda ctx, n, ratio, dry: Result.success(),
+                  args=(Arg("n", "int"), Arg("ratio", "float"), Arg("dry", "bool"))), module="t")
+
+    def typed_crash(ctx, n):
+        raise RuntimeError("secret detail")
+
+    r.add(Command("demo.typedcrash", "typed crash", typed_crash, args=(Arg("n", "int"),)), module="t")
     return r
 
 
@@ -356,6 +363,32 @@ class ActivityRecording(Base):
             self.client.get("/api/demo/refuse")
         (e,) = self.entries()
         self.assertEqual(e["duration_s"], 2.5)
+
+    def test_the_arguments_recorded_are_the_typed_values_the_command_ran_with(self):
+        # A query string is text; the log must show what the command RAN with, not '7' and '2.5' and 'true'.
+        self.client.get("/api/demo/typed", params={"n": "7", "ratio": "2.5", "dry": "true"})
+        (e,) = self.entries()
+        self.assertEqual(e["args"], {"n": 7, "ratio": 2.5, "dry": True})
+        self.assertEqual([type(e["args"][k]) for k in ("n", "ratio", "dry")], [int, float, bool])
+
+    def test_a_crash_is_recorded_with_the_typed_arguments_too(self):
+        with self.assertLogs("nrf_workbench.api", level="ERROR"):
+            self.client.get("/api/demo/typedcrash", params={"n": "42"})
+        (e,) = self.entries()
+        self.assertEqual((e["class"], e["args"]), ("error", {"n": 42}))
+
+    def test_only_the_arguments_the_caller_sent_are_recorded_not_the_defaults_filled_in(self):
+        self.client.get("/api/demo/echo", params={"text": "hi"})          # api_key is optional and was not sent
+        self.assertEqual(self.entries()[0]["args"], {"text": "hi"})
+
+    def test_a_rejected_argument_is_recorded_as_the_caller_sent_it_so_the_mistake_can_be_seen(self):
+        self.client.get("/api/demo/typed", params={"n": "seven", "ratio": "1", "dry": "false"})
+        (e,) = self.entries()
+        self.assertEqual((e["class"], e["args"]), ("usage", {"n": "seven", "ratio": "1", "dry": "false"}))
+
+    def test_a_secret_is_still_redacted_when_the_typed_arguments_are_recorded(self):
+        self.client.get("/api/demo/echo", params={"text": "hi", "api_key": "SECRET-VALUE"})
+        self.assertEqual(self.entries()[0]["args"], {"text": "hi", "api_key": "***"})
 
     def test_a_bad_argument_is_recorded_as_usage(self):
         self.client.get("/api/demo/echo")                                  # missing text

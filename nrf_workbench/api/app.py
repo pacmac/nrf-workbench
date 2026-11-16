@@ -103,6 +103,11 @@ def build_app(registry, host, auth, capabilities, streams=None):
                     activity.record_usage(caller, command.name, {}, str(exc), time.monotonic() - started)
                 return _error(400, "usage", str(exc))
             ctx = Context(host, caller, body)
+            try:
+                typed = registry.validate(command, args, from_text)
+                recorded = dict((name, typed[name]) for name in args)    # what the caller SENT, typed: not query text
+            except UsageError:
+                recorded = args                                          # the call below raises the same error
             call = functools.partial(registry.call, command.name, args, ctx, capabilities, from_text)
             try:
                 result = await anyio.to_thread.run_sync(call)
@@ -115,11 +120,11 @@ def build_app(registry, host, auth, capabilities, streams=None):
             except Exception as exc:                    # a handler bug: say so, leak no traceback
                 log.exception("command %s raised", command.name)
                 if activity is not None:
-                    activity.record_error(caller, command.name, args, "the command raised %s" % type(exc).__name__,
+                    activity.record_error(caller, command.name, recorded, "the command raised %s" % type(exc).__name__,
                                           time.monotonic() - started)
                 return _error(500, "internal", "the command raised an unexpected error (%s)" % type(exc).__name__)
             if activity is not None:
-                activity.record(caller, command.name, args, result, time.monotonic() - started)
+                activity.record(caller, command.name, recorded, result, time.monotonic() - started)
             return JSONResponse(result.to_dict(), status_code=status.http_status(result) or 500)
 
         return endpoint
