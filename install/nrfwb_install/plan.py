@@ -1,8 +1,80 @@
 """Turn the choices into an ordered, printable plan. Pure: it changes nothing."""
 import json
 import os
+import pwd
 
 from . import MARKER
+
+UNIT_NAME = "nrf-workbench.service"
+SYSTEM_UNIT_DIR = "/etc/systemd/system"   # where `systemctl link` puts the link
+
+
+def unit_path(prefix):
+    return os.path.join(prefix, "systemd", UNIT_NAME)
+
+
+def unit_blocker(prefix):
+    """Why this folder cannot be written into a unit file, or None. `%` and `$` are escaped instead."""
+    if any(c in '"\\' or ord(c) < 32 or ord(c) == 127 for c in prefix):
+        return ("the install folder has a double quote, a backslash or a control character, which cannot be "
+                "written safely into a systemd unit; choose another folder")
+    return None
+
+
+def service_owner(prefix):
+    """The user the service runs as: the owner of the install folder, or the user running the installer
+    when the folder does not exist yet. None means root (no User= line). No user is invented."""
+    try:
+        uid = os.stat(prefix).st_uid
+    except OSError:
+        uid = os.geteuid()
+    if uid == 0:
+        return None
+    try:
+        return pwd.getpwuid(uid).pw_name
+    except KeyError:
+        return str(uid)      # systemd accepts a numeric User=
+
+
+def _esc(text):
+    """systemd expands % in every value and $ in ExecStart; both are doubled."""
+    return text.replace("%", "%%").replace("$", "$$")
+
+
+def unit_text(prefix, user, serial_group):
+    """The whole unit, derived in docs/specs/install.md ("the unit"). The service reads every setting
+    from config/host.yaml, so the command line names only that file."""
+    py = os.path.join(prefix, "venv", "bin", "python")
+    cfg = os.path.join(prefix, "config", "host.yaml")
+    lines = [
+        "[Unit]",
+        "Description=nrf-workbench service (dashboard and HTTP API)",
+        "Wants=network-online.target",
+        "After=network-online.target",
+        "",
+        "[Service]",
+        "Type=simple",
+        "WorkingDirectory=" + prefix.replace("%", "%%"),
+        'ExecStart="%s" -m nrf_workbench.service --config "%s"' % (_esc(py), _esc(cfg)),
+        "Restart=on-failure",
+        "RestartSec=2s",
+    ]
+    if user:
+        lines.append("User=" + user)
+        if serial_group:
+            lines.append("SupplementaryGroups=" + serial_group)
+    lines += ["", "[Install]", "WantedBy=multi-user.target", ""]
+    return "\n".join(lines)
+
+
+def link_state(prefix, link_dir=SYSTEM_UNIT_DIR):
+    """'absent', 'ours' (links to this prefix's unit) or 'other:<target>' (another install owns the name)."""
+    link = os.path.join(link_dir, UNIT_NAME)
+    if not os.path.lexists(link):
+        return "absent"
+    if os.path.realpath(link) == os.path.realpath(unit_path(prefix)):
+        return "ours"
+    return "other:" + os.path.realpath(link)
 
 
 def read_record(prefix):
@@ -84,7 +156,26 @@ def build(ctx):
                   "lines": ["missing: " + ", ".join(missing)] if missing else [],
                   "skip": not missing, "why_skip": "all present; never overwritten", "needs_person": False})
 
-    # 5. the record
+    # 5. the service unit, only where systemd is
+    if host["systemd"]:
+        bad = unit_blocker(prefix)
+        owner = service_owner(prefix)
+        state = link_state(prefix, ctx.get("link_dir", SYSTEM_UNIT_DIR))
+        if bad:
+            blockers.append(bad)
+        elif state.startswith("other:"):
+            blockers.append("the unit name %s is already linked to %s, another install; this one will not replace it. "
+                            "Remove that link first (systemctl disable --now %s; systemctl daemon-reload) if it is stale."
+                            % (UNIT_NAME, state[len("other:"):], UNIT_NAME))
+        lines = ["file: %s" % unit_path(prefix),
+                 "runs as: %s" % (owner or "root (the owner of the install folder)")]
+        if owner:
+            lines.append("serial group: %s" % (host["serial_group"] or "not written (no serial node here to read it from)"))
+        lines.append("then: systemctl link (root only; otherwise the command is printed). Not enabled or started unless you say so.")
+        steps.append({"id": "unit", "title": "Write the service unit and link it", "lines": lines,
+                      "skip": False, "needs_person": False})
+
+    # 6. the record
     steps.append({"id": "record", "title": "Write the install record %s/%s" % (prefix, MARKER),
                   "lines": ["features: " + ", ".join(ctx["features"])], "skip": False, "needs_person": False})
     return {"steps": steps, "blockers": blockers}

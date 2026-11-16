@@ -192,9 +192,65 @@ Where should the dashboard and API listen?
 - **The unit** lives at `<prefix>/systemd/nrf-workbench.service` and is linked into place
   (`systemctl link`), only where systemd is detected; elsewhere the installer prints how to run the
   service in the foreground. **Enabling it at boot and starting it are asked on a terminal**, and
-  `--yes` does neither, because starting a network service is not a safe default.
+  `--yes` does neither, because starting a network service is not a safe default. What the unit
+  contains, and why, is under "the unit".
 - **Verify** requests `/` on the chosen address once the service is running, and reads
   "not verified: the service was not started" when it was not.
+
+## TOOL the unit: what it contains, and who it runs as
+
+Peter, 2026-11-16: the dashboard is on the bench Pi's port 80 under a transient `systemd-run` unit
+that does not survive a reboot. The installer writes the permanent one. Every line is decided from
+what the service needs, not copied from the transient unit.
+
+- **One source of settings.** `ExecStart` is `<prefix>/venv/bin/python -m nrf_workbench.service
+  --config <prefix>/config/host.yaml` and nothing else. The listen address, the token file, the
+  firmware folder and the stream bounds live in `host.yaml` (`core.md`), so changing one never
+  means regenerating the unit and the two can never disagree. With a `host.yaml` that sets nothing
+  the service listens on `127.0.0.1:8080` only (`api.md`), which is the safe state a fresh install
+  starts in.
+- **Who it runs as: the owner of the install folder. No user is invented and none is assumed.**
+  The service needs to write `data/` and its lock, read `config/token` (mode 0600, so only its
+  owner can), and open serial nodes. The owner of `<prefix>` already holds the first two, because
+  the installer made them. The unit therefore says `User=<owner>` when the owner is not root, and
+  no `User=` line when it is root (the bench Pi's case, where the transient unit is root too).
+- **Serial access for a non-root owner is `SupplementaryGroups=<group>`**, with the group read
+  from an existing serial node (`any Linux host`), never named. With no serial node to read the
+  installer says it cannot tell and writes no group line; it does not guess `dialout`.
+- **`AmbientCapabilities=CAP_NET_BIND_SERVICE` is not written.** A non-root service needs it only
+  to bind below `ip_unprivileged_port_start`, and the installer does not yet know the port: the
+  listen choice ("where it listens") is its own task. A fresh install listens on 8080, which needs
+  nothing, and least privilege says a capability is added when a port needs it, not before. A
+  non-root service later pointed at port 80 fails to bind and systemd shows why; that is a visible
+  failure, not a silent one. **[gap: the listen task adds the capability beside the port check]**
+- **`Restart=on-failure`, `RestartSec=2s`.** A crash comes back in 2 s, the value the transient
+  unit has run with. systemd's default start limit is 5 starts in 10 s: five failures at 2 s
+  spacing take 8 s, inside the window, so a configuration error stops after five tries and stays
+  stopped instead of looping for ever.
+- **`After=` and `Wants=network-online.target`.** A `host.yaml` may name one address, which exists
+  only once the network is up. With `0.0.0.0` this costs nothing.
+- **`[Install] WantedBy=multi-user.target`**, the ordinary place for a service that is not a
+  desktop component. The installer does not enable it unless asked on a terminal.
+- **Quoting is a rule, not a hope.** `%` is doubled and `$` is doubled (systemd expands both in
+  `ExecStart`), and the path is double-quoted. A prefix containing `"`, `\` or a control character
+  is a blocker with the reason, never a malformed unit. (Whitespace is already refused by
+  "where it installs".)
+- **Linking is checked first.** There is one unit name per host. If `/etc/systemd/system/
+  nrf-workbench.service` already exists and does not point at this prefix, the installer says which
+  install owns it and does not replace it. Linking needs root; a non-root run prints the exact
+  `sudo systemctl link` command and applies nothing, like a system package.
+- **Starting the unit is the user's, and a running service is not disturbed.** Enable and start
+  are asked on a terminal and `--yes` does neither. If something already listens on the chosen port
+  (the transient unit, on the bench Pi), the service refuses to start and says what holds it
+  (`api.md`), so the installer never kills another process.
+- **Linking is part of the plan and is not a "needs a person" step**, because a link starts and
+  enables nothing and uninstall removes it (it stops and disables the unit first, and touches only a
+  link that points at its own prefix). **Verify** reads systemd's own answer
+  (`systemctl is-active`): `active` is PASS, anything else (`activating` is a restart loop) is FAIL,
+  and a unit nobody started reads "not verified: the service was not started".
+  **[gap: the HTTP request to `/` waits for the listen task, which is what records the address]**
+- **A second run rewrites the file only if its text changed**, so an upgrade does not touch the
+  mtime of a unit that is right, and reports `unchanged`.
 
 ## TOOL trust: running a remote script
 

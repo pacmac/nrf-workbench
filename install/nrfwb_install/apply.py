@@ -11,7 +11,7 @@ import sys
 import time
 
 from . import MARKER
-from .plan import venv_python
+from .plan import SYSTEM_UNIT_DIR, UNIT_NAME, link_state, service_owner, unit_path, unit_text, venv_python
 
 CONFIG_FILES = {
     "host.yaml": ("# nrf-workbench host configuration. Created by the installer, never overwritten.\n"
@@ -139,6 +139,78 @@ def write_config(prefix, log):
             with open(path, "w") as fh:
                 fh.write(text)
             log.stamp("created " + path)
+
+
+def write_unit(prefix, host, log):
+    """Write <prefix>/systemd/nrf-workbench.service. Returns 'created', 'updated' or 'unchanged'; a unit
+    that is already right is not rewritten, so its mtime does not move on an upgrade."""
+    text = unit_text(prefix, service_owner(prefix), host["serial_group"])
+    path = unit_path(prefix)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:
+        with open(path, "r") as fh:
+            have = fh.read()
+    except OSError:
+        have = None
+    if have == text:
+        return "unchanged"
+    with open(path, "w") as fh:
+        fh.write(text)
+    log.stamp("%s %s" % ("created" if have is None else "updated", path))
+    return "created" if have is None else "updated"
+
+
+def link_unit(prefix, host, log, ui, link_dir=SYSTEM_UNIT_DIR, run=run_logged):
+    """Link the unit into place. Returns True if it is linked afterwards. Linking needs root: otherwise the
+    exact command is printed and nothing is applied, like a system package."""
+    state = link_state(prefix, link_dir)
+    if state == "ours":
+        ui.say("      already linked")
+        return True
+    if state != "absent":
+        raise ApplyError("%s is linked to another install (%s); not replaced" % (UNIT_NAME, state[len("other:"):]))
+    cmd = ["systemctl", "link", unit_path(prefix)]
+    if not host["root"]:
+        ui.say("      not root, so not linking. As root run:  " + " ".join(cmd))
+        return False
+    rc, _out = run(cmd, log, ui)
+    if rc != 0:
+        raise ApplyError("`%s` failed (exit %d)" % (" ".join(cmd), rc))
+    return True
+
+
+def enable_and_start(host, log, ui, run=run_logged):
+    """Enable at boot and start now. Only ever called after a person said yes on a terminal. A failure to
+    start is shown, not raised: systemd's own answer is what verify then reports. Needs root."""
+    cmd = ["systemctl", "enable", "--now", UNIT_NAME]
+    if not host["root"]:
+        ui.say("      not root, so not enabling. As root run:  " + " ".join(cmd))
+        return False
+    rc, _out = run(cmd, log, ui)
+    if rc != 0:
+        ui.warn("      `%s` failed (exit %d); its output is above" % (" ".join(cmd), rc))
+    return True
+
+
+def unlink_unit(prefix, host, log, ui, link_dir=SYSTEM_UNIT_DIR, run=run_logged):
+    """Uninstall: stop, disable and unlink the unit, but only if it is THIS prefix's. Returns what happened."""
+    state = link_state(prefix, link_dir)
+    if state == "absent":
+        return "no unit was linked"
+    if state != "ours":
+        return "left alone: %s is linked to another install (%s)" % (UNIT_NAME, state[len("other:"):])
+    if not host["root"]:
+        return "not root, so the unit stays linked. As root run:  systemctl disable --now %s" % UNIT_NAME
+    rc, _out = run(["systemctl", "disable", "--now", UNIT_NAME], log, ui)
+    if rc != 0:
+        raise ApplyError("`systemctl disable --now %s` failed (exit %d)" % (UNIT_NAME, rc))
+    link = os.path.join(link_dir, UNIT_NAME)
+    if os.path.lexists(link):                 # does `disable` remove a linked unit? checked on a real host
+        os.remove(link)
+    rc, _out = run(["systemctl", "daemon-reload"], log, ui)
+    if rc != 0:
+        raise ApplyError("`systemctl daemon-reload` failed (exit %d)" % rc)
+    return "stopped, disabled and unlinked"
 
 
 def write_record(prefix, ctx, log):

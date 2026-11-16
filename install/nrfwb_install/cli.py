@@ -110,7 +110,10 @@ def do_uninstall(args, h, ui):
     if not ui.confirm("Remove the virtual environment?", safe=True):
         ui.say("nothing changed")
         return OK
-    for sub in ("venv", "venv.old"):
+    if h["systemd"]:
+        log = applymod.Log(prefix)
+        ui.say("service unit: " + applymod.unlink_unit(prefix, h, log, ui))
+    for sub in ("venv", "venv.old", "systemd"):
         shutil.rmtree(os.path.join(prefix, sub), ignore_errors=True)
     os.remove(os.path.join(prefix, MARKER))
     ui.say("removed. Configuration and logs were kept.")
@@ -144,7 +147,11 @@ def main(argv=None):
 
         ui.say("")
         ui.say("Plan for %s  (features: %s, commit: %s)" % (prefix, ", ".join(feats), args.commit))
-        notes = ["the systemd service unit is not part of this release"]
+        if h["systemd"]:
+            notes = []
+        else:
+            notes = ["no systemd here, so no service unit. Run the service in the foreground:  %s -m nrf_workbench.service "
+                     "--config %s/config/host.yaml" % (planmod.venv_python(prefix), prefix)]
         if args.commit == "unpinned":
             notes.append("the commit could not be pinned (the GitHub API was not reachable); this install is UNPINNED")
         for line in planmod.render(plan, notes):
@@ -183,6 +190,7 @@ def main(argv=None):
     log = applymod.Log(prefix)
     log.stamp("install started: commit %s, features %s" % (args.commit, ",".join(feats)))
     ui.say("")
+    linked, started = False, False
     try:
         for step in plan["steps"]:
             if step.get("skip"):
@@ -200,6 +208,9 @@ def main(argv=None):
                 applymod.build_venv(prefix, pin_list, args.wheelhouse, log, ui)
             elif sid == "config":
                 applymod.write_config(prefix, log)
+            elif sid == "unit":
+                ui.say("      unit file: " + applymod.write_unit(prefix, h, log))
+                linked = applymod.link_unit(prefix, h, log, ui)
             elif sid == "record":
                 applymod.write_record(prefix, ctx, log)
         if args.add_user:
@@ -215,12 +226,22 @@ def main(argv=None):
         ui.warn("Nothing is half-built; the log is %s. Fix the cause and run the same command again." % log.path)
         return FAILED
 
+    unit_started = None                       # None: this host has no unit step
+    if h["systemd"]:
+        unit_started = False
+        if linked and ui.terminal and ui.confirm("Enable the service at boot and start it now?"):
+            unit_started = applymod.enable_and_start(h, log, ui)
+        elif linked:
+            ui.say("The service is linked but not enabled or started. To do both:  systemctl enable --now %s" % planmod.UNIT_NAME)
+        else:
+            ui.say("The unit file is written but not linked. Link it as root:  systemctl link %s" % planmod.unit_path(prefix))
+
     if args.no_verify:
         ui.say("verify skipped (--no-verify): this install is NOT proven")
         return OK
     ui.say("")
     ui.say("Verify:")
-    results = verifymod.run(prefix, feats, manifest)
+    results = verifymod.run(prefix, feats, manifest, started=unit_started, unit_name=planmod.UNIT_NAME)
     failed = False
     for label, status, detail in results:
         ui.say("  %-8s %s" % (status.split(":")[0].upper() if status.startswith("not verified") else status, label))
@@ -235,5 +256,5 @@ def main(argv=None):
         ui.warn("The install is NOT proven: a check failed (above). The log is %s." % log.path)
         return FAILED
     ui.say("Installed and verified in %s." % prefix)
-    ui.say("Use it:  %s/venv/bin/python -m ...   (the service and CLI arrive with later releases)" % prefix)
+    ui.say("Run the service:  %s -m nrf_workbench.service --config %s/config/host.yaml" % (planmod.venv_python(prefix), prefix))
     return OK

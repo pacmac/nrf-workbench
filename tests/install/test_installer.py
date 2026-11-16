@@ -23,6 +23,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -36,7 +37,10 @@ TOOLS = ["id", "dirname", "mktemp", "rm", "mkdir", "tr", "cat", "tar", "gzip", "
          "python3", "uname", "sh"]
 
 sys.path.insert(0, os.path.join(ROOT, "install"))
+from nrfwb_install import apply as applymod  # noqa: E402
 from nrfwb_install import features, prefix  # noqa: E402
+from nrfwb_install import plan as planmod  # noqa: E402
+from nrfwb_install import verify as verifymod  # noqa: E402
 
 
 def make_bin(parent, hide=(), shims=None):
@@ -394,6 +398,231 @@ class Readme(unittest.TestCase):
                                     "README uses %s, which the installer does not have" % opt)
         self.assertGreater(checked, 5, "the README's installer commands were not found, so nothing was checked")
         self.assertIn("raw.githubusercontent.com/pacmac/nrf-workbench/main/install/install.sh", readme)
+
+
+class FakeUi(object):
+    terminal = False
+
+    def __init__(self):
+        self.said, self.warned = [], []
+
+    def say(self, text=""):
+        self.said.append(text)
+
+    def warn(self, text):
+        self.warned.append(text)
+
+
+class FakeRun(object):
+    """Stands in for run_logged: records the commands and returns a chosen exit code."""
+
+    def __init__(self, rc=0):
+        self.calls, self.rc = [], rc
+
+    def __call__(self, cmd, log, ui, **kw):
+        self.calls.append(list(cmd))
+        return self.rc, ""
+
+
+class ServiceUnit(unittest.TestCase):
+    """The permanent systemd unit (docs/specs/install.md, "the unit")."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix="unit")
+        self.addCleanup(shutil.rmtree, self.base, True)
+        self.pfx = os.path.join(self.base, "nrf-workbench")
+        os.makedirs(self.pfx)
+        self.links = os.path.join(self.base, "etc-systemd")
+        os.makedirs(self.links)
+        self.log = applymod.Log(self.pfx)
+        self.ui = FakeUi()
+        self.root = {"root": True, "serial_group": "dialout", "systemd": True}
+
+    def link(self, target):
+        os.symlink(target, os.path.join(self.links, planmod.UNIT_NAME))
+
+    # -- the text --
+    def test_root_unit_names_no_user_no_group_no_capability(self):
+        text = planmod.unit_text(self.pfx, None, "dialout")
+        self.assertIn('ExecStart="%s/venv/bin/python" -m nrf_workbench.service --config "%s/config/host.yaml"'
+                      % (self.pfx, self.pfx), text)
+        for absent in ("User=", "SupplementaryGroups=", "AmbientCapabilities"):
+            self.assertNotIn(absent, text)
+        self.assertIn("Restart=on-failure", text)
+        self.assertIn("RestartSec=2s", text)
+        self.assertIn("WantedBy=multi-user.target", text)
+
+    def test_non_root_owner_gets_user_and_the_serial_group_read_from_the_host(self):
+        text = planmod.unit_text(self.pfx, "bench", "plugdev")
+        self.assertIn("\nUser=bench\n", text)
+        self.assertIn("\nSupplementaryGroups=plugdev\n", text)
+
+    def test_non_root_with_no_serial_node_writes_no_group_line(self):
+        text = planmod.unit_text(self.pfx, "bench", None)
+        self.assertIn("\nUser=bench\n", text)
+        self.assertNotIn("SupplementaryGroups", text, "the group is never guessed")
+        self.assertNotIn("dialout", text)
+
+    def test_percent_and_dollar_are_doubled_and_quote_backslash_control_are_refused(self):
+        text = planmod.unit_text("/srv/a%b$c", None, None)
+        self.assertIn("/srv/a%%b$$c/venv/bin/python", text)
+        self.assertIn("\nWorkingDirectory=/srv/a%%b$c\n", text, "% is a specifier everywhere; $ is expanded only in ExecStart")
+        self.assertIsNone(planmod.unit_blocker("/srv/a%b$c"))
+        for bad in ('/srv/a"b', "/srv/a\\b", "/srv/a\nb", "/srv/a\x07b"):
+            self.assertIsNotNone(planmod.unit_blocker(bad), repr(bad))
+
+    @unittest.skipUnless(shutil.which("systemd-analyze"), "systemd-analyze is not on this host, so the unit is not machine-checked here")
+    def test_systemd_accepts_the_unit(self):
+        py = os.path.join(self.pfx, "venv", "bin", "python")
+        os.makedirs(os.path.dirname(py))
+        os.symlink(sys.executable, py)
+        path = applymod.write_unit(self.pfx, self.root, self.log) and planmod.unit_path(self.pfx)
+        p = subprocess.run(["systemd-analyze", "verify", path], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           universal_newlines=True)
+        ours = [ln for ln in p.stdout.splitlines() if planmod.UNIT_NAME in ln]
+        self.assertEqual(ours, [], p.stdout)
+
+    def test_service_owner(self):
+        with mock.patch.object(planmod.os, "stat", return_value=mock.Mock(st_uid=0)):
+            self.assertIsNone(planmod.service_owner(self.pfx), "root: no User= line")
+        with mock.patch.object(planmod.os, "stat", return_value=mock.Mock(st_uid=4242)), \
+                mock.patch.object(planmod.pwd, "getpwuid", side_effect=KeyError):
+            self.assertEqual(planmod.service_owner(self.pfx), "4242", "no name: systemd accepts the number")
+        with mock.patch.object(planmod.os, "stat", return_value=mock.Mock(st_uid=4242)), \
+                mock.patch.object(planmod.pwd, "getpwuid", return_value=mock.Mock(pw_name="bench")):
+            self.assertEqual(planmod.service_owner(self.pfx), "bench")
+
+    # -- the file --
+    def test_write_unit_created_then_unchanged_then_updated(self):
+        self.assertEqual(applymod.write_unit(self.pfx, self.root, self.log), "created")
+        path = planmod.unit_path(self.pfx)
+        os.utime(path, (1000, 1000))
+        self.assertEqual(applymod.write_unit(self.pfx, self.root, self.log), "unchanged")
+        self.assertEqual(os.stat(path).st_mtime, 1000, "a unit that is right is not rewritten")
+        with mock.patch.object(applymod, "service_owner", return_value="bench"):
+            self.assertEqual(applymod.write_unit(self.pfx, self.root, self.log), "updated")
+        with open(path) as fh:
+            self.assertIn("User=bench", fh.read())
+
+    # -- linking --
+    def test_link_state(self):
+        self.assertEqual(planmod.link_state(self.pfx, self.links), "absent")
+        applymod.write_unit(self.pfx, self.root, self.log)
+        self.link(planmod.unit_path(self.pfx))
+        self.assertEqual(planmod.link_state(self.pfx, self.links), "ours")
+        os.remove(os.path.join(self.links, planmod.UNIT_NAME))
+        self.link("/somewhere/else.service")
+        self.assertTrue(planmod.link_state(self.pfx, self.links).startswith("other:"))
+
+    def test_link_as_root_runs_systemctl_link_on_the_prefix_unit(self):
+        applymod.write_unit(self.pfx, self.root, self.log)
+        run = FakeRun()
+        self.assertTrue(applymod.link_unit(self.pfx, self.root, self.log, self.ui, self.links, run))
+        self.assertEqual(run.calls, [["systemctl", "link", planmod.unit_path(self.pfx)]])
+
+    def test_link_not_root_prints_the_command_and_applies_nothing(self):
+        run = FakeRun()
+        host = dict(self.root, root=False)
+        self.assertFalse(applymod.link_unit(self.pfx, host, self.log, self.ui, self.links, run))
+        self.assertEqual(run.calls, [])
+        self.assertIn("systemctl link " + planmod.unit_path(self.pfx), "\n".join(self.ui.said))
+
+    def test_link_already_ours_runs_nothing(self):
+        applymod.write_unit(self.pfx, self.root, self.log)
+        self.link(planmod.unit_path(self.pfx))
+        run = FakeRun()
+        self.assertTrue(applymod.link_unit(self.pfx, self.root, self.log, self.ui, self.links, run))
+        self.assertEqual(run.calls, [])
+
+    def test_link_owned_by_another_install_is_refused_not_replaced(self):
+        self.link("/other/install/systemd/nrf-workbench.service")
+        run = FakeRun()
+        with self.assertRaises(applymod.ApplyError) as cm:
+            applymod.link_unit(self.pfx, self.root, self.log, self.ui, self.links, run)
+        self.assertIn("/other/install", str(cm.exception))
+        self.assertEqual(run.calls, [])
+
+    def test_a_failed_link_is_an_error(self):
+        with self.assertRaises(applymod.ApplyError):
+            applymod.link_unit(self.pfx, self.root, self.log, self.ui, self.links, FakeRun(rc=1))
+
+    # -- enabling and starting --
+    def test_enable_and_start_needs_root_and_runs_exactly_enable_now(self):
+        run = FakeRun()
+        self.assertFalse(applymod.enable_and_start(dict(self.root, root=False), self.log, self.ui, run))
+        self.assertEqual(run.calls, [])
+        self.assertTrue(applymod.enable_and_start(self.root, self.log, self.ui, run))
+        self.assertEqual(run.calls, [["systemctl", "enable", "--now", planmod.UNIT_NAME]])
+
+    def test_a_failed_start_is_shown_and_left_to_verify(self):
+        self.assertTrue(applymod.enable_and_start(self.root, self.log, self.ui, FakeRun(rc=1)))
+        self.assertTrue(any("failed" in w for w in self.ui.warned))
+
+    # -- uninstall --
+    def test_unlink_ours_as_root_stops_disables_removes_and_reloads(self):
+        applymod.write_unit(self.pfx, self.root, self.log)
+        self.link(planmod.unit_path(self.pfx))
+        run = FakeRun()
+        out = applymod.unlink_unit(self.pfx, self.root, self.log, self.ui, self.links, run)
+        self.assertEqual(run.calls, [["systemctl", "disable", "--now", planmod.UNIT_NAME], ["systemctl", "daemon-reload"]])
+        self.assertFalse(os.path.lexists(os.path.join(self.links, planmod.UNIT_NAME)))
+        self.assertIn("unlinked", out)
+
+    def test_unlink_leaves_another_installs_unit_alone(self):
+        self.link("/other/install/systemd/nrf-workbench.service")
+        run = FakeRun()
+        out = applymod.unlink_unit(self.pfx, self.root, self.log, self.ui, self.links, run)
+        self.assertEqual(run.calls, [])
+        self.assertTrue(os.path.lexists(os.path.join(self.links, planmod.UNIT_NAME)))
+        self.assertIn("another install", out)
+
+    def test_unlink_with_nothing_linked_and_not_root(self):
+        run = FakeRun()
+        self.assertEqual(applymod.unlink_unit(self.pfx, self.root, self.log, self.ui, self.links, run), "no unit was linked")
+        applymod.write_unit(self.pfx, self.root, self.log)
+        self.link(planmod.unit_path(self.pfx))
+        out = applymod.unlink_unit(self.pfx, dict(self.root, root=False), self.log, self.ui, self.links, run)
+        self.assertEqual(run.calls, [])
+        self.assertIn("systemctl disable --now", out)
+
+    # -- the plan --
+    def plan_for(self, systemd=True, pfx=None):
+        host = {"python": "3.13.5", "has_venv": True, "systemd": systemd, "serial_group": "dialout",
+                "root": True, "apt": None, "sudo": None}
+        args = mock.Mock(git=False, wheelhouse=None)
+        ctx = {"prefix": pfx or self.pfx, "host": host, "args": args, "pins": [], "pins_hash": "x",
+               "features": ["core"], "source": self.base, "staged": False, "commit": "abc", "link_dir": self.links}
+        return planmod.build(ctx)
+
+    def test_plan_has_the_unit_step_only_where_systemd_is(self):
+        self.assertIn("unit", [s["id"] for s in self.plan_for(True)["steps"]])
+        self.assertNotIn("unit", [s["id"] for s in self.plan_for(False)["steps"]])
+
+    def test_plan_says_who_it_runs_as_and_does_not_enable(self):
+        step = [s for s in self.plan_for()["steps"] if s["id"] == "unit"][0]
+        text = "\n".join(step["lines"])
+        self.assertIn("runs as: root", text)
+        self.assertIn("Not enabled or started", text)
+        self.assertFalse(step.get("needs_person"), "linking starts nothing, so --yes may apply it")
+
+    def test_plan_blocks_on_a_name_owned_by_another_install(self):
+        self.link("/other/install/systemd/nrf-workbench.service")
+        blockers = self.plan_for()["blockers"]
+        self.assertTrue(any("/other/install" in b for b in blockers), blockers)
+
+    def test_plan_blocks_on_an_unwritable_folder_name(self):
+        self.assertTrue(self.plan_for(pfx='/srv/a"b')["blockers"])
+
+    # -- verify --
+    def test_verify_line(self):
+        self.assertIsNone(verifymod.unit_result(None, planmod.UNIT_NAME), "no unit step, no line")
+        label, status, _ = verifymod.unit_result(False, planmod.UNIT_NAME)
+        self.assertTrue(status.startswith("not verified"), status)
+        with mock.patch.object(verifymod, "_run", return_value=(0, "active\n")):
+            self.assertEqual(verifymod.unit_result(True, planmod.UNIT_NAME)[1], "PASS")
+        with mock.patch.object(verifymod, "_run", return_value=(3, "activating\n")):
+            self.assertEqual(verifymod.unit_result(True, planmod.UNIT_NAME)[1], "FAIL",
+                             "a restart loop is not a pass")
 
 
 class NeverTouchesHardware(unittest.TestCase):
