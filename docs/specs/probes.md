@@ -51,6 +51,7 @@ Files this spec allows (the only files its task may create):
 | udev events on a Pi, a PVE host, a plain VM (`devices.md`) | `probe_host.py`: `udev`; `observe_usb.py` mode line |
 | `/dev/mem` and `libgpiod` on this Pi model, Pi 5 (`nrf-workbench.md` section 5b) | `probe_host.py`: `pi`, `gpio` |
 | onboard Bluetooth controller present (brief section 9) | `probe_host.py`: `bluetooth` |
+| Pi header UART as a debug link: aliases, enabled, held by a getty (`console.md`) | `probe_host.py`: `uart` (version 3; unrun on a Pi) |
 | which external tools exist and their versions (`core.md`) | `probe_host.py`: `tools` |
 | oldest Python the host runs, against the 3.10 floor (`api.md`) | `probe_host.py`: `platform.python` |
 | serial stable across the app and bootloader modes (`devices.md`) | `observe_usb.py` summary |

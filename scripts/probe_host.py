@@ -22,7 +22,7 @@ import subprocess
 import sys
 import time
 
-PROBE_VERSION = 2   # 2: gpio section records each chip's label and line count
+PROBE_VERSION = 3   # 2: gpio records each chip's label and line count; 3: uart section
 
 # name -> argv after the program. A tool NOT listed here is only looked for, never run
 # (JLinkExe is interactive; btmgmt and hciconfig are not version-queries).
@@ -202,6 +202,45 @@ def section_gpio():
     return {"gpiochips": chips, "detail": detail}
 
 
+def section_uart(bound):
+    """The Pi header UART as a debug link (docs/specs/console.md). Read-only: aliases, nodes that are
+    stat()ed (never opened), the boot config lines that enable a UART, kernel console= tokens, and
+    whether a login getty holds a serial line (it would fight for the port)."""
+    import stat as statmod
+    nodes = []
+    for pattern in ("/dev/serial0", "/dev/serial1", "/dev/ttyAMA*"):
+        for path in sorted(glob.glob(pattern)):
+            entry = {"path": path, "realpath": os.path.realpath(path), "is_symlink": os.path.islink(path)}
+            try:
+                st = os.stat(path)                      # stat only: never opens the device
+                entry["is_char_device"] = statmod.S_ISCHR(st.st_mode)
+                entry["major_minor"] = "%d:%d" % (os.major(st.st_rdev), os.minor(st.st_rdev))
+            except OSError as exc:
+                entry["stat_error"] = str(exc)
+            nodes.append(entry)
+    config = {}
+    for path in ("/boot/firmware/config.txt", "/boot/config.txt"):
+        text = read(path)
+        if text is not None:
+            config[path] = [l.strip() for l in text.splitlines()
+                            if not l.lstrip().startswith("#")
+                            and any(k in l.lower() for k in ("uart", "serial", "disable-bt", "miniuart"))]
+    cmdline = (read("/proc/cmdline") or "").split()
+    getty = None
+    if shutil.which("systemctl"):
+        ok, text = run_bounded(["systemctl", "list-units", "--no-legend", "--plain", "serial-getty@*"], bound)
+        getty = text.splitlines() if ok else text
+    return {
+        "device_tree_serial0": read("/proc/device-tree/aliases/serial0"),
+        "device_tree_serial1": read("/proc/device-tree/aliases/serial1"),
+        "nodes": nodes,
+        "boot_config_uart_lines": config,
+        "kernel_console_tokens": [t for t in cmdline if t.startswith("console=")],
+        "serial_getty_units": getty,
+        "note": "a getty bound to the UART, or a console= token naming it, means the port is not free",
+    }
+
+
 def section_bluetooth():
     ctl = sorted(os.listdir("/sys/class/bluetooth")) if os.path.isdir("/sys/class/bluetooth") else []
     return {"controllers": ctl,
@@ -254,6 +293,7 @@ def main():
     report["usb"] = section_usb()
     report["nodes"] = section_nodes(bound, udev["run_udev_dir_exists"] and bool(udev["udevadm"]))
     report["gpio"] = section_gpio()
+    report["uart"] = section_uart(bound)
     report["bluetooth"] = section_bluetooth()
     report["python_libs"] = section_libs()
     report["tools"] = section_tools(bound)

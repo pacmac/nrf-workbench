@@ -173,13 +173,23 @@ capabilities()        -> the set of things this device can do on this host
 enter_bootloader()    -> one transition, by the entry method in the profile
 flash(package)        -> result with output AND duration (see programmer.md)
 reset()               -> one reset
-console()             -> a stream (serial / RTT / NUS, per what the profile offers); never
-                         opens a port at 1200 baud (that open IS bootloader entry, brief rule 1)
+console()             -> a stream from a SEPARATE debug channel (a UART link, RTT over SWD, NUS
+                         over BLE; `console.md`). The DUT's own USB CDC is not a default source:
+                         a profile must declare it safe. Never opens a port at 1200 baud (that
+                         open IS bootloader entry, brief rule 1).
 debug()               -> a debug session (SWD area)
 read_flash(range)     -> bytes
 recover()             -> bring a dead chip back (SWD area)
 ota(package)          -> over-the-air update (BLE area)
 ```
+
+**Per-slot wiring is not yet specified here, and two areas need it.** The debug link (which
+adapter or header UART is wired to which DUT, at what voltage, with host TX connected or not, and
+whether DTR or RTS reach a reset line) is declared in `console.md` as `links.yaml`; the pin layer
+(`gpio`) needs a wiring map of Pi pins to DUT pin names (brief section 5b). Both describe the same
+slot, and a Pi header pin used as a UART must never also be offered as a GPIO. The declaration
+belongs here, once, read by both, so neither imports the other. To be specified before either
+area is built.
 
 Drivers are looked up by `bootloader.type` and by the probe type. Each is one module; none imports
 another driver. Methods that touch hardware go through `guards`; the interface itself holds no

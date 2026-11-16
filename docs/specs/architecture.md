@@ -23,7 +23,9 @@ test directory.
 nrf_workbench/
   core/          registry, results and refusal codes, config, host capability probe
   guards/        lock, holder, state, serial interlock, protected, verdict, package check
-  devices/       profile loader, udev identity, hotplug and slot state, family driver interface
+  devices/       profile loader, identity (sysfs, udev) and node resolution, hotplug and slot state, family driver interface
+  console/       debug links (usb adapter, pi uart), broker, byte cursor, reply correlation
+                 [the ONLY package that opens a serial device; a gate test enforces it]
   programmer/    serial DFU (adafruit, nordic), mcuboot serial/SMP, uf2     [drivers]
   swd/           probe access, program, erase, read-back, gdb server, rtt, recover  [drivers]
   ble/           scanner, gatt client, peripheral, bonding, nus, ble dfu / ota
@@ -50,6 +52,7 @@ Dependencies run one way, as declared on the areas in mcpp-plan:
 core  <-  guards, devices, gpio, instruments, cli, api, install, harness
 devices, guards  <-  programmer, swd
 devices  <-  ble, gpio
+core, devices  <-  console
 ```
 
 - An area imports `core` and the areas it declares, nothing else. `programmer` never imports `ble`.
@@ -69,6 +72,7 @@ devices  <-  ble, gpio
 | core | library | host tests |
 | guards | library | host tests against fake `/dev` and fake `/proc` (no hardware) |
 | devices | library | host tests; profile files validated against a schema |
+| console | library | host tests over pseudo-terminal pairs (no hardware), then the existing debug dongle on the Proxmox host |
 | programmer | library | host tests with a fake bootloader, then the hardware acceptance run |
 | swd | library | host tests with a fake probe, then hardware |
 | ble | library | host tests with a fake radio, then hardware on the dongle |
@@ -90,7 +94,9 @@ devices  <-  ble, gpio
    entry method, memory map, `protected`) must change without a code change (brief section 3).
 3. **`testpartner` is outside the Python package.** Constraint: it is firmware with its own
    toolchain and is proved on hardware, not by host tests.
-4. **Build order follows the dependency graph:** core, then guards and devices, then programmer.
+4. **Build order follows the dependency graph:** core, then guards, devices and console, then
+   programmer. Console is in the first slice because the programmer's acceptance run reads the
+   device's boot counter through it (`console.md`).
    The other areas do not start until the programmer is proven (Peter, 2026-11-16: first slice is
    the programmer).
 

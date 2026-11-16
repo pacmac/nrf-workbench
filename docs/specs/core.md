@@ -94,6 +94,13 @@ returned, never a tail. **[brief]**
 | `no_bound` | refused | a waiting command was started without a caller-supplied bound | |
 | `capability_missing` | refused | the host or device lacks a required capability | the capability |
 | `service_not_running` | refused | a `needs_service` command was run from the CLI and no service answers | the address tried |
+| `link_absent` | refused | the declared debug adapter is not attached (`console.md`) | the adapter identity |
+| `not_a_declared_link` | refused | the node is not a declared debug link, or belongs to a DUT | the node |
+| `baud_refused` | refused | a baud other than the link's declared one, or 1200 | the baud asked |
+| `link_rx_only` | refused | a send on a link whose host TX is not wired to the DUT | the link |
+| `voltage_unverified` | refused | the link's voltage domain has not been measured | the link |
+| `dtr_rts_unsafe` | refused | DTR or RTS reach the DUT's reset or boot line | the link |
+| `no_reply` | failed | a sent verb got no reply within the caller's bound | the bound, the elapsed time |
 | `flash_failed` | failed | the write ran and the tool said it failed | whole output |
 | `flash_suspect` | suspect | the write reported success but duration or output disagrees | output, duration, healthy duration |
 | `run_node_not_returned` | failed | after a flash the run node did not return within the bound | the bound, the elapsed time |
@@ -107,7 +114,7 @@ One function maps a `Result` to both, so the CLI and API cannot disagree.
 | class | CLI exit | HTTP |
 |---|---|---|
 | ok | 0 | 200 |
-| refused | 1 | 409 for state, holder, lock, serial and protected refusals; 422 for `bad_package`, `wrong_softdevice`, `no_bound` |
+| refused | 1 | 409 for state, holder, lock, serial, protected and link-wiring refusals (`link_absent`, `link_rx_only`, `voltage_unverified`, `dtr_rts_unsafe`); 422 for `bad_package`, `wrong_softdevice`, `no_bound`, `baud_refused`, `not_a_declared_link` |
 | (usage error: bad arguments) | 2 | 400 |
 | failed | 3 | 500 |
 | suspect | 4 | 500, `ok` false |
@@ -136,6 +143,9 @@ writes DTR or RTS.** It records, as named capabilities:
   device-tree model says Raspberry Pi; upstream's helper maps BCM2835 registers through
   `/dev/mem`, which on any other machine would write arbitrary physical memory. The probe records
   each chip's label and line count so a motherboard chip is not mistaken for a header.
+- serial: USB serial adapters present (by identity, never by `/dev` name); on a Pi the header UART
+  (`serial0`, `serial1`, `ttyAMA*`), whether it is enabled, and whether a login getty holds it
+  (`console.md`); the Pi UART capability requires the device-tree model to say Raspberry Pi
 - Bluetooth: controllers present, and whether a dedicated nRF52840 radio is attached
 - debug probes: CMSIS-DAP or other SWD probes on USB
 - external tools: presence and version of `pio`, `adafruit-nrfutil`, `nrfutil`, `openocd`, `pyocd`,
