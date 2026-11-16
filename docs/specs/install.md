@@ -276,6 +276,21 @@ none beyond `python3-venv`, which the Pi already has **[verified]**.
   built (`dashboard.md`).
 - **Uninstall** removes the venv and the linked unit. It **keeps configuration and logs**, and says so.
 
+## TOOL the README carries the copy-paste commands
+
+Peter, 2026-11-16: the README needs instructions the user can copy and paste to start the
+installer. It has them: the one-liner (`curl`, and `wget` for a host without it), the careful
+download-read-run path, `--check`, the no-terminal form with `--yes --prefix`, `--ref`,
+`--features`, upgrade and uninstall, what it asks, what it needs, and what was tested.
+
+- **The README must not outrun the code.** Until the installer exists it says so at the top, and
+  the notice is removed only when the commands are tested.
+- **The commands in the README are tested, not trusted.** A check extracts every command block from
+  the README and runs it in `--check` mode in the harness, so the instructions cannot drift from
+  the installer's real options (`doc` area rule: prose that governs work matches the code it cites).
+- **It contains nothing private**: no hostnames, addresses or serials, and no folder presented as
+  the default.
+
 ## TOOL what it never does
 
 - **Never touches a serial device**, never flashes, never requests a mode change, never writes
@@ -344,6 +359,11 @@ none beyond `python3-venv`, which the Pi already has **[verified]**.
   and, run unprivileged, into `~/.local/share/nrf-workbench`, each verifying, proving no folder or
   host default is load-bearing. Installing into a non-empty `/root` itself is refused.
 - **Non-interactive without `--prefix` and with no existing install prints the plan and stops.**
+- **Every command block in the README runs** (in `--check` mode) and none names an option the
+  installer does not have.
+- **Test order, because a fresh image is used up by its first install:** (1) the simulated-absence
+  harness and a clean x86_64 container first, (2) only when those pass, a freshly imaged Pi, so a
+  bug found on the Pi's first run does not cost a reflash.
 - **A class that is not tested is reported as untested**: 32-bit ARM, musl, a non-`apt` family and
   a host with no systemd each produce "untested on this class" or a clear stop, never a silent `ok`.
 - **Each absence, simulated:** the bootstrap is run with a restricted `PATH` that hides, one at a
