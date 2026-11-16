@@ -635,11 +635,14 @@ class ServiceUnit(unittest.TestCase):
         self.assertIsNone(verifymod.unit_result(None, planmod.UNIT_NAME), "no unit step, no line")
         label, status, _ = verifymod.unit_result(False, planmod.UNIT_NAME)
         self.assertTrue(status.startswith("not verified"), status)
+        # systemd's own answer decides, whoever started the service
         with mock.patch.object(verifymod, "_run", return_value=(0, "active\n")):
             self.assertEqual(verifymod.unit_result(True, planmod.UNIT_NAME)[1], "PASS")
-        with mock.patch.object(verifymod, "_run", return_value=(3, "activating\n")):
-            self.assertEqual(verifymod.unit_result(True, planmod.UNIT_NAME)[1], "FAIL",
-                             "a restart loop is not a pass")
+        with mock.patch.object(verifymod, "_run", return_value=(3, "inactive\n")):
+            self.assertTrue(verifymod.unit_result(True, planmod.UNIT_NAME)[1].startswith("not verified: the service was not started"))
+        for state in ("activating", "failed"):
+            with mock.patch.object(verifymod, "_run", return_value=(3, state + "\n")):
+                self.assertEqual(verifymod.unit_result(True, planmod.UNIT_NAME)[1], "FAIL", state + " is not a pass")
 
 
 class NeverTouchesHardware(unittest.TestCase):

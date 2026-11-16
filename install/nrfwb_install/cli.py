@@ -190,7 +190,7 @@ def main(argv=None):
     log = applymod.Log(prefix)
     log.stamp("install started: commit %s, features %s" % (args.commit, ",".join(feats)))
     ui.say("")
-    linked, started = False, False
+    linked = False
     try:
         for step in plan["steps"]:
             if step.get("skip"):
@@ -227,22 +227,24 @@ def main(argv=None):
         ui.warn("Nothing is half-built; the log is %s. Fix the cause and run the same command again." % log.path)
         return FAILED
 
-    unit_started = None                       # None: this host has no unit step
+    unit_linked = None                        # None: this host has no unit step
     if h["systemd"]:
-        unit_started = False
-        if linked and ui.terminal and ui.confirm("Enable the service at boot and start it now?"):
-            unit_started = applymod.enable_and_start(h, log, ui)
-        elif linked:
-            ui.say("The service is linked but not enabled or started. To do both:  systemctl enable --now %s" % planmod.UNIT_NAME)
-        else:
+        unit_linked = linked
+        if not linked:
             ui.say("The unit file is written but not linked. Link it as root:  systemctl link %s" % planmod.unit_path(prefix))
+        elif verifymod.unit_state(planmod.UNIT_NAME) == "active":
+            ui.say("The service is running. It keeps the code it started with until restarted:  systemctl restart %s" % planmod.UNIT_NAME)
+        elif ui.terminal and ui.confirm("Enable the service at boot and start it now?"):
+            applymod.enable_and_start(h, log, ui)
+        else:
+            ui.say("The service is linked but not enabled or started. To do both:  systemctl enable --now %s" % planmod.UNIT_NAME)
 
     if args.no_verify:
         ui.say("verify skipped (--no-verify): this install is NOT proven")
         return OK
     ui.say("")
     ui.say("Verify:")
-    results = verifymod.run(prefix, feats, manifest, started=unit_started, unit_name=planmod.UNIT_NAME)
+    results = verifymod.run(prefix, feats, manifest, linked=unit_linked, unit_name=planmod.UNIT_NAME)
     failed = False
     for label, status, detail in results:
         ui.say("  %-8s %s" % (status.split(":")[0].upper() if status.startswith("not verified") else status, label))

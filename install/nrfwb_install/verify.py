@@ -18,23 +18,32 @@ def _run(cmd, cwd=None):
         return 127, str(exc)
 
 
-def unit_result(started, unit_name):
-    """The service unit's line. `started` is None when this host has no unit step, else whether the
-    installer started it. systemd's own answer decides: 'activating' (a restart loop) is a FAIL."""
-    if started is None:
+def unit_state(unit_name):
+    """systemd's own word for the unit: active, inactive, activating, failed ... ('unknown' if it cannot ask)."""
+    rc, out = _run(["systemctl", "is-active", unit_name])
+    return out.strip().splitlines()[0] if out.strip() else "unknown"
+
+
+def unit_result(linked, unit_name):
+    """The service unit's line. `linked` is None when this host has no unit step. systemd's own answer decides,
+    whoever started the service: 'active' is a PASS, 'inactive' means nobody started it (not verified), and
+    anything else ('activating' is a restart loop, 'failed') is a FAIL."""
+    if linked is None:
         return None
     label = "service: %s is active" % unit_name
-    if not started:
-        return (label, "not verified: the service was not started", "")
-    rc, out = _run(["systemctl", "is-active", unit_name])
-    if rc == 0 and out.strip() == "active":
+    if not linked:
+        return (label, "not verified: the unit is not linked, so the service was not started", "")
+    state = unit_state(unit_name)
+    if state == "active":
         return (label, "PASS", "")
-    rc2, status = _run(["systemctl", "status", "--no-pager", "-n", "15", unit_name])
-    return (label, "FAIL", (out.strip() + "\n" + status.strip()).strip())
+    if state == "inactive":
+        return (label, "not verified: the service was not started", "")
+    rc, status = _run(["systemctl", "status", "--no-pager", "-n", "15", unit_name])
+    return (label, "FAIL", ("state: %s\n%s" % (state, status.strip())).strip())
 
 
-def run(prefix, features, manifest, started=None, unit_name=None):
-    """[(label, status, detail)]. `started` and `unit_name` add the service unit's line (see unit_result)."""
+def run(prefix, features, manifest, linked=None, unit_name=None):
+    """[(label, status, detail)]. `linked` and `unit_name` add the service unit's line (see unit_result)."""
     results = []
     py = venv_python(prefix)
     for name in features:
@@ -57,7 +66,7 @@ def run(prefix, features, manifest, started=None, unit_name=None):
                 continue
             rc, out = _run([exe] + cmd[1:])
             results.append(("%s: %s" % (name, " ".join(cmd)), "PASS" if rc == 0 else "FAIL", out.strip()))
-    unit = unit_result(started, unit_name)
+    unit = unit_result(linked, unit_name)
     if unit:
         results.append(unit)
     results.append(("hardware", "not verified: the installer never touches a board or a serial device", ""))
