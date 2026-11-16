@@ -87,9 +87,14 @@ The service can flash firmware and power-cycle hardware, so it is not open by de
 
 - **A separate MCP server, `nrf-workbench`. It does not share the ESP testbench MCP.** See the
   decision below.
-- It is a thin stdio proxy over the HTTP service, stdlib only, as upstream's is **[brief]**. At
-  start it calls `GET /api/commands` and builds its tool list from the answer, so it is generated
-  from the registry and has no tool table of its own.
+- **It uses the official `mcp` Python SDK, not hand-written protocol code.** The SDK is already
+  installed on this host at 2.3.0 and needs Python 3.10 or newer **[verified: package metadata]**.
+  Upstream's MCP is a stdlib-only proxy **[brief]**; that was a choice for a minimal install, not a
+  requirement here (see the decision below).
+- It is a thin server over the HTTP service. At start it calls `GET /api/commands` and registers
+  one tool per command from the answer, so it is generated from the registry and has no tool table
+  of its own. Whether SDK 2.x registers tools from data at runtime this way is **[unknown]**: it is
+  the first thing to try (see Verify).
 - Tool names are `<area>_<command>` (for example `programmer_flash_file`); a server prefix already
   separates them from the ESP tools.
 - A tool returns the `Result` JSON in full, including the whole tool output and all evidence.
@@ -116,19 +121,28 @@ The `MEASURE` step in the `guards` task is what fills them in. **[derive rule]**
    depends on the host and the attached board, which upstream's fixed table cannot express; and MCP
    already namespaces tools by server, so there is no name collision to avoid. Runner-up: one
    combined server, rejected for the fork cost. Both servers can be listed in the same client config.
-2. **aiohttp for HTTP and websocket.** Constraint: one dependency covers HTTP, websocket and a
-   client for the CLI-to-service path; the registry already holds typed args and result shapes, so
-   OpenAPI is generated and a schema-generating framework adds nothing; it must be light enough for
-   a Pi. Runner-up: FastAPI with uvicorn, rejected for the extra dependencies and duplicated
-   schema. aiohttp having wheels for arm64 and x86_64 is **[recalled]**; verify below.
-3. **GET for `read`, POST for `write`, websocket for `stream`.** Constraint: the registry already
+2. **Starlette and uvicorn for HTTP and websocket (reverses my first draft, which said aiohttp).**
+   Constraint: the official MCP SDK already requires Starlette and uvicorn **[verified: its
+   declared dependencies]**, so aiohttp would add a second web stack beside it for no gain. The
+   registry already holds typed args and result shapes, so OpenAPI is generated and a
+   schema-generating framework adds nothing. Runner-up: aiohttp, rejected for the duplicate stack.
+   The CLI's client for stateful commands needs an HTTP client, and the SDK already brings `httpx2`.
+   Whether uvicorn serves websockets without an extra package is **[unknown]**; verify below.
+3. **Use the official MCP SDK for the protocol.** Constraint: initialisation, tool listing, call
+   dispatch, schemas and transports are a protocol that changes; maintaining a copy by hand is the
+   drift the single-source rule exists to stop. Cost: the SDK pulls about fifteen transitive
+   dependencies (pydantic, jsonschema, opentelemetry-api, PyJWT and others) **[verified: declared
+   dependencies]**, heavier than upstream's stdlib proxy; that is accepted on a Pi because the
+   alternative is owning the protocol. Runner-up: a stdlib proxy as upstream, rejected for the
+   maintenance. This also sets a floor: **Python 3.10 or newer**.
+4. **GET for `read`, POST for `write`, websocket for `stream`.** Constraint: the registry already
    carries `effect`, so the verb costs nothing and a read can never be mistaken for a write.
-4. **Refuse a second hardware request, never queue it.** Constraint: a queue is an unbounded wait,
+5. **Refuse a second hardware request, never queue it.** Constraint: a queue is an unbounded wait,
    and the derive rule says no wait is unbounded.
-5. **Loopback by default, token to leave it, refuse to start otherwise.** Constraint: this flashes
+6. **Loopback by default, token to leave it, refuse to start otherwise.** Constraint: this flashes
    and power-cycles hardware; an open default on a LAN is the failure to rule out, and one extra
    configuration step is cheap.
-6. **Narrow the CLI independence rule** (GAP 1). Constraint: stateful commands need one owner of
+7. **Narrow the CLI independence rule** (GAP 1). Constraint: stateful commands need one owner of
    state, and only a long-running process can be that owner.
 
 ## VERIFY
@@ -141,5 +155,8 @@ The `MEASURE` step in the `guards` task is what fills them in. **[derive rule]**
   the pid, and does not wait.
 - A one-shot CLI command works with the service stopped; a `needs_service` command returns
   `service_not_running`.
-- The MCP proxy returns the same `Result` the HTTP API returns, unabridged.
-- aiohttp installs and runs on one arm64 Pi and one x86_64 host. **[unknown]** until run.
+- The MCP server returns the same `Result` the HTTP API returns, unabridged.
+- **First try, before any other API code:** with `mcp` 2.3.0, register a tool from a data row at
+  runtime and call it. If SDK 2.x cannot, this spec's MCP section changes. **[unknown]**
+- Starlette, uvicorn and the `mcp` SDK install and run on one arm64 Pi and one x86_64 host, with
+  websockets working. **[unknown]** until run.
