@@ -149,13 +149,52 @@ one-liner at once, but the installer then fetches the commit the API names, not 
 - **It asks only what is genuinely the user's:** the install location (no folder is assumed; see
   "where it installs"); which optional features (the default set is shown, `build` is
   offered with its warning); installing system packages, after showing the exact command; re-running
-  under `sudo`; adding a user to `dialout`; what to do about a dirty checkout. It does not ask about
-  anything evidence settles.
+  under `sudo`; adding a user to the serial-device group; what to do about a dirty checkout; and,
+  once the service exists, **where it listens and who may reach it** (see "the service"). It does
+  not ask about anything evidence settles.
 - **No terminal:** it never blocks. With `--yes` it accepts only the **safe defaults** and still
   refuses the choices above that need a person (a group change, a boot-configuration edit). Without
   `--yes` it prints the plan, applies nothing, says why, and exits with a distinct code.
   A non-interactive SSH command is exactly this case: **[verified]** it had no terminal.
 - **The plan is always printed before anything is applied**, and `--check` stops there.
+
+## TOOL the service: where it listens (arrives with the service, v0.2)
+
+Peter, 2026-11-16: the dashboard on port 80; and "nothing listens on port 80, or you can make that
+one of the user choices?" It is a choice. This is the installer's part of `api.md` ("listening").
+
+```
+Where should the dashboard and API listen?
+  1) this machine only:  127.0.0.1:8080     port 8080 is free now
+  2) the whole network:  0.0.0.0:80         port 80 is free now; needs root or a capability
+  or type ADDRESS:PORT
+```
+
+- **Each offer shows, read from the host, whether its port is free right now**, and if not, what
+  holds it. The check is read-only: it reads `/proc/net/tcp` and `/proc/net/tcp6` for listeners
+  and matches socket inodes against the process table. A holder this user cannot see is reported
+  as "in use, holder not visible to this user", never as free.
+- **Privilege is checked, not assumed.** `/proc/sys/net/ipv4/ip_unprivileged_port_start` is read
+  (1024 on the dev host **[verified]**). A port below it needs the service to run as root, or, for
+  a non-root service under systemd, `AmbientCapabilities=CAP_NET_BIND_SERVICE` in the unit
+  **[recalled]**; otherwise the installer says so and offers a higher port. It never changes the
+  sysctl, never grants a capability to the interpreter, never installs a proxy, and **never edits a
+  firewall**.
+- **The safe choice needs no person; the exposed choice does.** With no terminal, `--yes` takes
+  loopback on 8080 only. Any non-loopback address needs an explicit `--listen` or a terminal answer,
+  and so does `open-read` access: `--yes` never exposes the service to the network.
+- **A non-loopback choice creates the token**: a random value written to `<prefix>/config/token`
+  with mode 0600 and created exclusively, never overwritten on an upgrade. The installer prints the
+  path, **never the value**, so it does not reach a log or scrollback.
+- **The choice is recorded in `config/host.yaml`** (`service.listen`, `service.access`). A re-run
+  never silently changes it: a different `--listen` shows the difference and asks (terminal), or
+  refuses and says how.
+- **The unit** lives at `<prefix>/systemd/nrf-workbench.service` and is linked into place
+  (`systemctl link`), only where systemd is detected; elsewhere the installer prints how to run the
+  service in the foreground. **Enabling it at boot and starting it are asked on a terminal**, and
+  `--yes` does neither, because starting a network service is not a safe default.
+- **Verify** requests `/` on the chosen address once the service is running, and reads
+  "not verified: the service was not started" when it was not.
 
 ## TOOL trust: running a remote script
 
@@ -357,6 +396,12 @@ download-read-run path, `--check`, the no-terminal form with `--yes --prefix`, `
    what the hardware or the host allows, which is Peter's call.
 
 ## VERIFY
+
+- **The listen choice (with the service):** the menu shows each port's real state; a port held by
+  a test listener is reported with its holder; a privileged port as non-root without the
+  capability is explained; `--yes` alone yields loopback on 8080 and nothing exposed; a
+  non-loopback choice writes a 0600 token file and prints only its path; a re-run with a different
+  `--listen` does not change the recorded choice without asking.
 
 - **A fresh host, one command:** on a freshly imaged Pi, and on a clean x86_64 Debian host (a VM
   or container created for the test), the `curl` one-liner ends with every default feature PASS.

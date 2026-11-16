@@ -168,9 +168,19 @@ same holds here.
   serial, the package and the guards that will run. A send shows the link and whether its TX is
   wired. Nothing reaches hardware on a single stray click: a flash needs the same arguments the CLI
   requires, including the caller-supplied bound.
-- **The token is not stored in the page or in browser storage.** The service binds to loopback by
-  default and needs a token to leave it (`api.md`); the dashboard sends it as the same bearer
-  header.
+- **A browser logs in; the token is never held by page script.** (This **replaces** the first
+  draft's "the token is not stored in the page or in browser storage ... the dashboard sends it as
+  the same bearer header", which gave a browser on another machine no way in: a page load cannot
+  carry a bearer header.) The dashboard has a login page; the token is entered once and the server
+  answers with an `HttpOnly`, `SameSite=Strict` session cookie that script cannot read. Every write
+  also sends a per-session value in a custom header, and the websocket checks `Origin`, so another
+  site cannot drive it (`api.md`, "listening").
+- **It is served on the port the user chose.** Peter wants port 80; that is configuration
+  (`service.listen`), never a default and never in the UI code. The dashboard makes no assumption
+  about its own address: it uses relative URLs, so it works on any port and behind any path.
+- **It is honest about exposure.** Beyond loopback without TLS, the Bench page shows
+  "unencrypted". In `open-read` mode it shows "read access is open on this network". The login and
+  these notices are the only places a token or the access mode is mentioned.
 
 ## TOOL retention: every retained stream has a bound
 
@@ -246,6 +256,12 @@ build the dashboard responsive from a phone width up now, and decide a compact s
 
 - **A real browser, both themes, at the sizes in use** (the `playwright` rule): every page rendered
   and looked at, not merely served. A rendered element is not a verified one.
+- **On the port the user chose,** including a privileged one such as 80 (as root): the page, the
+  feed and the API answer from one origin, and the UI source has no hardcoded host or port.
+- **The login in a real browser:** a wrong token is refused; the right one gives a session; the
+  token is nowhere script can read it (not in storage, not in the DOM); a write without the
+  per-session header is refused; a foreign `Origin` on the websocket is refused.
+- **The exposure notices appear** ("unencrypted", "read access is open") exactly when they apply.
 - **The checks go red then green:** a hardcoded write URL, an unlisted GET, a `setInterval`, and a
   page named by a key each turn the UI check red; the control is green. (Mutation-tested, as the
   other dashboard's is.)

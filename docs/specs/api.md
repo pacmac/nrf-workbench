@@ -23,6 +23,11 @@ Area: `api` (service). Imports only `core`. Contains no rules of its own.
    `needs_service` flag on a row. That edit belongs to the core spec task and is made there.
 4. **Upstream's HTTP layer is one 258 KB file**, and its auth, if any, is **[unknown]**. Nothing
    here reuses it; the design is borrowed, not the code (`architecture.md`).
+5. **Port 80 is not just a number, and the first draft was silent on all of it.** A port below 1024
+   needs privilege; port 80 on a LAN is a non-loopback listen, so the token rule applies; a
+   browser cannot authenticate with the bearer header the draft specified (and the dashboard draft
+   said the token must not be stored in the browser, which left a browser with no way in); the
+   traffic is cleartext HTTP; and another service may already hold the port. See "listening".
 
 ---
 
@@ -72,14 +77,56 @@ Replaces the "neither front end calls the other" bullet in the command surface s
   that returns the `Result` when finished. Progress is available on a stream if the client wants it.
   The client's HTTP timeout must exceed the bound it passed; the service never decides a bound.
 
-## TOOL authentication
+## TOOL listening: where, and who may reach it
+
+Peter, 2026-11-16: "I want the dashboard running on port 80", and, when told port 80 needs
+privilege and may be taken: "nothing listens on port 80, or you can make that one of the user
+choices?" It is **a user choice**. One service, one port: the dashboard at `/`, the API under
+`/api`, the live feed at `/ws/events`.
+
+- **The address and port are configuration (`service.listen`, or `--listen ADDR:PORT`), never
+  hardcoded, and nothing assumes 80.** With nothing chosen the service listens on
+  `127.0.0.1:8080` (this machine only, an unprivileged port). 8080 is a convention and not a
+  derived value; it may be taken, which is why the next rule exists. The installer asks
+  (`install.md`); Peter's choice would be `0.0.0.0:80`.
+- **Whether the port is free is checked, not assumed.** Before it starts, and when the installer
+  asks, the holder of a port is read from `/proc/net/tcp` and the process table (read-only). A taken
+  port is reported with its holder (`port_in_use`), never as a traceback.
+- **A port below 1024 needs privilege**, and the limit is read from
+  `/proc/sys/net/ipv4/ip_unprivileged_port_start` (it is 1024 on the dev host **[verified]**), not
+  assumed. If the service runs as root (as on Peter's hosts) nothing more is needed. A non-root
+  service under systemd gets `AmbientCapabilities=CAP_NET_BIND_SERVICE` in its unit **[recalled;
+  verify when the unit is built]**. Anywhere else it refuses with the exact reason and suggests a
+  higher port. **It never changes the system-wide setting, never grants a capability to the
+  interpreter, never installs a proxy, and never edits a firewall.**
+
+### Who may reach it
 
 The service can flash firmware and power-cycle hardware, so it is not open by default.
 
-- **It binds to loopback by default.** Binding to any other address requires a configured token,
-  and the service **refuses to start** without one rather than serving open on the network.
-- The token is sent as a bearer header, compared in constant time, and never logged. Websocket
-  upgrades carry the same token.
+- **A non-loopback listen address (which port 80 on a LAN is) requires a configured token, and the
+  service refuses to start without one**, whatever the access mode.
+- **`service.access` has two modes, and there is no mode with unauthenticated writes:**
+  - `token` (the default for any non-loopback address): every request needs the token;
+  - `open-read` (opt-in): the dashboard pages and read-only data are open to the LAN; every `write`
+    command and every stream that can send needs the token. The Bench page says plainly that read
+    access is open.
+- **Clients (the CLI over HTTP, the API, the MCP) send the token as a bearer header**, compared in
+  constant time, never logged. Websocket upgrades carry it too.
+- **A browser cannot send a bearer header on a page load, and putting the token in
+  script-readable storage hands it to any script that runs on the page.** So the dashboard has a
+  login page: the token is entered once and the server answers with an `HttpOnly`,
+  `SameSite=Strict` session cookie. A write also needs a per-session value in a custom header, and
+  the websocket checks that its `Origin` matches the host, so another website cannot drive it
+  (`dashboard.md`).
+- **Plain HTTP on port 80 sends the token and the cookie unencrypted across the LAN.** Anyone who
+  can read that traffic can reuse them, and they allow flashing hardware. That is stated, not
+  hidden: it is acceptable only on a LAN Peter trusts; the `Secure` cookie flag cannot be set over
+  plain HTTP; the Bench page shows "unencrypted" whenever it is listening beyond loopback without
+  TLS; and TLS (built in, or behind a reverse proxy) is **not designed yet** **[unknown]**.
+- **The token is generated by the installer into a file readable only by its owner, and the
+  installer prints the path, never the value**, so it does not end up in a log or in scrollback. The
+  user reads it on the host with a shell they already have.
 - Authentication is not a safety layer. A valid token still goes through every guard; a guard
   refusal looks the same to every caller.
 
@@ -169,14 +216,31 @@ The `MEASURE` step in the `guards` task is what fills them in. **[derive rule]**
    carries `effect`, so the verb costs nothing and a read can never be mistaken for a write.
 5. **Refuse a second hardware request, never queue it.** Constraint: a queue is an unbounded wait,
    and the derive rule says no wait is unbounded.
-6. **Loopback by default, token to leave it, refuse to start otherwise.** Constraint: this flashes
-   and power-cycles hardware; an open default on a LAN is the failure to rule out, and one extra
-   configuration step is cheap.
-7. **Narrow the CLI independence rule** (GAP: the CLI independence rule is too strong). Constraint: stateful commands need one owner of
+6. **Loopback on an unprivileged port by default, token to leave it, refuse to start otherwise;
+   the address and port are the user's choice.** Constraint: this flashes and power-cycles
+   hardware, so an open default on a LAN is the failure to rule out and one extra configuration step
+   is cheap; and Peter wants port 80, which another host or person may not, so it is chosen, not
+   assumed.
+7. **A login cookie for the browser, bearer for everything else.** Constraint: a page load cannot
+   carry a bearer header and script-readable storage exposes the token. This **reverses** the
+   dashboard draft's "the token is not stored in the page or in browser storage", which could not
+   have worked for a browser on another machine.
+8. **Narrow the CLI independence rule** (GAP: the CLI independence rule is too strong). Constraint: stateful commands need one owner of
    state, and only a long-running process can be that owner.
 
 ## VERIFY
 
+- **Listening is a choice:** the service starts on whatever `service.listen` says; with none set it
+  listens on `127.0.0.1:8080` and nowhere else; nothing in the code names port 80.
+- **A taken port** returns `port_in_use` naming the holder, not a traceback.
+- **A port below 1024 as a non-root user without the capability** refuses with the reason; as root,
+  and with the capability under systemd, it binds. (The limit is read from `/proc`, not assumed.)
+- **Non-loopback with no token refuses to start**, in both access modes.
+- **`open-read`:** a page and a read are served without a token; a `write` and a sending stream are
+  refused without one; there is no mode in which a write is unauthenticated.
+- **The browser path:** the login sets an `HttpOnly`, `SameSite=Strict` cookie; a write without the
+  per-session header is refused; a websocket with a foreign `Origin` is refused.
+- **The Bench page says "unencrypted"** whenever the service listens beyond loopback without TLS.
 - `GET /api/commands`, the CLI help and the MCP tool list are the same set on one host, and differ
   on an x86_64 host with no Pi hardware exactly by the Pi-only commands.
 - A command added to one area appears in all three with no edit to `api/`.

@@ -101,6 +101,9 @@ returned, never a tail. **[brief]**
 | `voltage_unverified` | refused | the link's voltage domain has not been measured | the link |
 | `dtr_rts_unsafe` | refused | DTR or RTS reach the DUT's reset or boot line | the link |
 | `no_reply` | failed | a sent verb got no reply within the caller's bound | the bound, the elapsed time |
+| `port_in_use` | refused | the service's listen port is held by another process (`api.md`) | the holder, or "not visible to this user" |
+| `port_privileged` | refused | the listen port is below the unprivileged limit and the service has neither root nor the capability | the port, the limit read from the host |
+| `token_missing` | refused | a non-loopback listen address was configured with no token | the address |
 | `flash_failed` | failed | the write ran and the tool said it failed | whole output |
 | `flash_suspect` | suspect | the write reported success but duration or output disagrees | output, duration, healthy duration |
 | `run_node_not_returned` | failed | after a flash the run node did not return within the bound | the bound, the elapsed time |
@@ -119,7 +122,9 @@ One function maps a `Result` to both, so the CLI and API cannot disagree.
 | failed | 3 | 500 |
 | suspect | 4 | 500, `ok` false |
 
-`service_not_running` is only ever raised by the CLI, so it has an exit code (1) and no HTTP status.
+`service_not_running`, `port_in_use`, `port_privileged` and `token_missing` are only ever raised by
+the CLI or at service start, never by a running service answering a request, so each has an exit
+code (1) and no HTTP status.
 
 These numbers are **not** the existing tool's. `rak-comm.py` uses 1 for a failure, 2 for a bad file
 or a board not in the bootloader, and 3 for a missing node or a holder **[verified: read the code,
@@ -143,6 +148,9 @@ writes DTR or RTS.** It records, as named capabilities:
   device-tree model says Raspberry Pi; upstream's helper maps BCM2835 registers through
   `/dev/mem`, which on any other machine would write arbitrary physical memory. The probe records
   each chip's label and line count so a motherboard chip is not mistaken for a header.
+- network: which TCP ports are listening and who holds them (read from `/proc/net/tcp`, read-only),
+  and the unprivileged-port limit (`/proc/sys/net/ipv4/ip_unprivileged_port_start`), so a
+  chosen port is reported free or taken, and privileged or not, from the host and not from a guess
 - serial: USB serial adapters present (by identity, never by `/dev` name); on a Pi the header UART
   (`serial0`, `serial1`, `ttyAMA*`), whether it is enabled, and whether a login getty holds it
   (`console.md`); the Pi UART capability requires the device-tree model to say Raspberry Pi
@@ -170,7 +178,9 @@ Layered, later layers override earlier: built-in defaults, a host file (`<prefix
 self-contained folder holds the whole install; no folder is assumed), a user file, environment,
 command-line flags. YAML. Two kinds of content:
 
-- **host settings:** lock path, profile directory, service bind address
+- **host settings:** lock path, profile directory, and the service's `listen` (address and port,
+  with no assumed value; the unset default is loopback on 8080) and `access` (`token` or
+  `open-read`), see `api.md`
 - **`units.yaml`:** exceptions per serial only, chiefly `protected` (`devices.md`). A board not
   named is flashable by default; this is not a roster.
 
