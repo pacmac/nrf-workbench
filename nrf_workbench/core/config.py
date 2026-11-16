@@ -1,0 +1,170 @@
+"""Layered configuration and the listen rules (docs/specs/core.md "configuration", api.md "listening").
+
+Later layers override earlier ones: built-in defaults, the host file(s), a user file, the environment,
+then explicit overrides (command-line flags). YAML. **No folder is assumed**: a path that is not set is
+None and the area that needs it says so (or uses its own documented default); nothing here names
+/usr/share/pac, /etc or a home directory. No timeout, retry count or tolerance has a default.
+
+A key that is not in the schema is reported as a problem, not silently ignored: a typo in a safety
+setting must not look like it worked.
+"""
+import ipaddress
+import os
+import stat
+
+import yaml
+
+from .result import Result
+
+DEFAULTS = {
+    "service": {
+        "listen": "127.0.0.1:8080",     # loopback on an unprivileged port; leaving it needs a token (api.md)
+        "access": "token",              # token | open-read
+        "token_file": None,
+    },
+    "paths": {"lock": None, "profiles": None, "firmware": None, "units": None},
+}
+
+ENV = {
+    "NRFWB_LISTEN": ("service", "listen"),
+    "NRFWB_ACCESS": ("service", "access"),
+    "NRFWB_TOKEN_FILE": ("service", "token_file"),
+    "NRFWB_LOCK": ("paths", "lock"),
+    "NRFWB_PROFILES": ("paths", "profiles"),
+    "NRFWB_FIRMWARE_DIR": ("paths", "firmware"),
+    "NRFWB_UNITS": ("paths", "units"),
+}
+
+ACCESS_MODES = ("token", "open-read")
+
+
+class ConfigError(Exception):
+    pass
+
+
+def _merge(base, extra, path=""):
+    """Deep-merge `extra` into a copy of `base`; returns (merged, [unknown key paths])."""
+    out, unknown = dict(base), []
+    for key, value in (extra or {}).items():
+        where = path + key
+        if key not in base:
+            unknown.append(where)
+            continue
+        if isinstance(base[key], dict):
+            if not isinstance(value, dict):
+                unknown.append(where + " (expected a mapping)")
+                continue
+            out[key], inner = _merge(base[key], value, where + ".")
+            unknown.extend(inner)
+        else:
+            out[key] = value
+    return out, unknown
+
+
+def _copy(d):
+    return dict((k, _copy(v) if isinstance(v, dict) else v) for k, v in d.items())
+
+
+def _read_yaml(path):
+    with open(path, "r") as fh:
+        data = yaml.safe_load(fh)
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise ConfigError("%s: the top level must be a mapping" % path)
+    return data
+
+
+def load(files=(), required_files=(), env=None, overrides=None):
+    """(config, problems). `files` are optional layers (a host file, a user file) and are skipped if
+    absent; `required_files` must exist. `env` is a mapping (os.environ by default); `overrides` is a
+    nested dict, the command-line layer."""
+    env = os.environ if env is None else env
+    cfg, problems = _copy(DEFAULTS), []
+    for path, required in [(p, False) for p in files] + [(p, True) for p in required_files]:
+        if not os.path.exists(path):
+            if required:
+                raise ConfigError("the configuration file %s does not exist" % path)
+            continue
+        cfg, unknown = _merge(cfg, _read_yaml(path))
+        problems.extend("%s: unknown setting %s" % (path, u) for u in unknown)
+    layer = {}
+    for var, (section, key) in ENV.items():
+        if env.get(var):
+            layer.setdefault(section, {})[key] = env[var]
+    cfg, unknown = _merge(cfg, layer)
+    cfg, unknown = _merge(cfg, overrides or {})
+    problems.extend("overrides: unknown setting %s" % u for u in unknown)
+    problems.extend(validate(cfg))
+    return cfg, problems
+
+
+def parse_listen(text):
+    """(host, port) from 'addr:port' or '[v6addr]:port'. ValueError says what is wrong."""
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("listen must be addr:port")
+    text = text.strip()
+    if text.startswith("["):
+        host, sep, rest = text[1:].partition("]")
+        if not sep or not rest.startswith(":"):
+            raise ValueError("listen must be [addr]:port")
+        port_text = rest[1:]
+    else:
+        host, sep, port_text = text.rpartition(":")
+        if not sep:
+            raise ValueError("listen must be addr:port")
+    if not host:
+        raise ValueError("listen has no address")
+    if not port_text.isdigit() or not 1 <= int(port_text) <= 65535:
+        raise ValueError("the port must be 1 to 65535")
+    return host, int(port_text)
+
+
+def is_loopback(host):
+    """True only for an address that cannot be reached from another machine. A host NAME other than
+    localhost is not assumed to be loopback."""
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def validate(cfg):
+    problems = []
+    try:
+        parse_listen(cfg["service"]["listen"])
+    except ValueError as exc:
+        problems.append("service.listen: %s" % exc)
+    if cfg["service"]["access"] not in ACCESS_MODES:
+        problems.append("service.access must be one of: %s" % ", ".join(ACCESS_MODES))
+    return problems
+
+
+def read_token(path):
+    """(token or None, note or None). The token file must be readable only by its owner; a file that
+    others can read is a note, because a shared token is no token."""
+    if not path:
+        return None, None
+    try:
+        st = os.stat(path)
+        with open(path, "r") as fh:
+            token = fh.read().strip()
+    except OSError as exc:
+        return None, "the token file %s cannot be read: %s" % (path, exc)
+    note = None
+    if stat.S_IMODE(st.st_mode) & 0o077:
+        note = "the token file %s is readable by other users (mode %o)" % (path, stat.S_IMODE(st.st_mode))
+    return (token or None), note
+
+
+def check_listen(listen, token):
+    """None if the service may start on `listen`, else the refusal. A non-loopback address with no
+    token refuses (`token_missing`), whatever the access mode: there is no unauthenticated write."""
+    host, _port = parse_listen(listen)
+    if not is_loopback(host) and not token:
+        return Result.refused("token_missing",
+                              "the service would listen beyond this machine with no token; it flashes and "
+                              "power-cycles hardware, so it will not start", {"address": host})
+    return None

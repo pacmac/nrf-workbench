@@ -21,6 +21,24 @@ Area: `core` (library). Depends on nothing else in the project.
 
 ---
 
+## Files this spec allows (the registry build, 2026-11-16, Peter: "go")
+
+`nrf_workbench/core/status.py` (the one mapping from a `Result` to a CLI exit code and an HTTP
+status), `nrf_workbench/core/registry.py` (rows, naming, argument validation, the request context),
+`nrf_workbench/core/config.py` (layered configuration and the listen rules), their tests in
+`tests/core/`, and `nrf_workbench/core/__init__.py`. The host capability probe, the event bus and the
+activity log are **not** in this unit.
+
+**Built and tested, 2026-11-16:** `status.py`, `registry.py`, `config.py` (52 tests plus the 4 on
+`Result`). 31 mutants of their guards were each caught. Two checks keep this spec and the code honest:
+the closed code list in `status.py` must equal the table below in both directions, and every code the
+package emits must be in it, so a code added in one place only fails a test. Details a reader might
+miss: a **float argument must be finite** (an infinite bound never fires); a JSON body is **checked, not
+parsed** (the string "5" is not an int there, and a bool is never a number); the area part of a command
+name has **no underscore**, so no two commands can derive the same MCP name; an unknown configuration
+key is **reported with its path**, never ignored. **Not built:** the capability probe, the event bus and
+the activity log.
+
 ## TOOL the command registry
 
 A command is declared **once**, as one row. The CLI, HTTP API and MCP tools are all generated from
