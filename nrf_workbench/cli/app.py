@@ -22,8 +22,8 @@ import sys
 
 from ..core import status
 from ..core.config import ConfigError
-from ..core.registry import Arg, Command, Context, Registry, UnknownCommand, UsageError, cli_words
-from ..core.remote import Remote, RemoteError, file_sha256
+from ..core.registry import Command, Context, Registry, UnknownCommand, UsageError, cli_words
+from ..core.remote import Remote, RemoteError, file_sha256, token_from
 from ..core.result import Result
 
 _VALUE_FLAGS = ("--host", "--token-file", "--timeout", "--config")
@@ -64,13 +64,6 @@ def _split_globals(argv):
             g[name[2:].replace("-", "_")] = value
         i += 1
     return g, argv[i:]
-
-
-def _stub(row):
-    """A Command built from a row dict, only so the registry's own validator can check the arguments."""
-    args = [Arg(a["name"], a["type"], a["required"], a["default"], a.get("doc", ""), a.get("unit")) for a in row["args"]]
-    return Command(row["name"], row["summary"], lambda ctx, **kw: None, args=args, effect=row["effect"],
-                   body=row.get("body"), stream=row.get("stream"))
 
 
 def _flag(name):
@@ -148,14 +141,10 @@ def _remote_failure(exc, host, as_json, out, err):
 
 
 def _read_token(g, env, err):
-    path = g["token_file"] or env.get("NRFWB_TOKEN_FILE")
-    if path:
-        try:
-            with open(path) as fh:
-                return fh.read().strip() or None
-        except OSError as exc:
-            raise UsageError("the token file %s cannot be read: %s" % (path, exc))
-    return env.get("NRFWB_TOKEN") or None
+    try:
+        return token_from(g["token_file"], env)
+    except ValueError as exc:
+        raise UsageError(str(exc))
 
 
 def run(argv, local=None, env=None, out=None, err=None):
@@ -181,7 +170,7 @@ def run(argv, local=None, env=None, out=None, err=None):
             print("usage: no service address (--host) and no local mode available", file=err)
             return status.USAGE_EXIT
         else:
-            registry, host, caps = local(g["config"])
+            registry, host, caps = local(g["config"], env)          # the SAME environment the CLI itself reads
             rows = [c.to_dict() for c in registry.commands(caps)]
     except UsageError as exc:
         print("usage: %s" % exc, file=err)
@@ -238,7 +227,7 @@ def run(argv, local=None, env=None, out=None, err=None):
     row = row[0]
     raw = dict((a["name"], getattr(ns, a["name"])) for a in row["args"] if getattr(ns, a["name"]) is not None)
     try:
-        typed = Registry().validate(_stub(row), raw, from_text=True)       # the registry's own rules
+        typed = Registry().validate(Command.from_row(row), raw, from_text=True)       # the registry's own rules
         file_path = None
         if row.get("body") == "raw":
             file_path = getattr(ns, "_file", None)

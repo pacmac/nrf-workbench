@@ -80,14 +80,14 @@ class Parity(RemoteBase):
 
     def test_json_is_the_same_result_local_mode_gives(self):
         remote_rc, remote_out, _ = self.cli("--json", "devices", "list")
-        local_rc, local_out, _ = invoke(["--json", "devices", "list"], lambda cfg: (self.reg, self.host, ALL), env={})
+        local_rc, local_out, _ = invoke(["--json", "devices", "list"], lambda cfg, env=None: (self.reg, self.host, ALL), env={})
         self.assertEqual((remote_rc, local_rc), (0, 0))
         self.assertEqual(json.loads(remote_out), json.loads(local_out))
 
     def test_a_refusal_is_the_same_result_and_exit_code_in_both_modes(self):
         argv = ("--json", "firmware", "show", "--id", "deadbeef")
         remote_rc, remote_out, _ = self.cli(*argv)
-        local_rc, local_out, _ = invoke(list(argv), lambda cfg: (self.reg, self.host, ALL), env={})
+        local_rc, local_out, _ = invoke(list(argv), lambda cfg, env=None: (self.reg, self.host, ALL), env={})
         self.assertEqual((remote_rc, local_rc), (1, 1))                      # a 404 over the wire is still "refused"
         self.assertEqual(json.loads(remote_out), json.loads(local_out))
 

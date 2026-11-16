@@ -312,6 +312,44 @@ class EarlyAnswer(unittest.TestCase):
         self.assertEqual((r.cls, r.code), ("refused", "length_required"))
 
 
+class Token(unittest.TestCase):
+    """token_from: the one rule for finding the service token, shared by the CLI and the MCP server."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def file(self, name, text):
+        path = os.path.join(self.tmp.name, name)
+        with open(path, "w") as fh:
+            fh.write(text)
+        return path
+
+    def test_nothing_set_is_no_token(self):
+        self.assertIsNone(remote.token_from(None, {}))
+
+    def test_a_file_is_read_and_stripped(self):
+        self.assertEqual(remote.token_from(self.file("t", "  abc123\n"), {}), "abc123")
+
+    def test_the_order_is_explicit_file_then_the_files_variable_then_the_value_variable(self):
+        flag, envfile = self.file("flag", "from-flag"), self.file("envfile", "from-envfile")
+        env = {"NRFWB_TOKEN_FILE": envfile, "NRFWB_TOKEN": "from-value"}
+        self.assertEqual(remote.token_from(flag, env), "from-flag")
+        self.assertEqual(remote.token_from(None, env), "from-envfile")
+        self.assertEqual(remote.token_from(None, {"NRFWB_TOKEN": "from-value"}), "from-value")
+
+    def test_an_empty_file_is_no_token_not_an_empty_one_and_does_not_fall_through_to_the_value(self):
+        self.assertIsNone(remote.token_from(self.file("e", " \n"), {"NRFWB_TOKEN": "from-value"}))
+
+    def test_a_named_file_that_cannot_be_read_is_an_error_naming_it(self):
+        with self.assertRaises(ValueError) as caught:
+            remote.token_from(os.path.join(self.tmp.name, "missing"), {})
+        self.assertIn("missing", str(caught.exception))
+
+    def test_an_empty_variable_is_not_a_token(self):
+        self.assertIsNone(remote.token_from(None, {"NRFWB_TOKEN": "", "NRFWB_TOKEN_FILE": ""}))
+
+
 class Files(unittest.TestCase):
     def test_a_missing_file_is_a_local_error_raised_as_itself_not_a_network_error(self):
         with self.assertRaises(FileNotFoundError):

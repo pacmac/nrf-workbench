@@ -51,11 +51,26 @@ def _text(value):
     return str(value)
 
 
+def token_from(token_file, env):
+    """The service token, from a file (an explicit one, else NRFWB_TOKEN_FILE) or NRFWB_TOKEN; None if
+    there is none. NEVER from a command-line value (it would show in `ps`). ValueError if a named file
+    cannot be read."""
+    path = token_file or env.get("NRFWB_TOKEN_FILE")
+    if path:
+        try:
+            with open(path) as fh:
+                return fh.read().strip() or None
+        except OSError as exc:
+            raise ValueError("the token file %s cannot be read: %s" % (path, exc))
+    return env.get("NRFWB_TOKEN") or None
+
+
 class Remote(object):
     def __init__(self, base_url, token=None, timeout=None):
         parts = urllib.parse.urlsplit(base_url or "")
         if parts.scheme not in ("http", "https") or not parts.hostname:
             raise ValueError("the service address must be http://host:port or https://host:port")
+        self.base_url = base_url
         self._https = parts.scheme == "https"
         self._host = parts.hostname
         self._port = parts.port or (443 if self._https else 80)

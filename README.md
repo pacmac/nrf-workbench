@@ -9,14 +9,15 @@ counterpart of the ESP32 testbench in
 It runs on any Linux host (a Raspberry Pi, a PC, a server, a VM, a container). It does not assume a
 Pi, a particular distribution, a particular folder, or that anything is wired to the board.
 
-> **Status: the installer works; the rest of the product is not built yet.** The commands below
-> were run against GitHub itself on Debian 13: a full install, verify and re-run on x86_64, and
-> on a freshly flashed Raspberry Pi 4B (Raspberry Pi OS Lite, aarch64, no `git`): installed and
-> verified in about a minute, with a second run skipping what was already built. That Pi run used
-> the non-interactive form (`--yes --prefix`); the interactive prompts are tested with a
-> pseudo-terminal and not yet in a real terminal on a Pi. Today the installer sets up the
-> environment and the tools; the service, CLI and dashboard are specified in `docs/specs/` and
-> arrive in later releases.
+> **Status: the installer, the service (HTTP API), the command line and the MCP server work; the
+> dashboard is not built yet.** Proved on a real RAK4631 on a Raspberry Pi 4B: from another machine,
+> over HTTP, a firmware package was uploaded, stored, and flashed to the board by id and in one call,
+> and the board came back running the new image (checked from the board's own USB identity and from
+> its debug console). The install commands were run against GitHub itself on Debian 13 (x86_64) and
+> on a freshly flashed Raspberry Pi 4B (aarch64, no `git`); that Pi run used the non-interactive form
+> (`--yes --prefix`), and the interactive prompts are tested with a pseudo-terminal, not yet in a real
+> terminal on a Pi. **Not built:** the dashboard, a service unit (it runs in the foreground), TLS, the
+> debug-console reader inside the service, and SWD, BLE and GPIO. Only the RAK4631 has a profile.
 
 ## Install
 
@@ -77,6 +78,63 @@ curl -fsSL https://raw.githubusercontent.com/pacmac/nrf-workbench/main/install/i
 ```sh
 <install folder>/install/install.sh --uninstall
 ```
+
+## Use it
+
+The commands run from inside the install folder (the installer builds the virtual environment
+there; the package is not installed into it). Below, `<install folder>` is the folder you chose.
+
+**1. Run the service** on the machine the board is plugged into:
+
+```sh
+cd <install folder>
+venv/bin/python -m nrf_workbench.service --firmware-dir <a folder for the stored firmware>
+```
+
+It listens on `127.0.0.1:8080`, this machine only, with no token. To reach it from another machine
+you must give it a token (it refuses to start without one) and say where to listen. The traffic is
+plain HTTP, so the token crosses the network unencrypted: use it only on a network you trust.
+
+```sh
+( umask 077; python3 -c "import secrets; print(secrets.token_urlsafe(32))" > token )
+venv/bin/python -m nrf_workbench.service --listen 0.0.0.0:8080 --token-file token --firmware-dir <folder>
+```
+
+It checks the port before it starts and tells you who holds it, or that a low port needs `root`.
+Nothing here assumes port 80 or any folder.
+
+**2. Use it from the command line**, on that machine (no service needed) or from another
+(`--host`). Every command is generated from one list, so `python -m nrf_workbench commands` is the
+whole menu and `--help` on any command shows its arguments, their units, and which are required:
+
+```sh
+python -m nrf_workbench devices list
+python -m nrf_workbench firmware put --file firmware.zip --name my-build
+python -m nrf_workbench programmer flash --serial <serial> --firmware <id> \
+        --enter-bound-s 5 --flash-bound-s 12
+python -m nrf_workbench programmer flash-stream --file firmware.zip --serial <serial> \
+        --enter-bound-s 5 --flash-bound-s 12 --expect-product "my product string"
+python -m nrf_workbench --host http://pi.local:8080 --token-file token devices list
+```
+
+`--json` prints the same result the API sends. Exit codes: 0 ok, 1 refused (nothing was done), 2 bad
+usage, 3 failed, 4 suspect (it finished but the evidence says do not trust it). **No wait has a
+default timeout:** you give a ceiling for each, derived from measurement. On a RAK4631 the
+bootloader handover took about 0.4 to 0.5 s and a flash ran at 12 to 15 kB/s.
+
+**3. Use it from an AI** by adding the MCP server to its configuration. It is a client of the
+service, so it runs where the firmware is built; an upload tool takes a `path` on that machine and
+streams the file, so the AI never has to read or encode the bytes:
+
+```json
+{"mcpServers": {"nrf-workbench": {
+  "command": "<install folder>/venv/bin/python",
+  "args": ["-m", "nrf_workbench.api.mcp_server", "--host", "http://pi.local:8080"],
+  "env": {"PYTHONPATH": "<install folder>", "NRFWB_TOKEN_FILE": "<path to the token file>"}}}}
+```
+
+The token is read from a file or the environment, never from a command-line value, and is never
+printed.
 
 ## What it asks you
 

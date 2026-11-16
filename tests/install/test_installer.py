@@ -383,10 +383,16 @@ class Readme(unittest.TestCase):
         helptext = subprocess.run([sys.executable, os.path.join(ROOT, "install", "install.py"), "--help"],
                                   stdout=subprocess.PIPE, universal_newlines=True).stdout
         sh_only = {"--ref", "--git", "--help"}
+        checked = 0
         for block in blocks:
-            for opt in re.findall(r"(?<![\w-])(--[a-z][a-z-]+)", block):
-                self.assertTrue(opt in helptext or opt in sh_only,
-                                "README uses %s, which the installer does not have" % opt)
+            for line in block.splitlines():
+                if "install.sh" not in line and "install.py" not in line:
+                    continue            # only lines that RUN the installer: the README also shows the service and CLI
+                for opt in re.findall(r"(?<![\w-])(--[a-z][a-z-]+)", line):
+                    checked += 1
+                    self.assertTrue(opt in helptext or opt in sh_only,
+                                    "README uses %s, which the installer does not have" % opt)
+        self.assertGreater(checked, 5, "the README's installer commands were not found, so nothing was checked")
         self.assertIn("raw.githubusercontent.com/pacmac/nrf-workbench/main/install/install.sh", readme)
 
 

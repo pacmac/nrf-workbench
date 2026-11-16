@@ -82,6 +82,38 @@ class Rows(unittest.TestCase):
         self.assertEqual(d["effect"], "write")
 
 
+class FromRow(unittest.TestCase):
+    """A client rebuilds a Command from the row a service lists, to validate with the service's rules."""
+
+    def source(self):
+        return cmd(name="programmer.flash", effect="write", body="raw", requires=("uploader",), needs_service=True,
+                   result="the flash result",
+                   args=(Arg("serial", doc="which"), Arg("bound_s", "float", unit="s"),
+                         Arg("count", "int", required=False, default=3), Arg("dry", "bool", required=False, default=False)))
+
+    def test_the_rebuilt_command_describes_itself_exactly_as_the_original(self):
+        original = self.source()
+        self.assertEqual(Command.from_row(original.to_dict()).to_dict(), original.to_dict())
+
+    def test_it_validates_exactly_as_the_original_does(self):
+        original, rebuilt, reg = self.source(), Command.from_row(self.source().to_dict()), Registry()
+        for raw, from_text in (({"serial": "S", "bound_s": "2.5"}, True), ({"serial": "S", "bound_s": 2}, False),
+                               ({"serial": "S", "bound_s": 1, "count": None}, False)):
+            self.assertEqual(reg.validate(rebuilt, raw, from_text), reg.validate(original, raw, from_text))
+        for raw, from_text in (({"serial": "S", "bound_s": "inf"}, True), ({"bound_s": 1}, False),
+                               ({"serial": "S", "bound_s": 1, "extra": 1}, False), ({"serial": "S", "bound_s": True}, False)):
+            with self.assertRaises(UsageError, msg=raw):
+                reg.validate(rebuilt, raw, from_text)
+
+    def test_the_rebuilt_command_has_no_real_handler(self):
+        self.assertIsNone(Command.from_row(self.source().to_dict()).handler(None))
+
+    def test_a_row_missing_optional_keys_still_loads(self):
+        row = {"name": "demo.x", "effect": "read", "args": [{"name": "a", "type": "str", "required": True, "default": None}]}
+        c = Command.from_row(row)
+        self.assertEqual((c.summary, c.requires, c.body, c.needs_service), ("", (), None, False))
+
+
 class Registration(unittest.TestCase):
     def test_a_duplicate_is_refused_naming_both_modules(self):
         r = Registry()

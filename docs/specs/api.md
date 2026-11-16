@@ -49,7 +49,8 @@ may import only `core`, so sharing it there keeps them from importing each other
 `nrf_workbench/__main__.py` (the composition for local mode), `nrf_workbench/api/mcp_server.py`
 (the MCP server, a thin client of the HTTP service, tools registered from `GET /api/commands`), the small
 refactor of `nrf_workbench/service.py` that lets local mode build the host and registry without an HTTP
-app, and their tests (`tests/core/test_remote.py`, `tests/cli/`, `tests/api/test_mcp.py`). **The client
+app, their tests (`tests/core/test_remote.py`, `tests/cli/`, `tests/api/test_mcp.py`), and the README's
+status banner (it said the rest of the product was not built) and a short "Use it" section. **The client
 has no default timeout** (the derive rule: the service decides nothing about a caller's bound, and the
 caller's bound is inside the call); a caller may pass one.
 
@@ -68,6 +69,30 @@ is no default timeout. **Real faults the tests found in my own code:** optional 
 were rejected on the way into `call()` (the registry now treats `null` for an optional argument as "not
 given"), and one malformed assertion of mine. **Not exercised on the Pi:** the CLI against the real service
 there (the same code ran against a real server on this host).
+
+**Built and tested, 2026-11-16: the MCP server** (`api/mcp_server.py`; 40 tests, 31 of 32 mutants caught,
+the survivor equivalent). It has no tool table: `list_tools` fetches `GET /api/commands` **at every
+listing**, so a command added to the service appears with no edit here (a test lists three times against a
+service whose rows change). Schemas come from the rows (types, required, defaults, units, closed); an
+upload tool takes `path` first and required; arguments are **checked, not parsed**, by `Command.from_row`,
+the registry's own validator, so the CLI and the MCP cannot disagree with the service. The Result comes
+back **whole**, as text and as structured content, `is_error` true unless ok. **The real stdio transport is
+tested** (the server spawned as a process and spoken to over its pipes), which the earlier smoke test
+explicitly did not exercise, and it found the one thing that matters most to an AI: **the SDK masks any
+ordinary exception from a handler as "Internal server error"**, so a failing tool listing would tell the AI
+nothing. The listing now raises the SDK's `MCPError` (which carries the message, and a test proves
+"unauthorized" arrives across real pipes), while a failing tool CALL returns an error result
+(`service_not_running`, `unauthorized`) instead of raising. The stdout is the protocol's, so a test fails
+if the module prints to it. **Not built:** a `url` upload argument the service would fetch (the firmware spec
+mentions it; the service has no fetch capability), websocket streams, and prompts or resources.
+
+**The README is tested against the code (2026-11-16):** `tests/cli/test_readme.py` runs every command in
+its "Use it" section against the real service parser and the real generated command line, so a typo in an
+option or a command that does not exist fails a test (four mutants of the README were caught). That also
+exposed one inconsistency: the CLI read its own `env` but did not pass it to the local-mode factory, which
+read the process environment separately; it now passes the same one. The older installer test that checked
+README options had to be narrowed to lines that actually run the installer, because it treated every flag
+in every code block as an installer option.
 
 **Files for the composition root (added 2026-11-16, Peter: "go"):** `nrf_workbench/service.py` (the ONE
 module that imports `api` and the areas and wires them, `architecture.md`) and `tests/service/`. It holds the

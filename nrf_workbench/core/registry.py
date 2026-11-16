@@ -97,6 +97,17 @@ class Command(object):
         self.requires, self.effect, self.body = tuple(requires), effect, body
         self.needs_service, self.result, self.stream = needs_service, result, stream
 
+    @classmethod
+    def from_row(cls, row):
+        """A Command rebuilt from the dict a service lists. It has no real handler: it exists so a CLIENT
+        validates arguments with exactly the rules the service uses (Registry.validate), not a copy."""
+        args = [Arg(a["name"], a["type"], a["required"], a["default"], a.get("doc", ""), a.get("unit"))
+                for a in row["args"]]
+        return cls(row["name"], row.get("summary", ""), lambda ctx, **kw: None, args=args,
+                   requires=row.get("requires", ()), effect=row["effect"], body=row.get("body"),
+                   needs_service=row.get("needs_service", False), result=row.get("result", ""),
+                   stream=row.get("stream"))
+
     def to_dict(self):
         return {"name": self.name, "summary": self.summary, "args": [a.to_dict() for a in self.args],
                 "requires": list(self.requires), "effect": self.effect, "body": self.body,

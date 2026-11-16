@@ -41,7 +41,7 @@ def invoke(argv, local, env=None):
 
 class Real(CommandsBase):
     def cli(self, *argv, caps=ALL):
-        return invoke(argv, lambda cfg: (self.reg, self.host, caps))
+        return invoke(argv, lambda cfg, env=None: (self.reg, self.host, caps))
 
     def write_package(self, data=None):
         d = tempfile.mkdtemp(prefix="nrfwb-cli-")
@@ -258,7 +258,7 @@ class Output(Real):
         long_output = "\n".join("line %d of the tool output" % i for i in range(3000))
         reg.add(Command("demo.run", "demo", lambda ctx: Result.failed("flash_failed", "it failed", {"output": long_output},
                                                                     {"kept": True})), module="t")
-        rc, out, err = invoke(["demo", "run"], lambda cfg: (reg, None, set()))
+        rc, out, err = invoke(["demo", "run"], lambda cfg, env=None: (reg, None, set()))
         self.assertEqual(rc, 3)
         self.assertTrue(out.startswith("failed flash_failed: it failed\ndata:\n"), out[:80])
         self.assertIn("evidence:", out)
@@ -281,7 +281,7 @@ class Generic(unittest.TestCase):
         self.reg.add(Command("demo.session", "keeps state", lambda ctx: Result.success(), needs_service=True), module="t")
 
     def run_cli(self, *argv):
-        return invoke(argv, lambda cfg: (self.reg, None, set()))
+        return invoke(argv, lambda cfg, env=None: (self.reg, None, set()))
 
     def test_defaults_and_typed_text(self):
         rc, out, err = self.run_cli("demo", "echo", "--text", "hi")
@@ -320,7 +320,7 @@ class Generic(unittest.TestCase):
 
 class Setup(unittest.TestCase):
     def test_a_bad_configuration_is_exit_2(self):
-        def broken(cfg):
+        def broken(cfg, env=None):
             raise ConfigError("the units file x cannot be read")
         rc, out, err = invoke(["devices", "list"], broken)
         self.assertEqual(rc, 2)
@@ -332,13 +332,15 @@ class Setup(unittest.TestCase):
 
     def test_the_timeout_must_be_a_positive_number(self):
         for bad in ("0", "-1", "abc", "nan"):
-            rc, out, err = invoke(["--timeout", bad, "commands"], lambda cfg: (Registry(), None, set()))
+            rc, out, err = invoke(["--timeout", bad, "commands"], lambda cfg, env=None: (Registry(), None, set()))
             self.assertEqual(rc, 2, bad)
 
-    def test_the_config_path_reaches_the_local_factory(self):
+    def test_the_config_path_and_the_same_environment_reach_the_local_factory(self):
         got = []
-        invoke(["--config", "/some/config.yaml", "commands"], lambda cfg: got.append(cfg) or (Registry(), None, set()))
-        self.assertEqual(got, ["/some/config.yaml"])
+        env = {"NRFWB_FIRMWARE_DIR": "/some/dir"}
+        invoke(["--config", "/some/config.yaml", "commands"],
+               lambda cfg, env=None: got.append((cfg, env)) or (Registry(), None, set()), env=env)
+        self.assertEqual(got, [("/some/config.yaml", env)], "the factory must see the environment the CLI was given")
 
 
 if __name__ == "__main__":
