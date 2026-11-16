@@ -164,6 +164,28 @@ class Verdict(Base):
         self.assertEqual((r.cls, r.code), ("failed", "run_node_not_returned"), r.to_json())
         self.assertEqual(len(runner.calls), 1)
 
+    def returns_as(self, product):
+        def back():
+            self.t.unplug("1-3")
+            self.t.usb("1-3", ("239a", "8029"), product, tty="ttyACM0", majmin="166:0")
+        return back
+
+    def test_the_returned_device_must_report_the_expected_product(self):
+        runner, r = self.go(runner=Runner(on_run=self.returns_as("nrfwb-parking 1")), expect_product="nrfwb-parking 1")
+        self.assertEqual(r.cls, "ok", r.to_json())
+
+    def test_a_different_product_after_the_flash_is_suspect(self):
+        # The write reported success and the board is back, but it is not the image that was written.
+        runner, r = self.go(runner=Runner(on_run=self.returns_as("WisCore RAK4631 Board")),
+                            expect_product="nrfwb-parking 1")
+        self.assertEqual((r.cls, r.code), ("suspect", "flash_suspect"), r.to_json())
+        self.assertEqual(r.evidence["reported_product"], "WisCore RAK4631 Board")
+        self.assertEqual(r.evidence["expected_product"], "nrfwb-parking 1")
+
+    def test_with_no_expected_product_nothing_is_checked(self):
+        _, r = self.go(runner=Runner(on_run=self.returns_as("anything at all")))
+        self.assertEqual(r.cls, "ok")
+
     def test_the_event_source_is_opened_before_the_write_and_closed_after(self):
         w = FakeWatcher()
         self.go(watcher=w)

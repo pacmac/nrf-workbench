@@ -95,6 +95,11 @@ to match is not a check.
   `measured_flashes` so a baseline can be built from verified runs (here 332 092 bytes in 21.554 s,
   about 15.4 KB/s). A duration check will be added only when there are enough verified samples to
   derive one, with the margin the derive rule gives; one sample cannot set a floor.
+- **Which image is running can be checked on the device (optional).** When the caller knows the USB
+  product string the written image announces (the parking image announces `nrfwb-parking 1`,
+  `testpartner.md`), the returned device must report exactly that string, else `flash_suspect`. This
+  is a content check made by the device itself, independent of timing. An image whose product string
+  is not known (the mt-alarm firmware reports the board default) is not checked this way.
 - **The ceiling is the caller's bound** (required, no default). With no measured baseline beyond one
   run, a first bound is a stated estimate (the brief's 25 to 29 s, doubled) to be replaced by 2 to 3
   times the measured time.

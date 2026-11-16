@@ -68,7 +68,7 @@ def _brief(dev):
 
 
 def flash_file(prof, serial_no, package, bound_s, units=None, sysfs="/sys", devroot="/dev", proc="/proc",
-               lock_path=DEFAULT_PATH, runner=default_runner, tool=None, watcher=None):
+               lock_path=DEFAULT_PATH, runner=default_runner, tool=None, watcher=None, expect_product=None):
     if not isinstance(bound_s, (int, float)) or isinstance(bound_s, bool) or bound_s <= 0:
         return Result.refused("no_bound", "a flash needs a caller-supplied bound in seconds")
     if not serial_no:
@@ -89,12 +89,14 @@ def flash_file(prof, serial_no, package, bound_s, units=None, sysfs="/sys", devr
     except LockVoid as exc:
         return Result.refused("lock_void", str(exc))
     try:
-        return _flash(prof, serial_no, package, info, bound_s, units, sysfs, devroot, proc, runner, tool, watcher)
+        return _flash(prof, serial_no, package, info, bound_s, units, sysfs, devroot, proc, runner, tool, watcher,
+                      expect_product)
     finally:
         lock.release()
 
 
-def _flash(prof, serial_no, package, info, bound_s, units, sysfs, devroot, proc, runner, tool, watcher):
+def _flash(prof, serial_no, package, info, bound_s, units, sysfs, devroot, proc, runner, tool, watcher,
+           expect_product):
     inv = identity.inventory(sysfs)
     st = identity.state(prof, serial_no, inv)
     mine = [d for d in identity.board_devices(prof, inv) if d["serial"] == serial_no]
@@ -154,6 +156,13 @@ def _flash(prof, serial_no, package, info, bound_s, units, sysfs, devroot, proc,
                              dict(facts, bound_s=bound_s, event_source=res.source, note=res.note))
     after = [d for d in identity.board_devices(prof, identity.inventory(sysfs))
              if d["mode"] == "app" and d["serial"] == serial_no][0]
+    # A device-side check of WHICH image is running, independent of timing: when the caller knows the
+    # product string the image announces (the parking image does), the returned device must report it.
+    if expect_product is not None and after["product"] != expect_product:
+        return Result(SUSPECT, "flash_suspect",
+                      "the application that returned reports a different product than the image that was written",
+                      None, dict(facts, expected_product=expect_product, reported_product=after["product"],
+                                 app_after=_brief(after)))
     return Result.success({"duration_s": facts["duration_s"], "image_bytes": facts["image_bytes"],
                            "throughput_bytes_per_s": round(facts["image_bytes"] / max(facts["duration_s"], 1e-9), 1),
                            "packets": packets, "marks": marks, "rate": rate, "output": out,
@@ -170,10 +179,12 @@ def main(argv=None):
                    help="REQUIRED ceiling in seconds for the write and the return; derive it (about 2x the wire time)")
     p.add_argument("--protected", action="store_true", help="treat this unit as protected (it will refuse)")
     p.add_argument("--lock", default=DEFAULT_PATH, help="the host lock file")
+    p.add_argument("--expect-product", dest="expect_product",
+                   help="the USB product string the written image announces; the returned device must report it")
     a = p.parse_args(argv)
     prof = profilemod.load(a.profile)
     result = flash_file(prof, a.serial, a.package, a.bound_s, units={a.serial: {"protected": a.protected}},
-                        lock_path=a.lock)
+                        lock_path=a.lock, expect_product=a.expect_product)
     print(result.to_json())
     return result.exit_code()
 
