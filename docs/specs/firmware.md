@@ -72,8 +72,25 @@ a missing length is refused before any touch. Three survivors at first were real
 profile, one mode at a time, one board) and are fixed: the profile that claims the board is used, not
 the first one loaded.
 
-**Not built yet:** the HTTP service, the CLI and the MCP front ends, the concrete host (the composition
-root), and the bench step.
+**Proved on the bench, 2026-11-16 (the acceptance criterion in `VERIFY` below):** the service ran on
+the Pi (loopback only, reached from the build host through an SSH tunnel), and from the build host over
+HTTP, the build host never opening the board:
+1. `devices.list` named the attached board; `firmware.put` stored the pinscan package (58,299 bytes, id
+   `6475e0be…`, SoftDevice 182, 113 packets), the Pi's store directory held exactly `<id>.zip` and
+   `<id>.json`, both mode 0600;
+2. `programmer.flash` **by id**: ok, entered the bootloader once (handover 0.482 s, serial the same
+   across the mode change), 113 of 113 marks in 4.653 s (12,357 B/s), the board returned reporting
+   `nrfwb-pinscan 1`;
+3. `programmer.flash_stream` **in one call** (the file as the request body, 56,571 bytes): ok, stored
+   as `656d9084…` before the touch, 109 of 109 marks in 4.412 s (12,640 B/s), the board returned
+   reporting `nrfwb-parking 2`;
+4. checked independently of the service: the Pi's own USB view showed `nrfwb-parking 2` on the same serial,
+   and the debug dongle read 5 heartbeats in 5 s from the firmware itself.
+The two throughputs sit at the low end of the 12.35 to 15.42 kB/s range recorded earlier (small images).
+**Not exercised:** the non-loopback and token path on the Pi (it is tested on this host only), TLS, and a
+dropped upload against the real store on the Pi (tested on this host against a real socket).
+
+**Not built yet:** the CLI and the MCP front ends, the dashboard, a systemd unit.
 
 **Not tested, on purpose or by limit:** the order in which `delete` removes the two files (a crash-timing property: record first, so a crash leaves an
 unlisted image and never a listed entry with no image), and the `fsync` calls (a disk-level effect a
