@@ -4,12 +4,13 @@
 //   * keeps USB CDC enumerated (Serial.begin), so the host can see the board and a touch can put it
 //     back into the bootloader (the Arduino core's TinyUSB layer handles the touch itself);
 //   * blinks the two LEDs as a human-visible "the application is running" signal;
-//   * announces the USB product string "nrfwb-parking 1" (set in platformio.ini, at compile time).
+//   * announces the USB product string "nrfwb-parking 2" (set in platformio.ini, at compile time).
 //
-// What it deliberately never does: sleep the system, start the radio, write flash, or print. A
-// silent port is the expected state. The LED patterns are for a human or a camera, not data.
-// The one exception is the separate `pinscan` env (-DPINSCAN, below), which exists to find which pin
-// the debug dongle is wired to; it announces a different product string.
+// What it deliberately never does: sleep the system, start the radio, or write flash. The USB CDC is
+// silent. The LED patterns are for a human or a camera, not data.
+// It does have a debug console on the core's Serial2 (gpio20 TX / gpio19 RX, the pair the dongle is
+// wired to): a heartbeat each second and an echo of every byte received. The separate `pinscan` env
+// (-DPINSCAN, below) exists to find which pin the dongle is wired to; it announces another product string.
 #include <Arduino.h>
 // Including this is what makes the build link the USB stack. Without it the compile succeeds and the
 // LINK fails on `Serial` and Adafruit_USBD_CDC::begin (found by the first build): the library finder
@@ -37,6 +38,9 @@ void setup() {
   // USB CDC. Nothing is ever written to it; opening it is what keeps the device a normal,
   // touchable USB serial device.
   Serial.begin(115200);
+#ifdef PARKING_UART
+  Serial2.begin(115200);          // the debug console, gpio20 TX / gpio19 RX (platformio.ini)
+#endif
 #ifdef PINSCAN
   // The core's own hardware UART on the J7 pair (variant: PIN_SERIAL1_TX 16, PIN_SERIAL1_RX 15). It
   // takes the bit-banging timing out of the question for the pair the RAK19003 header uses.
@@ -50,7 +54,10 @@ void setup() {
 // high-impedance input, so a pin that is wired to the dongle's TX is never driven against it.
 // 21 and 33 are the WisBlock IO3 and switch pins from memory of the RAK variant, NOT from this
 // repository's variant.h: unverified. gpio 6 and 8 go to the on-board debug chip, not to a wire.
-static const uint8_t CANDIDATES[] = {17, 34, 21, 4, 9, 10, 16, 15, 31, 5, 13, 14, 33};
+// 20 and 19 are the RAK19003's UART0 pair (connector pins 11/12, TXD0/RXD0), which the RAK4631 module
+// table gives as P0.20 (TX) and P0.19 (RX): Peter wired the dongle to "tx0 and rx0" and neither pin was
+// in the first two scans. They come first.
+static const uint8_t CANDIDATES[] = {20, 19, 17, 34, 21, 4, 9, 10, 16, 15, 31, 5, 13, 14, 33};
 static const uint32_t BAUD = 115200;
 static const uint32_t CPU_HZ = 64000000UL;
 
@@ -104,6 +111,22 @@ static void pinscan_round() {
 
 void loop() {
   const uint32_t t = millis();
+#ifdef PARKING_UART
+  // A heartbeat on the debug console, and an echo of every byte received, so both wires of the
+  // dongle can be proved: TX by the heartbeat arriving, RX by the echo coming back.
+  static uint32_t last_beat = 0;
+  if (t - last_beat >= 1000) {
+    last_beat = t;
+    Serial2.print("NRFWB-PARKING 2 up=");
+    Serial2.print(t);
+    Serial2.print("ms\r\n");
+  }
+  while (Serial2.available() > 0) {
+    const int c = Serial2.read();
+    Serial2.print("ECHO 0x");
+    Serial2.println(c, HEX);
+  }
+#endif
 #ifdef PINSCAN
   static uint32_t last_scan = 0;
   if (t - last_scan >= 5000) { last_scan = t; pinscan_round(); }   // every 5 s, ~0.4 s long

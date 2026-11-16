@@ -42,13 +42,22 @@ Nothing is vendored from another repository (see Dependencies).
   heartbeat; blue (pin 36) is a recognisable pattern that is not the heartbeat, so the parking image
   can be told from a firmware that merely lights an LED. Both pins are active high **[verified: the
   RAK variant, `LED_STATE_ON 1`]**. The patterns are for a human or a camera, not data.
-- **Announces a distinct USB product string**, `nrfwb-parking 1`, set through the core's
-  `USBDevice.setProductDescriptor()` **[verified: it exists in `Adafruit_USBD_Device.h`]**. The USB
+- **Announces a distinct USB product string**, `nrfwb-parking 2` (the number is bumped whenever the
+  image's behaviour changes, so a flash of the new image is told from the old one), set at compile
+  time by `board_build.usb_product` **[verified: the string is in the binary and the board reports it]**,
+  not at run time, because the core starts USB before `setup()`. (An earlier draft of this line named
+  `USBDevice.setProductDescriptor()`; that was not what was built.) The USB
   vendor and product ids are unchanged (`239a:8029`), so the identity code still reads the state as
   `app`, and the serial (derived from the chip) is unchanged. Software can then verify **which image
   is running** from the device itself, a content check that does not depend on timing.
-- **Never sleeps the system, never starts the radio, never writes flash, never prints.** It has no
-  console output at all, so a silent port is the expected state.
+- **Never sleeps the system, never starts the radio, never writes flash.** Its USB CDC is silent.
+- **Has a debug console on the core's `Serial2`, gpio20 TX and gpio19 RX** (the RAK19003's UART0 pair,
+  connector pins 11 and 12, `TXD0`/`RXD0`; the RAK4631 module table gives them as P0.20 and P0.19). It
+  prints `NRFWB-PARKING 2 up=<ms>` each second and echoes each byte received as `ECHO 0x<hex>`, so both
+  dongle wires can be proved. **Proved on the bench, 2026-11-16:** 8 of 8 heartbeats in 8 s at about 1.008 s
+  apart on the dongle, and `ping\n` sent from the dongle came back as `ECHO 0x70 0x69 0x6E 0x67 0x0A`.
+  Peter, 2026-11-16: the parking image is "MUCH more useful for debugging and development of this
+  workbench" than mt-alarm, so **it is the image the bench RAK is left running**.
 
 ## TOOL the pinscan image (second env of the same project)
 
@@ -80,6 +89,12 @@ nothing **[verified]**, which does not say whether the wire, the dongle or the p
   `TXD1` yet describes it "RX". So the pins are firm (gpio16 out, gpio15 in) and which J7 hole each lands on
   is not stated. Both were in the first scan and nothing was heard, so the bit-banged timing is the next
   thing to remove: pinscan now also sends on the core's hardware `Serial1` (gpio16).
+- **RESOLVED, 2026-11-16:** Peter said the dongle is wired to `tx0`/`rx0`. I had assumed the J7 header
+  (UART1, connector pins 33/34), which was wrong: his wires are on UART0 (connector pins 11/12), which
+  the RAK4631 module table gives as **gpio20 TX, gpio19 RX**, and neither pin was in the two earlier
+  scans. With them added, pinscan was heard at once: `NRFWB-PIN 20` 8 times in 20 s (112 bytes, all clean,
+  which also validates the bit-banged timing). The two negative runs below are therefore explained by the
+  pin list, not by timing or ground.
 - **Result of the hardware-UART run, 2026-11-16 [verified on the bench]:** pinscan with the core's
   `Serial1` sending `NRFWB-HWUART1 TX=16` was flashed (4.654 s, 113 of 113 marks, product confirmed) and
   the dongle read for 20 s (four rounds): **nothing received again**. Two negative runs on the J7 pair,
@@ -110,7 +125,7 @@ nothing **[verified]**, which does not say whether the wire, the dongle or the p
 ## TOOL how it is verified
 
 - **Software, no human:** after a flash, the returned device's product string must equal
-  `nrfwb-parking 1` (the optional expected-product check in `programmer.md`), with the same serial.
+  `nrfwb-parking 2` (the optional expected-product check in `programmer.md`), with the same serial.
   A parking image that is not the one running is `flash_suspect`.
 - **Human, optional:** the two LED patterns are visible.
 - **The cycle:** parking to bootloader to the original firmware and back, each step verified from
@@ -131,4 +146,4 @@ nothing **[verified]**, which does not say whether the wire, the dongle or the p
 - The package builds, is a zip with `manifest.json`, requires SoftDevice 182, and is small.
 - The built image contains the product string.
 - On the RAK (with Peter's go): it enumerates as `239a:8029` with the same serial and the product
-  string `nrfwb-parking 1`, stays stable, and the touch re-enters the bootloader from it.
+  string `nrfwb-parking 2`, stays stable, and the touch re-enters the bootloader from it.
