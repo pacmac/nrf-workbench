@@ -93,8 +93,12 @@ The service can flash firmware and power-cycle hardware, so it is not open by de
   requirement here (see the decision below).
 - It is a thin server over the HTTP service. At start it calls `GET /api/commands` and registers
   one tool per command from the answer, so it is generated from the registry and has no tool table
-  of its own. Whether SDK 2.x registers tools from data at runtime this way is **[unknown]**: it is
-  the first thing to try (see Verify).
+  of its own. **[verified 2026-11-16, run on this host]** SDK 2.3.0's low-level `Server` takes
+  `on_list_tools` and `on_call_tool` handlers, so tools are built from plain data rows with the
+  JSON Schema passed through verbatim, no per-tool Python function. A row added after start appears
+  on the next `list_tools`. A refused `Result` is returned whole in the tool content with
+  `is_error` true. (The client side of the SDK names these `is_error` and `input_schema`.) This was
+  tried in-process; the stdio and HTTP transports are the SDK's own and were not exercised.
 - Tool names are `<area>_<command>` (for example `programmer_flash_file`); a server prefix already
   separates them from the ESP tools.
 - A tool returns the `Result` JSON in full, including the whole tool output and all evidence.
@@ -127,14 +131,19 @@ The `MEASURE` step in the `guards` task is what fills them in. **[derive rule]**
    registry already holds typed args and result shapes, so OpenAPI is generated and a
    schema-generating framework adds nothing. Runner-up: aiohttp, rejected for the duplicate stack.
    The CLI's client for stateful commands needs an HTTP client, and the SDK already brings `httpx2`.
-   Whether uvicorn serves websockets without an extra package is **[unknown]**; verify below.
+   **[verified 2026-11-16, run on this host]** Starlette on uvicorn serves a websocket on loopback
+   (three JSON events received, via the `websockets` library). `websockets` is installed here but
+   is **not** among the `mcp` SDK's declared dependencies, so this project must declare it itself
+   (`uvicorn[standard]` or `websockets`); relying on it being present by accident would be the bug.
 3. **Use the official MCP SDK for the protocol.** Constraint: initialisation, tool listing, call
    dispatch, schemas and transports are a protocol that changes; maintaining a copy by hand is the
-   drift the single-source rule exists to stop. Cost: the SDK pulls about fifteen transitive
-   dependencies (pydantic, jsonschema, opentelemetry-api, PyJWT and others) **[verified: declared
-   dependencies]**, heavier than upstream's stdlib proxy; that is accepted on a Pi because the
-   alternative is owning the protocol. Runner-up: a stdlib proxy as upstream, rejected for the
-   maintenance. This also sets a floor: **Python 3.10 or newer**.
+   drift the single-source rule exists to stop. Cost: the full set (`mcp`, `uvicorn`,
+   `websockets`, `starlette` and everything they pull in) is 29 binary wheels on aarch64, including
+   pydantic, jsonschema, opentelemetry-api and PyJWT **[verified 2026-11-16: `pip download
+   --only-binary` resolved all 29 for aarch64 on CPython 3.10, 3.11 and 3.13, so nothing compiles
+   on a Pi]**. That is heavier than upstream's stdlib proxy, and accepted because the alternative is
+   owning the protocol. Runner-up: a stdlib proxy as upstream, rejected for the maintenance. This
+   also sets a floor: **Python 3.10 or newer** (the SDK's own requirement).
 4. **GET for `read`, POST for `write`, websocket for `stream`.** Constraint: the registry already
    carries `effect`, so the verb costs nothing and a read can never be mistaken for a write.
 5. **Refuse a second hardware request, never queue it.** Constraint: a queue is an unbounded wait,
@@ -156,7 +165,9 @@ The `MEASURE` step in the `guards` task is what fills them in. **[derive rule]**
 - A one-shot CLI command works with the service stopped; a `needs_service` command returns
   `service_not_running`.
 - The MCP server returns the same `Result` the HTTP API returns, unabridged.
-- **First try, before any other API code:** with `mcp` 2.3.0, register a tool from a data row at
-  runtime and call it. If SDK 2.x cannot, this spec's MCP section changes. **[unknown]**
-- Starlette, uvicorn and the `mcp` SDK install and run on one arm64 Pi and one x86_64 host, with
-  websockets working. **[unknown]** until run.
+- **Done 2026-11-16 (scratch scripts, not kept):** data-driven MCP tools with `mcp` 2.3.0 over an
+  in-process client, and a Starlette websocket on uvicorn over loopback. These become the first
+  `tests/api` smoke tests when the area is built, so the evidence is kept as a test.
+- **Done 2026-11-16:** all 29 wheels resolve for aarch64 on CPython 3.10, 3.11 and 3.13.
+- **Still unrun:** the stack actually starting on a physical Pi (wheels resolving is not running),
+  and the SDK's stdio and streamable-HTTP transports. **[unknown]** until run on the bench Pi.
