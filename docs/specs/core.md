@@ -12,9 +12,9 @@ Area: `core` (library). Depends on nothing else in the project.
 
 1. **The refusal codes exist only as prose in `programmer.md`.** Until they are a closed, named
    list in code, the CLI exit code and HTTP status cannot be derived from them (see Results).
-2. **The lock path is host-specific.** The existing tool uses `/run/lock/rak-comm.lock`. Whether
-   `/run/lock` exists and is writable on every target host (Pi, PVE host, minimal VM, a container
-   with USB pass-through) is **[unknown]**. The path must be configurable, with one documented
+2. **The lock path is host-specific.** The existing tool uses `/run/lock/rak-comm.lock`. On this
+   host `/run/lock` exists and is writable **[verified, 2026-11-16]**. Whether it does on every
+   other target host (Pi, PVE host, minimal VM) is **[unknown]**. The path must be configurable, with one documented
    default, and the probe must report when it is unusable.
 3. **The HTTP framework is not chosen.** It is deferred to the `api` spec; nothing in `core` may
    depend on one (see Registry).
@@ -85,6 +85,7 @@ returned, never a tail. **[brief]**
 | `unrecognised` | refused | a node exists, no profile claims its ids | ids |
 | `port_held` | refused | any process has the node open | pid, matched by device number |
 | `serial_mismatch` | refused | attached serial is not the one the caller named | both serials |
+| `serial_unverifiable` | refused | the caller named a serial and this host's provider has none to compare | provider |
 | `two_candidates` | refused | more than one board could match | their serials |
 | `protected` | refused | the unit is protected | serial |
 | `bad_package` | refused | not a zip, no `manifest.json`, a `.hex`, or truncated | what was missing |
@@ -113,8 +114,13 @@ One function maps a `Result` to both, so the CLI and API cannot disagree.
 
 `service_not_running` is only ever raised by the CLI, so it has an exit code (1) and no HTTP status.
 
-Exit 1 for a refusal matches the existing tool (`--idle` exits 1 when someone holds the port) and
-exit 2 is the convention argument parsers already use. **[stated, existing behaviour]**
+These numbers are **not** the existing tool's. `rak-comm.py` uses 1 for a failure, 2 for a bad file
+or a board not in the bootloader, and 3 for a missing node or a holder **[verified: read the code,
+2026-11-16]**, so a refusal there can be 2 or 3 and a failure is 1: the opposite of this table for
+failures. My first draft claimed exit 1 "matches the existing tool"; that was wrong (only `--idle`
+returns 1 for a holder). The choice here is deliberate: exit 2 is what argument parsers already
+use for bad usage, and a refusal (nothing was done) is the common, safe outcome. Anything scripted
+against `rak-comm.py`'s codes must be re-read.
 
 ## TOOL the host capability probe
 
@@ -129,7 +135,9 @@ writes DTR or RTS.** It records, as named capabilities:
 - debug probes: CMSIS-DAP or other SWD probes on USB
 - external tools: presence and version of `pio`, `adafruit-nrfutil`, `nrfutil`, `openocd`, `pyocd`,
   `mcumgr`, `smpmgr`, and any proprietary download needed
-- lock directory: present and writable, or not (GAP 2)
+- lock directory: present and writable, or not (GAP: the lock path is host-specific)
+- identity provider: `udev` (serials available) or `node-map` (named nodes, no serial); see
+  `devices.md`. This decides whether the serial interlock can run at all.
 
 It is published by the command `host.capabilities`, which lists **what is present and, for each
 missing one, what it blocks and why**, so an absent command is always explainable. Commands name

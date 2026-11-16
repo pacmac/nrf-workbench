@@ -151,7 +151,7 @@ The `MEASURE` step in the `guards` task is what fills them in. **[derive rule]**
 6. **Loopback by default, token to leave it, refuse to start otherwise.** Constraint: this flashes
    and power-cycles hardware; an open default on a LAN is the failure to rule out, and one extra
    configuration step is cheap.
-7. **Narrow the CLI independence rule** (GAP 1). Constraint: stateful commands need one owner of
+7. **Narrow the CLI independence rule** (GAP: the CLI independence rule is too strong). Constraint: stateful commands need one owner of
    state, and only a long-running process can be that owner.
 
 ## VERIFY

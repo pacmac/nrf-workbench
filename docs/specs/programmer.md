@@ -16,6 +16,12 @@ to keep, generalise, and where it contradicts the brief, to settle.
    serial and `--unit` wrong-board interlock, the roster". Brief rule 9: refuse unless the attached
    serial matches the one the caller named; refuse if two candidates. Brief rule 10: a `protected`
    flag per device. As described, nothing stops flashing the wrong or a mid-measurement board.
+   **Why it was removed, read from the code [verified: `rak-comm.py` header, 2026-11-16]:** this
+   host hands over only two named nodes (`/dev/lxc-serial/rak4631-run` and `-dfu`), with no sysfs
+   USB tree and no `/dev/serial/by-id`, so there is no serial to compare. Peter ruled on
+   2026-11-16 that the tool use only those two nodes. It was a host limit, not a design choice.
+   The 2026-08-28 ruling ("any board can be any site, do NOT start hard-coding them") forbids a
+   roster of named boards; it does not forbid checking a serial the caller names.
 2. ~~`--flash` fails ("pio can't find the port")~~ **Not a product defect.** Peter: it comes from
    this dev host's USB pass-through and custom `/dev` naming, and will not occur on a PVE host, a
    Pi or a VM. Out of scope; no fix designed around it. **[stated]** One consequence kept: the
@@ -35,6 +41,22 @@ to keep, generalise, and where it contradicts the brief, to settle.
 7. **Port-holder check misses aliases** (`/dev/ttyACM1` vs `/dev/lxc-serial/...`) because it
    compares paths. **[stated]** Compare device number (`st_rdev`), not path.
 8. **The port-guard hook does not name `/dev/lxc-serial/`.** **[stated]**
+9. **The dump differs from the code it describes [verified: read `rak-comm.py`, 428 lines,
+   2026-11-16].** Do not port these:
+   - **`--build` and `--status` do take the lock.** `main()` calls `claim_the_link()` before it
+     dispatches any mode, so a build or a read is refused while another instance flashes. The dump
+     says "no USB, no lock". Reads and builds must take no lock.
+   - **A refused flash prints only the last 800 characters** (`blob.strip()[-800:]`). Brief rule 7:
+     return the whole output, never a tail.
+   - **Exit codes differ from `core.md`.** The tool uses 1 for failure, 2 for a bad file or a
+     board not in the bootloader, 3 for a missing node or a holder. `core.md` maps by class
+     instead; the difference is deliberate (see `core.md`), not compatibility.
+   - **The holder check compares `os.path.realpath`**, so a node reached through a different path
+     to the same device is missed. Confirms GAP: port-holder check misses aliases.
+   - **The `--upload-port` ban has a host-specific reason:** pio resolves the port from the board
+     manifest's `build.hwids`, which this host's named nodes cannot match. On a host where the
+     board enumerates as `ttyACM*`, pio's own discovery works. The ban is a workaround for this
+     host's pass-through, not a principle; it stays only where pio is used to flash.
 
 ---
 
@@ -72,10 +94,10 @@ Each guard is a refusal. A refusal names what it found (pid, path, count).
 - **State.** Refuse when no node exists, when both app and bootloader nodes exist, or when a node
   is not a character device; name the paths. **[stated]**
 - **Port holder.** Refuse if any process has the node open (scan `/proc/*/fd`); name the pid.
-  Must match by device number, not path (GAP 7).
+  Must match by device number, not path (GAP: port-holder check misses aliases).
 - **One attempt.** Never retry. A retry is another reset. **[stated]**
 - **Verdict.** `--flash` succeeds only if the build tool exits 0 and prints `Device programmed.`.
-  `--flash-file` is judged by nrfutil's exit code. (Both strengthened by GAP 6.)
+  `--flash-file` is judged by nrfutil's exit code. (Both strengthened by GAP: the verdict is weaker than the brief.)
 - **Build first, unlocked.** A failed build disturbs nothing: no lock, no port touched.
 - **Input checks for `--flash-file`.** The file must exist and be a zip containing `manifest.json`,
   so a `.hex` or truncated download is refused before any write. (Brief also wants a wrong
@@ -86,7 +108,7 @@ Each guard is a refusal. A refusal names what it found (pid, path, count).
 - open a serial port, or touch DTR or RTS
 - request the bootloader
 - pass `--upload-port` (the build tool discovers the port itself; kept as stated)
-- contain a sleep, poll or timeout; "the bound belongs to the caller" (GAP 3)
+- contain a sleep, poll or timeout; "the bound belongs to the caller" (GAP: no timeout contradicts the inotify wait)
 
 ## TOOL guards outside the tool
 
@@ -105,10 +127,14 @@ Each line: the constraint, then the conclusion.
    hold several boards (brief rule 9), and the removed thing was the *roster* (a hardcoded unit
    list plus sysfs/by-id lookups), which cannot be generic. Keep the guarantee, drop the roster:
    the caller names a serial, the tool reads the attached serial from udev `ID_SERIAL_SHORT`,
-   mismatch or two candidates is refused. `protected` lives in the device profile as data.
+   mismatch or two candidates is refused. `protected` is held per serial (`devices.md`), not in
+   the profile. **Capability-gated:** on a host like this one, whose nodes carry no serial, the
+   check cannot run. It must then say so (`serial_checked: false` in the evidence) and not read as
+   passed; protection then applies per named node (`devices.md`). A check that could not run must
+   not look like a check that passed.
 2. **The bound is a required argument supplied by the caller, with no default in the tool.**
    Constraint: the dump says "the bound belongs to the caller", and an unbounded wait cannot
-   report failure (GAP 3). The service derives it from a measured re-enumeration time
+   report failure (GAP: no timeout contradicts the inotify wait). The service derives it from a measured re-enumeration time
    (about 1.5-2x the measurement). The tool refuses to start the wait without one.
 3. **One actor causes the transition per flash; the tool is never that actor.** Constraint: pio's
    upload already does the 1200-baud touch, and a second touch is a second reset (brief rules 1-2).
