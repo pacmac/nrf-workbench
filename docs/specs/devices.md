@@ -18,12 +18,15 @@ Area: `devices` (library). Depends only on `core`.
 2. **The role of `239a:802a` is unknown.** The brief says the board file lists `0029`, `002a` and
    `802a`; Peter's `lsusb` shows app `8029` and DFU `0029`. Which of the three are bootloader ids
    and which are app ids of other variants is not established.
-3. **Identity by serial cannot work on every host, and this is one that it cannot.**
-   **[verified, 2026-11-16]** `/run/udev` does not exist here, `pyudev` is not installed, and the
-   existing flash tool documents that this host hands over only two named nodes
-   (`/dev/lxc-serial/rak4631-run` and `-dfu`), with no sysfs USB tree and no
-   `/dev/serial/by-id`. A node carries no serial. The spec below therefore has two identity
-   providers, not one (see Identity providers).
+3. **Knowing which board is attached and having a node to open are two different questions, and
+   my first draft conflated them.** It said identity by serial cannot work on this host. That was
+   wrong. **[verified by `probe_host.py`, 2026-11-16]** `/run/udev` is absent here, but sysfs
+   (`/sys/bus/usb/devices`) lists the RAK4631 with its ids, product string and serial, so identity
+   by serial CAN work without udev. What is missing is the **node**: `/dev/lxc-serial/` is empty
+   and there is no `ttyACM*`, so there is nothing to open, and the existing flash tool would report
+   `absent` for a board that is plugged in. The spec below therefore separates an identity source
+   from a node resolver (see Identity and node). The existing tool's header claims this host has
+   no sysfs USB tree; that claim is stale for the host as it is today.
 4. **`protected` is a property of a unit, not of a board model.** The brief puts it in the profile.
    A RAK4631 is protected because *that one* is mid-measurement; another of the same model is not.
    Profile-level protection would block every board of the model or none (see Protected, below).
@@ -42,29 +45,47 @@ A device is matched to a **profile** by USB `VID:PID` in either mode, then confi
 Nothing is matched by `/dev` name: those are aliases the host may rename or customise (Peter's
 pass-through). The node path is an *output* of identification, never an input.
 
-## TOOL identity providers
+## TOOL identity and node
 
-`identify()` is answered by one of two providers, chosen by what the host can do (a capability, see
-`core.md`). Everything above the provider sees the same device record.
+`identify()` answers two separate questions with two separate mechanisms, each chosen by what the
+host can do (capabilities, see `core.md`). Everything above them sees one device record.
 
-| provider | where it works | what it knows |
+**1. Identity source: which board is attached.** Ids, product string, serial, hub port.
+
+| source | where it works | notes |
 |---|---|---|
-| **udev** | a host where USB devices appear in sysfs and `/dev/serial/by-id` (Pi, PVE host, most VMs) | VID:PID per mode, product string, **serial**, hub port |
-| **node-map** | a host that hands over named nodes only (this host's `/dev/lxc-serial/*`) | which named node exists; **no serial** |
+| **sysfs** | any Linux with a USB tree in `/sys/bus/usb/devices` | the baseline; needs no udev. Verified on this host. |
+| **udev** | a host with a udev database | adds `ID_PATH` and `ID_SERIAL_SHORT` properties; optional enrichment |
 
-- A **node-map** is host configuration: for each slot, which node path means which mode
-  (`run` and `dfu`). It is a map of nodes to modes, not a roster of boards, so it does not
-  reintroduce what the 2026-08-28 ruling forbids.
-- On node-map, **the slot is the identity** and a serial is unknown. The record says so
-  (`serial: null`, `serial_checked: false`). A guard that needs a serial refuses with an explicit
-  `serial_unverifiable`, or proceeds only where the caller did not name one, and always reports that
-  the check did not run. **A check that could not run must not read as a check that passed.**
-- `protected` applies per serial where a serial exists, and per slot label on a node-map host.
-- A node-map host never guesses a mode from a VID:PID it cannot see.
+**2. Node resolver: which path can be opened for it.** A serial from sysfs says nothing about a
+path. The join is by device number: the tty class entry under the board's sysfs interface gives
+`major:minor`, and a node whose `st_rdev` matches is that board's node.
+
+| resolver | where it works |
+|---|---|
+| **kernel tty link** | sysfs shows a `tty/ttyACM*` under the board's interface: match its `major:minor` to a node in `/dev` |
+| **by-id** | `/dev/serial/by-id/*` exists (the name carries the serial) |
+| **node-map** | host configuration names which node means which slot and mode, for a host that presents named nodes only (this host's `/dev/lxc-serial/rak4631-run` and `-dfu`) |
+
+- A **node-map** is a map of nodes to modes, not a roster of boards, so it does not reintroduce
+  what the 2026-08-28 ruling forbids.
+- **Absent has three different meanings and must not share a word:** *the board is not attached*
+  (no sysfs entry), *the board is attached but no node was presented* (sysfs entry, no node:
+  exactly this host today), and *a node exists but no board claims it*. The state is `absent`
+  only for the first. The second is its own state (`attached_no_node`). `docs/spec/rak-comm.md`
+  calls the same mistake RN-4: "absent is not a reading".
+- **Serial check.** With an identity source the serial is known. If the node cannot be joined to
+  that serial (no tty link, no by-id, node-map only), the guard can prove *a board with that
+  serial is attached* but not that *this node is that board*. The record says
+  `node_joined: false`, and a guard that needs the join refuses with `serial_unverifiable`. **A
+  check that could not run must not read as a check that passed.**
+- `protected` applies per serial where one is known, and per slot label otherwise.
+- A host that cannot read any identity source never guesses a mode from a name.
 
 ## TOOL device state
 
-Five states, as the existing flash tool reports them **[stated]**, plus one that is not a fault:
+Five states as the existing flash tool reports them **[stated]**, plus two it could not tell apart
+from them (`attached_no_node`, which it reported as `absent`) or does not have (`handover`):
 
 | state | meaning |
 |---|---|
@@ -72,7 +93,8 @@ Five states, as the existing flash tool reports them **[stated]**, plus one that
 | **bootloader** | exactly one node, ids in the bootloader set |
 | **two** | an app node and a bootloader node at once; refuse to act, name both paths |
 | **unrecognised** | a node exists, no profile claims its ids; refuse, name the ids |
-| **absent** | no node |
+| **absent** | no board attached: no sysfs entry for any board the profiles know |
+| **attached_no_node** | a board is attached (sysfs lists it) but no node was presented to open; flash and monitor are refused, and the reason names the missing node |
 | **handover** | absent, but a flash or mode change is in progress and the lock holder expects it |
 
 **A mode change passes through absent. That gap is the handover, not a fault.** **[brief]** State
@@ -165,11 +187,12 @@ safety rules, so SWD and USB flashing cannot diverge.
 
 ## DECIDE derived (Claude; Peter may overrule)
 
-1. **Identity is the serial where the host has one, the slot where it does not; the node path is
-   only an output.** Constraint: the board changes USB ids between modes and the node can be
-   renumbered or aliased, and only the serial survives all of that; but Peter's own host exposes
-   named nodes with no serial, so a second provider (node-map) is required, and any check that
-   could not run is reported as not run.
+1. **Identity comes from sysfs (udev optional), and the node is resolved separately; the node path
+   is only an output.** Constraint: the board changes USB ids between modes and the node can be
+   renumbered or aliased, and only the serial survives all of that; sysfs gives the serial on every
+   host with a USB tree (verified on this one, without udev); the node is a different question and
+   on this host is not presented at all, so a resolver (tty link, by-id, node-map) is required, and
+   any check that could not run is reported as not run.
 2. **`protected` is per serial in host config, profile gives a default.** Constraint: protection
    follows the unit, not the model (GAP: protected is per unit), and the dump removed a hardcoded roster, which an
    exceptions-only file does not reintroduce.

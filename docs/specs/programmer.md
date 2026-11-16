@@ -18,8 +18,11 @@ to keep, generalise, and where it contradicts the brief, to settle.
    flag per device. As described, nothing stops flashing the wrong or a mid-measurement board.
    **Why it was removed, read from the code [verified: `rak-comm.py` header, 2026-11-16]:** this
    host hands over only two named nodes (`/dev/lxc-serial/rak4631-run` and `-dfu`), with no sysfs
-   USB tree and no `/dev/serial/by-id`, so there is no serial to compare. Peter ruled on
+   USB tree and no `/dev/serial/by-id`, so it found no serial to compare. Peter ruled on
    2026-11-16 that the tool use only those two nodes. It was a host limit, not a design choice.
+   **Corrected by a probe the same day [verified: `scripts/probe_host.py`]:** that header is stale.
+   Today sysfs lists the board with its serial; what is missing is a *node* (`/dev/lxc-serial/` is
+   empty), so the old tool would say `absent` for a plugged-in board. See `devices.md`.
    The 2026-08-28 ruling ("any board can be any site, do NOT start hard-coding them") forbids a
    roster of named boards; it does not forbid checking a serial the caller names.
 2. ~~`--flash` fails ("pio can't find the port")~~ **Not a product defect.** Peter: it comes from
@@ -128,10 +131,12 @@ Each line: the constraint, then the conclusion.
    list plus sysfs/by-id lookups), which cannot be generic. Keep the guarantee, drop the roster:
    the caller names a serial, the tool reads the attached serial from udev `ID_SERIAL_SHORT`,
    mismatch or two candidates is refused. `protected` is held per serial (`devices.md`), not in
-   the profile. **Capability-gated:** on a host like this one, whose nodes carry no serial, the
-   check cannot run. It must then say so (`serial_checked: false` in the evidence) and not read as
-   passed; protection then applies per named node (`devices.md`). A check that could not run must
-   not look like a check that passed.
+   the profile. **Two cases, both reported honestly:** where the serial can be joined to the node (tty
+   link or by-id) the check is complete. Where it cannot (a node-map host such as this one), the
+   serial from sysfs proves *a board with that serial is attached* but not that *this node is that
+   board*; the evidence says `node_joined: false` and a guard that needs the join refuses with
+   `serial_unverifiable` (`devices.md`). A check that could not run must not look like a check
+   that passed.
 2. **The bound is a required argument supplied by the caller, with no default in the tool.**
    Constraint: the dump says "the bound belongs to the caller", and an unbounded wait cannot
    report failure (GAP: no timeout contradicts the inotify wait). The service derives it from a measured re-enumeration time

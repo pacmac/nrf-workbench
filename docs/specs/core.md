@@ -79,13 +79,13 @@ returned, never a tail. **[brief]**
 |---|---|---|---|
 | `lock_held` | refused | another instance holds the host lock | holder pid |
 | `lock_void` | refused | the lock file was replaced mid-run ("exclusion is void") | lock path |
-| `node_absent` | refused | no node for the device | |
+| `node_absent` | refused | there is no node to open; the evidence says whether a board IS attached (`attached_no_node`) or not at all | sysfs entry, if any |
 | `node_two` | refused | an app node and a bootloader node at once | both paths |
 | `node_not_char` | refused | the node is not a character device | path |
 | `unrecognised` | refused | a node exists, no profile claims its ids | ids |
 | `port_held` | refused | any process has the node open | pid, matched by device number |
 | `serial_mismatch` | refused | attached serial is not the one the caller named | both serials |
-| `serial_unverifiable` | refused | the caller named a serial and this host's provider has none to compare | provider |
+| `serial_unverifiable` | refused | the caller named a serial, and either no identity source can read one or the node cannot be joined to it | what was missing |
 | `two_candidates` | refused | more than one board could match | their serials |
 | `protected` | refused | the unit is protected | serial |
 | `bad_package` | refused | not a zip, no `manifest.json`, a `.hex`, or truncated | what was missing |
@@ -136,8 +136,9 @@ writes DTR or RTS.** It records, as named capabilities:
 - external tools: presence and version of `pio`, `adafruit-nrfutil`, `nrfutil`, `openocd`, `pyocd`,
   `mcumgr`, `smpmgr`, and any proprietary download needed
 - lock directory: present and writable, or not (GAP: the lock path is host-specific)
-- identity provider: `udev` (serials available) or `node-map` (named nodes, no serial); see
-  `devices.md`. This decides whether the serial interlock can run at all.
+- identity source: `sysfs` and whether `udev` adds to it (serials come from either); and node
+  resolver: `tty link`, `by-id` or `node-map` (`devices.md`). The two together decide whether the
+  serial interlock can be completed, or only proves a board with that serial is attached.
 
 It is published by the command `host.capabilities`, which lists **what is present and, for each
 missing one, what it blocks and why**, so an absent command is always explainable. Commands name
