@@ -25,8 +25,9 @@ from nrf_workbench.guards.lock import HostLock  # noqa: E402
 from nrf_workbench.programmer import flash_file  # noqa: E402
 
 PROFILE = profile.load(os.path.join(ROOT, "profiles", "rak4631.yaml"))
-GOOD_OUTPUT = "Upgrading target on /x with DFU package /y. Flow control is disabled, Single bank, Touch disabled\n####\nActivating new firmware\nDevice programmed.\n"
-IMAGE_BYTES = 1152            # at 115200 and 10 bits per byte the wire time is exactly 0.1 s
+IMAGE_BYTES = 1152            # three 512-byte packets, so a complete transfer prints exactly 3 marks
+GOOD_OUTPUT = ("Upgrading target on <node> with DFU package <package>. Flow control is disabled, Single bank, "
+               "Touch disabled\n###\nActivating new firmware\nDevice programmed.\n")
 
 
 def make_package(path, image_bytes=IMAGE_BYTES, softdevice=(182,), manifest=True, image_name="firmware.bin"):
@@ -103,18 +104,39 @@ class Verdict(Base):
         self.assertEqual(r.data["app_after"]["id"], "239a:8029")
         self.assertIn("Device programmed.", r.data["output"])
 
-    def test_the_duration_floor_is_the_wire_time(self):
-        self.assertAlmostEqual(flash_file.wire_floor_s(IMAGE_BYTES, 115200), 0.1)
-        self.assertAlmostEqual(flash_file.wire_floor_s(332895, 115200), 28.9, places=1)   # the mt-alarm image
+    def test_expected_packets_is_the_image_over_the_packet_size_rounded_up(self):
+        for size, want in ((1, 1), (512, 1), (513, 2), (1152, 3), (332092, 649)):
+            self.assertEqual(flash_file.expected_packets(size), want, size)
 
-    def test_a_run_shorter_than_the_wire_time_is_suspect_not_ok(self):
-        runner, r = self.go(runner=Runner(secs=0.05, on_run=self.app_returns))
-        self.assertEqual((r.cls, r.code), ("suspect", "flash_suspect"), r.to_json())
+    def test_a_short_duration_alone_is_not_a_veto(self):
+        # The real case: 332 092 bytes took 21.554 s, completed, and an earlier draft wrongly called it suspect.
+        runner, r = self.go(runner=Runner(secs=0.0001, on_run=self.app_returns))
+        self.assertEqual(r.cls, "ok", "duration is recorded, not judged: " + r.to_json())
+        self.assertIn("throughput_bytes_per_s", r.data)
+
+    def test_fewer_marks_than_packets_is_a_partial_write_and_suspect(self):
+        out = GOOD_OUTPUT.replace("###", "##")
+        runner, r = self.go(runner=Runner(out=out, secs=9999.0, on_run=self.app_returns))
+        self.assertEqual((r.cls, r.code), ("suspect", "flash_suspect"), "however long it took: " + r.to_json())
         self.assertEqual(r.exit_code(), 4)
+        self.assertEqual((r.evidence["marks"], r.evidence["expected_packets"]), (2, 3))
 
-    def test_a_run_exactly_at_the_floor_is_accepted(self):
-        _, r = self.go(runner=Runner(secs=0.1, on_run=self.app_returns))
-        self.assertEqual(r.cls, "ok", r.to_json())
+    def test_more_marks_than_packets_is_also_suspect(self):
+        _, r = self.go(runner=Runner(out=GOOD_OUTPUT.replace("###", "####"), on_run=self.app_returns))
+        self.assertEqual(r.code, "flash_suspect")
+
+    def test_no_marks_at_all_is_suspect(self):
+        _, r = self.go(runner=Runner(out="Device programmed.\n", on_run=self.app_returns))
+        self.assertEqual(r.code, "flash_suspect")
+
+    def test_the_REAL_output_of_the_first_flash_is_judged_ok(self):
+        with open(os.path.join(HERE, "fixtures", "real_flash_output.txt")) as fh:
+            real = fh.read()
+        self.assertEqual(real.count("#"), 649)
+        pkg = make_package(os.path.join(self.t.root, "real-size.zip"), image_bytes=332092)
+        runner, r = self.go(runner=Runner(out=real, secs=21.554, on_run=self.app_returns), package=pkg)
+        self.assertEqual(r.cls, "ok", "the real 21.554 s flash must pass: " + r.to_json())
+        self.assertEqual((r.data["packets"], r.data["marks"]), (649, 649))
 
     def test_exit_zero_without_the_success_line_is_a_failure(self):
         runner, r = self.go(runner=Runner(out="Upgrading target\nsomething else\n"))

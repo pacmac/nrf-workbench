@@ -71,22 +71,38 @@ check in `nrf_workbench/guards/checks.py`, and `tests/programmer/`. Nothing else
 ## TOOL the flash verdict, derived (2026-11-16)
 
 `flash_file` writes a prebuilt DFU zip to a board **already in its bootloader** (it never requests
-one: that is `devices.md`, `enter_bootloader()`). It judges the write by **output AND duration**, not
-exit status (brief rule 5; a 15 s run once "succeeded" and boot-looped a board).
+one: that is `devices.md`, `enter_bootloader()`). It does not trust the exit status alone (brief
+rule 5; a 15 s run once "succeeded" and boot-looped a board).
 
-- **The duration floor is derived, not chosen.** The image crosses a UART at the profile's baud, 10
-  bits per byte on the wire (start, eight data bits, stop), and protocol framing and
-  acknowledgements only add time. So a write cannot take less than
-  `wire_s = image_bytes * 10 / baud`. A run shorter than that is physically impossible for a
-  complete image and is `suspect`, never `ok`. Check against the brief's measurement: the mt-alarm
-  v3 image is about 333 KB, and 333 000 * 10 / 115 200 = 28.9 s, against the brief's healthy
-  25 to 29 s on a RAK4631.
-- **The ceiling is the caller's bound** (required, no default): for a first measurement about 2 x
-  `wire_s` plus the handover, then replaced by 2 to 3 x the measured time.
-- **Success needs all of:** the tool exits 0, its output contains `Device programmed.`, the duration
-  is at least `wire_s`, and the board returns as the application (a new enumeration, found on events
-  within the bound). Anything else is `flash_failed`, `flash_suspect` or `run_node_not_returned`, with
-  the WHOLE tool output as evidence (brief rule 7), never a tail.
+**A mistake, found by the first real flash, and what replaced it (2026-11-16).** The first draft of
+this section derived a duration floor from the wire time at the profile's baud
+(`image_bytes * 10 / baud`, 28.8 s for the mt-alarm image) and judged any faster run `suspect`. The
+real flash of that image on the RAK, a native USB CDC device, **took 21.554 s, the tool printed
+`Device programmed.`, the board returned as its application (`239a:8029`, the same serial) and was
+stable for 20 s**, and the code wrongly called it suspect. The derivation assumed a real UART
+at 115 200 baud; over native USB the baud setting does not limit throughput, which is dominated by
+the bootloader's per-packet acknowledgements and flash writes. It had also appeared to agree with
+the brief's 25 to 29 s, **by coincidence**: checking a derivation against one number that happens
+to match is not a check.
+
+- **Completeness is judged on content, not time.** The uploader sends the image in packets of
+  `DFU_PACKET_MAX_SIZE` = 512 bytes **[read in `nordicsemi/dfu/dfu_transport_serial.py`]** and prints
+  one `#` per packet. So a complete transfer prints exactly
+  `expected_packets = ceil(image_bytes / 512)` marks. **[verified]** the real run printed 649, and
+  `ceil(332 092 / 512)` is 649. A different count, fewer marks (a partial write) or more, is
+  `flash_suspect`. If the tool's output format ever changes, this fails closed (suspect), never open.
+- **Duration is recorded, not judged.** It goes into the result and into the profile's
+  `measured_flashes` so a baseline can be built from verified runs (here 332 092 bytes in 21.554 s,
+  about 15.4 KB/s). A duration check will be added only when there are enough verified samples to
+  derive one, with the margin the derive rule gives; one sample cannot set a floor.
+- **The ceiling is the caller's bound** (required, no default). With no measured baseline beyond one
+  run, a first bound is a stated estimate (the brief's 25 to 29 s, doubled) to be replaced by 2 to 3
+  times the measured time.
+- **Success needs all of:** the tool exits 0, its output contains `Device programmed.`, the packet
+  count equals `expected_packets`, and the board returns as the application (a new enumeration with
+  the same serial, found on events within the bound). Anything else is `flash_failed`,
+  `flash_suspect` or `run_node_not_returned`, with the WHOLE tool output as evidence (brief rule 7),
+  never a tail.
 - **Package guards, before anything is written:** a zip containing `manifest.json`, whose
   `softdevice_req` includes the profile's SoftDevice id (182 for S140 6.1.1), else `bad_package` or
   `wrong_softdevice`; the board must be in the bootloader (`not_in_bootloader` otherwise), carry

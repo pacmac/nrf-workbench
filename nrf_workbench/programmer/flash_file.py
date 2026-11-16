@@ -7,12 +7,14 @@ Guards, all before anything is written (docs/specs/programmer.md): the host lock
 package for the right SoftDevice; the board is in the bootloader (never the app), carries the named
 serial, is not protected, has a node that joins by device number, and nothing else holds it.
 
-ONE attempt. The write is judged by output AND duration, not exit status: it must exit 0, print
-`Device programmed.`, and take at least the WIRE TIME, the time the image needs to cross the UART
-at the profile's rate (image_bytes * 10 bits / rate; framing and acknowledgements only add). A run
-shorter than that cannot have written a complete image and is `suspect`. Finally the board must
-return as the application, on events, within the caller's bound. The WHOLE tool output is returned
-as evidence, never a tail.
+ONE attempt. The write is not judged by exit status alone: it must exit 0, print `Device
+programmed.`, and print exactly one progress mark per 512-byte packet of the image, so
+`ceil(image_bytes / 512)` of them (the packet size is the uploader's own DFU_PACKET_MAX_SIZE). That
+is a content check, not a timing one: a first draft judged the duration against the wire time at
+the profile's baud, and the first real flash (native USB, where the baud limits nothing) took
+21.554 s, completed, and was wrongly called suspect. Duration is now RECORDED, not judged. Finally
+the board must return as the application, on events, within the caller's bound. The WHOLE tool
+output is returned as evidence, never a tail.
 """
 import argparse
 import os
@@ -51,9 +53,14 @@ def default_runner(cmd, timeout_s):
         return -1, out, time.monotonic() - t0, True
 
 
-def wire_floor_s(image_bytes, rate):
-    """The least time an image can take to cross the UART: 10 bits per byte (start, 8 data, stop)."""
-    return image_bytes * 10.0 / rate
+# adafruit-nrfutil sends the image in packets of its DFU_PACKET_MAX_SIZE (read in
+# nordicsemi/dfu/dfu_transport_serial.py) and prints one '#' per packet.
+PACKET_BYTES = 512
+
+
+def expected_packets(image_bytes):
+    """How many progress marks a COMPLETE transfer of this image prints."""
+    return -(-image_bytes // PACKET_BYTES)
 
 
 def _brief(dev):
@@ -114,9 +121,9 @@ def _flash(prof, serial_no, package, info, bound_s, units, sysfs, devroot, proc,
         return held
 
     rate = int(prof["bootloader"].get("baud", 115200))
-    floor = wire_floor_s(info["image_bytes"], rate)
+    packets = expected_packets(info["image_bytes"])
     cmd = [tool, "dfu", "serial", "-pkg", package, "-p", node, "-b", str(rate), "--singlebank"]
-    facts = {"image_bytes": info["image_bytes"], "wire_floor_s": round(floor, 3), "rate": rate}
+    facts = {"image_bytes": info["image_bytes"], "expected_packets": packets, "rate": rate}
 
     def app_is_back():
         return identity.state(prof, serial_no, identity.inventory(sysfs)) == "app"
@@ -131,10 +138,12 @@ def _flash(prof, serial_no, package, info, bound_s, units, sysfs, devroot, proc,
                                  dict(facts, bound_s=bound_s))
         if rc != 0 or PROGRAMMED not in out:
             return Result.failed("flash_failed", "the upload did not report success (exit %s); not retried" % rc, facts)
-        if secs < floor:
+        marks = out.count("#")
+        facts["marks"] = marks
+        if marks != packets:
             return Result(SUSPECT, "flash_suspect",
-                          "the upload reported success but took less than the wire time, so a complete image "
-                          "cannot have crossed the port; do not trust it", None, facts)
+                          "the upload reported success but printed %d progress marks where a complete image of "
+                          "%d bytes prints %d; do not trust it" % (marks, info["image_bytes"], packets), None, facts)
         res = watcher.wait(app_is_back, max(bound_s - secs, 0.001))
     finally:
         watcher.close()
@@ -145,8 +154,9 @@ def _flash(prof, serial_no, package, info, bound_s, units, sysfs, devroot, proc,
                              dict(facts, bound_s=bound_s, event_source=res.source, note=res.note))
     after = [d for d in identity.board_devices(prof, identity.inventory(sysfs))
              if d["mode"] == "app" and d["serial"] == serial_no][0]
-    return Result.success({"duration_s": facts["duration_s"], "wire_floor_s": facts["wire_floor_s"],
-                           "image_bytes": facts["image_bytes"], "rate": rate, "output": out,
+    return Result.success({"duration_s": facts["duration_s"], "image_bytes": facts["image_bytes"],
+                           "throughput_bytes_per_s": round(facts["image_bytes"] / max(facts["duration_s"], 1e-9), 1),
+                           "packets": packets, "marks": marks, "rate": rate, "output": out,
                            "app_after": _brief(after), "event_source": res.source},
                           "written, judged good, and the board is back running its application")
 

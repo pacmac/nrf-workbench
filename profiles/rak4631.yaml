@@ -28,6 +28,19 @@ bootloader:
 memory:
   softdevice: {name: S140, version: "6.1.1", fwid: 182}   # fwid 182 = S140 6.1.1 (brief)
 
+# MEASUREMENTS, recorded so bounds can be derived from them later (a single sample sets nothing).
+# Only runs that were VERIFIED go here: complete output and the board back running its application.
+measured:
+  entry_handover_s:        # app -> bootloader, from the touch to the bootloader being seen on events
+    - {seconds: 0.362, host: "Raspberry Pi 4B, native USB, kernel uevent", date: "2026-11-16"}
+  flashes:                 # a complete write of a package, bootloader -> application
+    - {image_bytes: 332092, seconds: 21.554, packets: 649, throughput_bytes_per_s: 15408,
+       host: "Raspberry Pi 4B, native USB", date: "2026-11-16",
+       verified: "649 marks == ceil(332092/512); the board returned as 239a:8029 with the same serial and stayed stable for 20 s"}
+  note: >-
+    The flash time is NOT a function of the baud: this is native USB CDC. An earlier derivation from
+    the baud called this run suspect; it was a mistake (docs/specs/programmer.md).
+
 # null means UNKNOWN. It is set true or false only from a measurement taken across a mode change.
 # true: measured 2026-11-16 by enter_bootloader() on one unit on a Raspberry Pi 4B: the USB serial
 # was identical in the app (239a:8029) and the bootloader (239a:002a). n=1 unit, n=1 transition.
