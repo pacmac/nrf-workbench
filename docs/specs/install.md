@@ -405,8 +405,9 @@ download-read-run path, `--check`, the no-terminal form with `--yes --prefix`, `
 
 - **A fresh host, one command:** on a freshly imaged Pi, and on a clean x86_64 Debian host (a VM
   or container created for the test), the `curl` one-liner ends with every default feature PASS.
-  **The Pi used so far is not a fresh image**, so the Pi run needs a freshly imaged card, which only
-  Peter can provide. A clean x86_64 container can be made without hardware.
+  **Done on a fresh Pi (2026-11-16), non-interactive form**: see "Results". Still to run: the
+  interactive form in a real terminal on a Pi (it is covered by a pseudo-terminal test), and a clean
+  x86_64 container.
 - **Other folders work:** the same install into `/root/nrf-workbench`, into `/opt/nrf-workbench`,
   and, run unprivileged, into `~/.local/share/nrf-workbench`, each verifying, proving no folder or
   host default is load-bearing. Installing into a non-empty `/root` itself is refused.
@@ -429,8 +430,41 @@ download-read-run path, `--check`, the no-terminal form with `--yes --prefix`, `
 - **`--check` changes nothing:** compared by a filesystem listing before and after.
 - **It fails cleanly:** with Python 3.9 on the path, with no network and no wheelhouse, and as a
   non-root user needing `apt`, it stops with the exact reason and leaves no half-built venv.
-- **`adafruit-nrfutil` really installs from source on the Pi** and `adafruit-nrfutil version` runs.
-  **[unknown]**: only the dev host has run it so far.
+- **`adafruit-nrfutil` really installs from SOURCE on aarch64** and `adafruit-nrfutil version` runs.
+  **[still unproven]**: on the fresh Pi it installed and ran, but from a prebuilt wheel that the
+  Pi's configured extra index supplied (see "Results"), so the source-build path has only been run
+  on the x86_64 dev host. Prove it on aarch64 with that index disabled.
 - **Uninstall keeps `config/`.**
 - **No serial node is opened** during an install, checked by running it under a process that
   records opens.
+
+## Results
+
+### A freshly imaged Raspberry Pi 4B (2026-11-16)
+
+The one-liner, run over SSH (so the non-interactive form: `--yes --prefix /usr/share/pac/nrf-workbench`,
+Peter's own folder on his own host), on a **freshly flashed** Raspberry Pi OS Lite (reference
+2026-10-06, Debian 13, aarch64, Python 3.13.5, root).
+
+- **The stock image, read before installing [verified]:** `curl`, `wget`, `tar`, `gzip`, `python3`,
+  `sudo` and `apt-get` present; **`git` absent**; `python3-venv` installed; no system `pip`; no
+  `/usr/share/pac`; no apt installs since first boot; only SSH listening.
+- **Outcome:** exit 0, **about 59 seconds** (from the install log's first and last stamps), the venv
+  **63 MB** and the project **412 KB**. All five checks PASS (`mcp`, `starlette`, `uvicorn`,
+  `websockets`, `yaml` import; both smoke tests; `adafruit-nrfutil version`; `serial` imports),
+  and hardware reads "NOT VERIFIED" as designed. The installed versions are exactly the pins.
+- **It changed nothing else [verified afterwards]:** `git` still absent, no apt installs, the
+  system Python still has no `pip`, the listeners are unchanged (only SSH), and both USB devices'
+  nodes are still there. The installer opened none of them.
+- **Idempotent [verified]:** a second run skipped the venv and the configuration, re-copied the
+  code and rewrote the record, exit 0.
+- **The Pi OS image configures an extra pip index.** `/etc/pip.conf` contains
+  `extra-index-url=https://www.piwheels.org/simple`, and pip's output (kept whole, as the spec
+  requires) shows packages, including `adafruit-nrfutil`, coming from piwheels. Consequences:
+  - **The source-build path of `adafruit-nrfutil` was not exercised on aarch64**: piwheels supplied
+    a prebuilt wheel, so the gap "adafruit-nrfutil has no binary wheel on PyPI" stays unproven
+    on aarch64.
+  - **Our pins are exact versions but not hashes**, so whichever index the host configures can
+    serve the bytes. This is a supply-chain fact to decide on, not a defect found in a run:
+    hash-pinning (`--require-hashes`) and a way to say "PyPI only" are future options, and the
+    installer already prints the indexes pip will use.
