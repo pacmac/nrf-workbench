@@ -165,8 +165,10 @@ This host today (probed by hand, 2026-11-16): x86_64, Python 3.13, with `pio` an
 
 ## TOOL configuration
 
-Layered, later layers override earlier: built-in defaults, a host file (`/etc/nrf-workbench/`),
-a user file, environment, command-line flags. YAML. Two kinds of content:
+Layered, later layers override earlier: built-in defaults, a host file (`<prefix>/config/`, where
+`<prefix>` is the install folder, normally `/usr/share/pac/nrf-workbench`; **not** `/etc`, since
+`/usr/share/pac` is Peter's working and install folder, `install.md`), a user file, environment,
+command-line flags. YAML. Two kinds of content:
 
 - **host settings:** lock path, profile directory, service bind address
 - **`units.yaml`:** exceptions per serial only, chiefly `protected` (`devices.md`). A board not

@@ -131,8 +131,16 @@ lock directory writable.
   (`ID_PATH` ending `usb-0:1.3:1.0` for the board, `usb-0:1.1:1.0` for the dongle) differ from the
   Proxmox host's, so slot keys are per host. Two `by-path` names per node again (`usb` and
   `usbv2`).
-- **Only "plugged in" is known.** Whether the dongle is wired to the RAK's debug UART, with which
-  wires, is not stated and not probed; nothing was sent to either device.
+- **The bench is USB only [stated, Peter, 2026-11-16]: nothing is wired to the board.** So there
+  is no debug link (the dongle is plugged into the Pi, but no wire joins it to the RAK's debug
+  UART), no reset or DFU line, and no SWD probe. Consequences: the only bootloader entry available
+  is the touch on the board's own USB CDC (or a manual double-tap); the device's boot counter
+  cannot be read, so the programmer's "exactly one reset per flash" acceptance cannot be measured
+  yet; and a `console` link must not be declared, because declaring one would claim a wire that is
+  not there. The existing tool's note for the one wire that would give a receive-only link: the
+  RAK's `gpio17` (edge IO1, its TX-out) to the dongle's RX, with a common ground, 3.3 V logic;
+  the dongle's own TX stays unconnected (issue 161: it reset the bench unit). **[prior art]** That is
+  Peter's wiring to do. Nothing was sent to either device.
 - **GPIO:** `gpiochip0` is `pinctrl-bcm2711` (58 lines) and `gpiochip1` is `raspberrypi-exp-gpio`
   (8 lines). The probe's glob also listed `gpiochip4`, but `gpiodetect` reports two chips, so that
   path is an alias; probe version 4 dedupes by real path and reads labels from `gpiodetect`.
