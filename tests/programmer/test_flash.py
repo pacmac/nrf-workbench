@@ -271,6 +271,29 @@ class Refusals(Base):
         self.assertEqual(r.evidence["device_has"], 182)
 
 
+class Held(Base):
+    """A caller that already holds the host lock (programmer.flash holds one across enter and flash)."""
+
+    def test_a_lock_the_caller_holds_is_neither_taken_again_nor_released(self):
+        mine = HostLock(self.lock)
+        mine.acquire("the caller")
+        try:
+            _, r = self.go(held=mine)
+            self.assertEqual(r.cls, "ok", r.to_json())          # taking it again would be lock_held
+            with self.assertRaises(Exception) as caught:         # and it is STILL held afterwards
+                HostLock(self.lock).acquire("someone else")
+            self.assertEqual(type(caught.exception).__name__, "LockHeld")
+        finally:
+            mine.release()
+
+    def test_without_held_the_lock_is_taken_and_released_as_before(self):
+        _, r = self.go()
+        self.assertEqual(r.cls, "ok")
+        other = HostLock(self.lock)
+        other.acquire("free again")
+        other.release()
+
+
 class PackageCheck(unittest.TestCase):
     def test_reads_the_image_size_the_verdict_is_derived_from(self):
         d = tempfile.mkdtemp()

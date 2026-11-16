@@ -29,7 +29,31 @@ check, the package check, temp-file cleanup, idempotence, the re-hash, the in-us
 prefix floor, the stale-temp lock and the lock held past the write handle, the record-id check, the
 ordering, the length checks, the full-disk branch and the path scrub).
 
-**Not built yet:** `programmer.flash` by id, `programmer.flash_stream`, the registry rows and every
+**Files for the flash-by-id unit (added 2026-11-16, Peter: "go"):**
+`nrf_workbench/programmer/flash_firmware.py`, `tests/programmer/test_flash_firmware.py`, and a small
+`held=` parameter on `nrf_workbench/devices/entry.py` (`enter_bootloader`) and
+`nrf_workbench/programmer/flash_file.py` with a test each in `tests/devices/test_entry.py` and
+`tests/programmer/test_flash.py`. **Why `held=`:** `programmer.flash` is two steps (enter, then flash),
+and each took and released the host lock itself, which left a gap in which another instance could act.
+The caller now takes the lock once and passes it down. **Why the profile check comes first:** the
+SoftDevice comparison was made inside the flash step, after the touch; a package for the wrong
+SoftDevice would then be found only after the board was already in its bootloader. `programmer.flash`
+runs it before any touch (`wrong_softdevice` with the board untouched).
+
+**Built and tested, 2026-11-16: `programmer.flash` by id** (`flash_firmware.py`, 20 tests on the fake
+tree with a fake touch and uploader). It re-hashes the stored image, checks the package against the
+profile before any touch (**tested: a wrong-SoftDevice package is refused with zero touches and the
+board still in its app**), takes ONE lock held across enter and flash (**tested: an intruder cannot
+take it at the touch or at the upload**), enters once only if the board is in its app, uses the image
+itself as the declared way back (a caller's bogus declaration is replaced), flashes once, never
+retries, checks the product string when asked, and reports `entered_bootloader` as true, false, or
+unknown (a failed touch is unknown, never "not entered"). Seventeen mutants were killed; two survived
+at first and exposed a real gap (a flash bound of 0 touched the board before the flash step rejected
+it) and a test that only passed because garbage collection released the lock by accident; both are
+fixed. One mutant is **equivalent and left alone**: removing the outer empty-serial check changes
+nothing, because the entry step refuses an empty serial first with the same code and before any touch.
+
+**Not built yet:** `programmer.flash_stream`, the registry rows and every
 front end (HTTP, CLI, MCP), and the bench step. **Not tested, on purpose or by limit:** the order in
 which `delete` removes the two files (a crash-timing property: record first, so a crash leaves an
 unlisted image and never a listed entry with no image), and the `fsync` calls (a disk-level effect a

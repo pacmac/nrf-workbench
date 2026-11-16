@@ -68,7 +68,10 @@ def _brief(dev):
 
 
 def flash_file(prof, serial_no, package, bound_s, units=None, sysfs="/sys", devroot="/dev", proc="/proc",
-               lock_path=DEFAULT_PATH, runner=default_runner, tool=None, watcher=None, expect_product=None):
+               lock_path=DEFAULT_PATH, runner=default_runner, tool=None, watcher=None, expect_product=None,
+               held=None):
+    """`held` is a HostLock the CALLER already holds (programmer.flash holds one across enter and
+    flash); it is neither taken nor released here."""
     if not isinstance(bound_s, (int, float)) or isinstance(bound_s, bool) or bound_s <= 0:
         return Result.refused("no_bound", "a flash needs a caller-supplied bound in seconds")
     if not serial_no:
@@ -80,19 +83,22 @@ def flash_file(prof, serial_no, package, bound_s, units=None, sysfs="/sys", devr
     if refusal is not None:
         return refusal
 
-    lock = HostLock(lock_path)
-    try:
-        lock.acquire("flashing a package")
-    except LockHeld as exc:
-        return Result.refused("lock_held", "another instance holds the host lock: %s" % exc.holder,
-                              {"holder": exc.holder})
-    except LockVoid as exc:
-        return Result.refused("lock_void", str(exc))
+    lock = held
+    if lock is None:
+        lock = HostLock(lock_path)
+        try:
+            lock.acquire("flashing a package")
+        except LockHeld as exc:
+            return Result.refused("lock_held", "another instance holds the host lock: %s" % exc.holder,
+                                  {"holder": exc.holder})
+        except LockVoid as exc:
+            return Result.refused("lock_void", str(exc))
     try:
         return _flash(prof, serial_no, package, info, bound_s, units, sysfs, devroot, proc, runner, tool, watcher,
                       expect_product)
     finally:
-        lock.release()
+        if held is None:
+            lock.release()
 
 
 def _flash(prof, serial_no, package, info, bound_s, units, sysfs, devroot, proc, runner, tool, watcher,

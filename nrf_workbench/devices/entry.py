@@ -54,9 +54,14 @@ def _brief(dev):
 
 
 def enter_bootloader(prof, serial_no, bound_s, units=None, unit=None, sysfs="/sys", devroot="/dev",
-                     proc="/proc", lock_path=DEFAULT_PATH, touch=default_touch, watcher=None, ledger=None):
+                     proc="/proc", lock_path=DEFAULT_PATH, touch=default_touch, watcher=None, ledger=None,
+                     held=None):
     """Returns a Result. `touch` and `watcher` are injectable so the guards can be proven without
-    hardware; the real defaults are the touch above and the kernel uevent socket."""
+    hardware; the real defaults are the touch above and the kernel uevent socket.
+
+    `held` is a HostLock the CALLER already holds. It is neither taken nor released here, so a caller
+    that runs several steps (programmer.flash: enter, then flash) holds ONE lock across all of them
+    instead of releasing it between the steps."""
     if prof["bootloader"].get("entry") != "1200-baud-touch":
         return Result.refused("capability_missing", "this profile's entry method is not implemented here",
                               {"entry": prof["bootloader"].get("entry")})
@@ -65,19 +70,22 @@ def enter_bootloader(prof, serial_no, bound_s, units=None, unit=None, sysfs="/sy
     if not serial_no:
         return Result.refused("serial_unverifiable", "no serial was named, so no board can be chosen")
 
-    lock = HostLock(lock_path)
-    try:
-        lock.acquire("entering the bootloader")
-    except LockHeld as exc:
-        return Result.refused("lock_held", "another instance holds the host lock: %s" % exc.holder,
-                              {"holder": exc.holder})
-    except LockVoid as exc:
-        return Result.refused("lock_void", str(exc))
+    lock = held
+    if lock is None:
+        lock = HostLock(lock_path)
+        try:
+            lock.acquire("entering the bootloader")
+        except LockHeld as exc:
+            return Result.refused("lock_held", "another instance holds the host lock: %s" % exc.holder,
+                                  {"holder": exc.holder})
+        except LockVoid as exc:
+            return Result.refused("lock_void", str(exc))
     try:
         ledger = ledger if ledger is not None else TouchLedger(lock_path + ".touches.json")
         return _enter(prof, serial_no, bound_s, units, unit, sysfs, devroot, proc, touch, watcher, ledger)
     finally:
-        lock.release()
+        if held is None:
+            lock.release()
 
 
 def _enter(prof, serial_no, bound_s, units, unit, sysfs, devroot, proc, touch, watcher, ledger):

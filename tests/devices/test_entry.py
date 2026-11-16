@@ -199,6 +199,18 @@ class Touching(Base):
         self.t.unplug("1-3")
         self.t.bootloader_board()
 
+    def test_a_lock_the_caller_holds_is_neither_taken_again_nor_released(self):
+        self.attach_app()
+        mine = HostLock(self.lock)
+        mine.acquire("the caller")
+        try:
+            _, r = self.go(touch=Touch(on_touch=self.reenumerate), held=mine)
+            self.assertEqual(r.cls, "ok", r.to_json())           # taking it again would be lock_held
+            with self.assertRaises(LockHeld):                    # and it is STILL held afterwards
+                HostLock(self.lock).acquire("someone else")
+        finally:
+            mine.release()
+
     def test_success_touches_exactly_once_and_measures(self):
         self.attach_app()
         touch = Touch(on_touch=self.reenumerate)
