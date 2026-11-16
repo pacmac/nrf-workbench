@@ -1,0 +1,5 @@
+# Local probe reports hold hostnames, serial numbers and USB paths; the repo is public.
+probes/
+__pycache__/
+*.pyc
+.venv/

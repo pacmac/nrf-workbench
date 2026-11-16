@@ -1,0 +1,111 @@
+# Probes — spec for the read-only host probes (DRAFT)
+
+Peter, 2026-11-16: the repo is cloned onto another host; add the scripts needed to settle the
+unknowns that need hardware or another host. These are measurement tools, not product code. They
+live in `scripts/`, outside the `nrf_workbench` package, and are stdlib-only so they run before
+anything is installed. Area: `harness`.
+
+Files this spec allows (the only files its task may create):
+
+| file | purpose |
+|---|---|
+| `scripts/probe_host.py` | one passive snapshot of the host: platform, tools, libraries, USB, nodes, GPIO, Bluetooth |
+| `scripts/observe_usb.py` | passively log USB and node events while a human changes the board's mode (udev, else the kernel uevent socket, plus inotify on node directories) |
+| `scripts/try_stack.sh` | install the pinned service stack into a throwaway venv and run the two smoke tests |
+| `scripts/smoke_mcp_dynamic.py` | MCP SDK registers tools from data rows at runtime and calls them |
+| `scripts/smoke_ws.py` | Starlette on uvicorn serves a websocket on loopback |
+| `.gitignore` | keeps `probes/` (local reports) and `__pycache__/` out of the public repo |
+
+## Safety — what these never do
+
+- **Never open a serial device**, at any baud, and never touch DTR or RTS. Nodes under `/dev` are
+  only `stat`ed. Opening a port at 1200 baud IS bootloader entry (brief, rule 1), and a probe that
+  opened one could reset or park a board.
+- **Never request a mode change.** `observe_usb.py` watches while a human double-taps, replugs or
+  flashes by the sanctioned route. It causes nothing.
+- **Never write outside their own output.** `probe_host.py` prints to stdout; the lock directory
+  is checked with `os.access`, not by creating a file.
+- **Never contain a sleep or poll.** `observe_usb.py` waits on events with `select`, and its
+  ceiling is a required `--max-s`. `probe_host.py` and `try_stack.sh` run subprocesses:
+  `probe_host.py` bounds each `--version` call as below; `try_stack.sh` runs `pip`, whose bound is
+  the human's Ctrl-C plus pip's own retry limits (a download cannot be derived from a local rate).
+
+## Derived numbers
+
+- **`observe_usb.py --max-s`:** required, no default. For a flash by the sanctioned route use
+  **60**: the brief records a healthy RAK4631 flash at 25 to 29 s, the capture must also hold the
+  two handovers (app to bootloader, bootloader to app), so about 2x the upper figure (2 x 29 = 58,
+  rounded to 60). For a double-tap only, the human chooses a smaller one.
+- **Version-call bound in `probe_host.py`:** self-scaling, not a constant. It first times the
+  host's own interpreter start (`t0`) and allows a tool's `--version` call 22 x `t0`. Derivation,
+  measured on this x86_64 host: `python3 -c pass` is 0.011 s and `pio --version` is 0.082 s, a
+  ratio of about 7.5; a 3x margin on the ratio gives 22. A call that exceeds it is reported as
+  "no answer within X s", never as absent; re-run it (the first call can be cold-cache).
+
+## What each probe settles
+
+| unknown (see the named spec) | answered by |
+|---|---|
+| lock path portability, `/run/lock` writable (`core.md`) | `probe_host.py`: `fs.lock_dir` |
+| identity provider: udev or node-map (`devices.md`, `core.md`) | `probe_host.py`: `udev`, `nodes` |
+| udev events on a Pi, a PVE host, a plain VM (`devices.md`) | `probe_host.py`: `udev`; `observe_usb.py` mode line |
+| `/dev/mem` and `libgpiod` on this Pi model, Pi 5 (`nrf-workbench.md` section 5b) | `probe_host.py`: `pi`, `gpio` |
+| onboard Bluetooth controller present (brief section 9) | `probe_host.py`: `bluetooth` |
+| which external tools exist and their versions (`core.md`) | `probe_host.py`: `tools` |
+| oldest Python the host runs, against the 3.10 floor (`api.md`) | `probe_host.py`: `platform.python` |
+| serial stable across the app and bootloader modes (`devices.md`) | `observe_usb.py` summary |
+| which ids belong to which mode, role of `239a:802a` (`devices.md`) | `observe_usb.py` event list |
+| the stack installs and runs on arm64, websockets work there (`api.md`) | `try_stack.sh` |
+| SDK stdio and HTTP transports (`api.md`) | **not covered here**; needs a separate probe |
+
+**Serial stability without events.** A container may receive no uevents. The fallback needs no
+event at all: run `probe_host.py` once with the board in the app mode and once in the bootloader
+mode (double-tap), and compare the `usb` section: the board's id, product and serial are read from
+sysfs each time. Same serial, two ids: stable.
+
+## Results so far (this host, 2026-11-16; serials and hostnames deliberately not recorded)
+
+Run by the author on the dev host; the clone host's results are still to come.
+
+- **The host is an LXC container on a Proxmox kernel** (`systemd-detect-virt` reports `lxc`),
+  x86_64, Python 3.13.5, Debian 13.
+- **sysfs shows the board.** `/sys/bus/usb/devices` lists 18 entries including the RAK4631 in app
+  mode as `239a:8029`, product "WisCore RAK4631 Board", with a serial. So **the serial IS readable
+  here without udev.** This corrects the first draft of `devices.md`, which said no serial is
+  available on this host. See the correction there.
+- **No device node is presented.** `/dev/lxc-serial/` exists and is empty, and there is no
+  `/dev/ttyACM*`, while the board is plugged in. The existing flash tool would report `absent`
+  for a board that is attached (the failure `docs/spec/rak-comm.md` calls RN-4: "absent is not a
+  reading").
+- **No `/run/udev`**, `pyudev` not installed, `udevadm` present. No `/dev/mem`, no `gpiochip`.
+- **Bluetooth:** `hci0` present (the controller's BLE 5 features are not probed). `bleak` 3.0.2
+  installed.
+- **Tools present:** `pio` 6.2.0 and `adafruit-nrfutil` 0.5.3.post16. Absent: `nrfutil`, `nrfjprog`,
+  `JLinkExe`, `openocd`, `pyocd`, `mcumgr`, `smpmgr`, `bluetoothctl`, `gpioinfo`.
+- **`try_stack.sh` passes:** the pinned stack installs in a throwaway venv and both smoke tests
+  succeed (data-driven MCP tools; a websocket via `websockets`).
+- **`observe_usb.py`** starts with the uevent socket and inotify here, refuses to start without
+  `--max-s`, and reports "no event arrived" when nothing changes. Whether this container receives
+  kernel uevents at all is **unproven** until a real mode change is made.
+
+## How results come back
+
+The repo is public and a report holds hostnames, serial numbers and USB paths, so **reports are
+not committed**. Run a probe, read the output, and paste it into the session (or the part you are
+content to share). `probes/` is ignored for the local copy:
+
+```
+git pull
+mkdir -p probes
+python3 scripts/probe_host.py | tee probes/$(hostname).json
+python3 scripts/observe_usb.py --max-s 60 | tee probes/$(hostname)-observe.txt   # then change the board's mode
+scripts/try_stack.sh | tee probes/$(hostname)-stack.txt
+```
+
+## VERIFY
+
+- On this host: `probe_host.py` runs and prints valid JSON; `observe_usb.py` runs to its bound and
+  summarises; `try_stack.sh` reports each step.
+- No probe opens a serial device: checked by reading each file for opens of `/dev` and by a run
+  with `strace` where it exists (it is absent on this host, so the reading is the check here).
+- On the clone host: the unknowns in the table above get a recorded answer in their spec.
