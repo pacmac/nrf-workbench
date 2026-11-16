@@ -221,6 +221,33 @@ came from. **[stated and derived, `programmer.md`]**
 Added for the dashboard (`dashboard.md`), which needs a live view of the whole bench and a record of
 what every caller did. `core` owns both; nothing else does.
 
+**Files for this build (added 2026-11-16, Peter: "continue"):** `nrf_workbench/core/events.py`,
+`nrf_workbench/core/activity.py`, `tests/core/test_events.py`, `tests/core/test_activity.py`. Three
+decisions made while building, each open to overrule:
+1. **Subscribers are callbacks, not waiters.** The bus calls each subscriber's function on publish (outside
+   its lock); the async websocket registers a callback that hands the event to its own queue thread-safely.
+   Nothing waits on a thread and nothing polls, and `core` imports no async runtime.
+2. **There are two retained streams, each its own bus with its own bounds** (the live-state events, and the
+   activity log), because a flood of one must not push the other out of retention.
+3. **An activity entry is a summary, not the whole Result:** who, which command, its arguments (redacted),
+   class, code, message, duration. The whole tool output stays in the Result the caller received; a log of
+   every flash's full output would be the unbounded growth the retention rule exists to prevent.
+**Built and tested, 2026-11-16:** `events.py` and `activity.py` (50 tests; 34 mutants caught). Beyond the
+decisions above: **a restart restarts the cursors, so every bus has an `epoch`; a client holding another
+epoch is told to reset (`reset: true`, `lost: null`), which is different from loss** and is never reported as
+a count it cannot know; the bound holds **with nobody reading** (a mutant that pruned only on read survived
+until a test counted what the bus holds, so `len(bus)` exists for that); a failing subscriber is recorded in
+a bounded `faults` list (never swallowed) and breaks neither publishing nor the other subscribers; callbacks
+run outside the lock, and because callbacks from different threads can arrive out of order a consumer treats
+one as "something new" and resumes by cursor, which a threaded test proves exact (8 publishing threads and
+a resuming reader: every event once, in order). Secrets are redacted by argument NAME (`token`, `password`,
+`secret`, `key`, `authorization`, `credential`, case-insensitive, so `token_file` and `API_KEY` are caught);
+an entry holds no `data` and no `evidence`. **Not built:** the live-state events (`devices.changed`) have
+no publisher yet, and nothing publishes `command.result` yet: that is the API slice.
+
+**A limit that is stated, not hidden:** only calls that go through the service are recorded. A CLI run in
+local mode is a separate process with no service and is not in the service's activity log.
+
 - **An event** has a `type` (for example `devices.changed`, `console.line`, `flash.progress`,
   `command.result`), the `area` that raised it, a typed payload, a monotonic and a wall timestamp,
   and a **cursor**: a per-bus integer that only goes up.
