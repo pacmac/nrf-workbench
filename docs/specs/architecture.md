@@ -33,7 +33,10 @@ nrf_workbench/
   instruments/   ppk2, coulomb counter, dtm, sniffer, logic analyser, siggen
   cli/           console front end, generated from the registry
   api/           http + websocket + mcp front ends, generated from the registry
-profiles/        device profiles, YAML data (no code)
+  dashboard/     mounts the built UI at the root, server-side title substitution, status route
+  service.py     the composition root: the ONE module that imports api and dashboard and wires them
+profiles/        device profiles and usb_ids.yaml, YAML data (no code)
+ui/              the dashboard front end (React, Vite, Tailwind), built off the host, shipped built
 install/ udev/ packaging/    host install, udev rules, service unit
 harness/ tests/              fakes, pytest driver, one tests/<area>/ per package
 testpartner/     DUT-side nRF test firmware (separate build, not part of the package)
@@ -56,6 +59,9 @@ core, devices  <-  console
 ```
 
 - An area imports `core` and the areas it declares, nothing else. `programmer` never imports `ble`.
+- **`dashboard` imports `core` and nothing else of ours; `api` and `dashboard` never import each
+  other.** `service.py` (the composition root) is the one module allowed to import both and mount
+  the dashboard on the API's application.
 - **`cli` and `api` import only `core`.** They discover commands through the registry. This is what
   makes the CLI and the API the same commands (see the command surface in `programmer.md`), and it
   means a new area appears in both with no change to either.
@@ -79,6 +85,7 @@ core, devices  <-  console
 | gpio | library | host tests with a fake backend, then wired loopback on a Pi |
 | instruments | library | host tests with fakes, then hardware |
 | cli | tool | run from the console, `--json` equals the API body |
+| dashboard | service | up and answering; rendered and looked at in a real browser, both themes; UI source scanned for polling and hardcoded writes (`dashboard.md`) |
 | api | service | up and answering; same commands as the CLI |
 | install | tool | run on one arm64 and one x86_64 host |
 | harness | library | used by every area's tests |

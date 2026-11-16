@@ -82,6 +82,53 @@ path. The join is by device number: the tty class entry under the board's sysfs 
 - `protected` applies per serial where one is known, and per slot label otherwise.
 - A host that cannot read any identity source never guesses a mode from a name.
 
+## TOOL USB inventory and classification
+
+Added after Peter pointed out that the ESP workbench auto-detects every USB connection, identifies
+it and lists it at the top of its dashboard (`dashboard.md`). `devices` therefore inventories
+**every USB device on every port, not only boards**, and classifies each.
+
+| class | meaning |
+|---|---|
+| `board` | matched to a profile (a DUT) |
+| `debug-adapter` | a USB serial adapter: a candidate, or a declared console link (`console.md`) |
+| `swd-probe` | a debug probe for SWD (`swd` area) |
+| `ble-radio` | a dedicated BLE radio (the nRF52840 dongle, `ble` area) |
+| `power-profiler` | a current-measurement instrument (`instruments` area) |
+| `hub` | a USB hub or root hub (shown only as the parent of a port) |
+| `other` | identified, but not a bench device (an audio device, a keyboard hub, a Zigbee stick) |
+| `unrecognised` | nothing identifies it: shown with its product string, never guessed |
+
+- **Identification is data, in `usb_ids.yaml`**, mapping VID:PID to a class and a name, with the
+  source of each row (verified on a bench, or recalled). Board profiles add to it. It is read by
+  every front end, so the CLI, API, MCP and dashboard identify a device identically. Upstream
+  keeps its table in browser JavaScript and it already misses this bench's dongle
+  (`1a86:55d3` listed, `1a86:55d4` present). **[upstream; probe]**
+- **Seen on this bench, from the probes (ids only; serials are not recorded here):**
+
+  | VID:PID | what the probe reported | class |
+  |---|---|---|
+  | `239a:8029` | RAKwireless "WisCore RAK4631 Board" | `board` (app mode) |
+  | `239a:0029` | "WisBlock RAK4631" (Peter's `lsusb`, bootloader) | `board` (bootloader mode) |
+  | `1a86:55d4` | "USB Single Serial" | `debug-adapter` (the CH343-class dongle) |
+  | `0665:5161` | Cypress "USB to Serial" | `debug-adapter` candidate, **undeclared** |
+  | `10c4:ea60` | Nabu Casa "SkyConnect v1.0" | `other` (a Zigbee radio) |
+  | `0bda:8922`, `2357:0604` | Realtek and TP-Link Bluetooth adapters | `other` (host Bluetooth, not the nRF bench radio) |
+  | `1a86:5722` | "UsbMonitor", a 3.5-inch display | `other` |
+
+  The classes are my reading of the product strings **[unverified]**; Peter confirms or corrects
+  them, because a wrong class here is a wrong label on a port someone trusts.
+- **A device on a port that is not a configured slot is still listed**, as an unassigned port, so
+  nothing attached is invisible. A configured slot with nothing on it is `absent`.
+- **Slots can be learned from observed ports** (the hub-port key from the udev `ID_PATH` or the
+  sysfs path, normalised so two names for one port are one key), as upstream's `rfc2217-learn-slots`
+  does, and are then written to host configuration.
+- **Detection is event-driven.** A device appearing or disappearing emits `devices.changed`
+  carrying that port's full record, so a front end updates one card without re-reading the
+  rest. No timer is involved.
+- An unrecognised or undeclared serial adapter is classified and listed and **never opened**
+  (`console.md`).
+
 ## TOOL device state
 
 Five states as the existing flash tool reports them **[stated]**, plus two it could not tell apart

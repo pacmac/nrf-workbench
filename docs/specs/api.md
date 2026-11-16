@@ -83,6 +83,27 @@ The service can flash firmware and power-cycle hardware, so it is not open by de
 - Authentication is not a safety layer. A valid token still goes through every guard; a guard
   refusal looks the same to every caller.
 
+## TOOL what the dashboard needs from the service
+
+Added with `dashboard.md`. All of it is generated from or carried by the core event bus
+(`core.md`); none of it is a command of its own.
+
+- **`/ws/events`: one websocket for everything live.** The client sends a `want` message naming
+  the feeds it needs (`devices`, a link's console, `activity`, `flash`, `readiness`) and a cursor to
+  resume from; the server sends only those, and a `gap` event says how many were lost if the cursor
+  is older than what is retained. No polling anywhere.
+- **`GET /api/activity`: the activity log**, with a cursor, for a page that wants history. It is
+  the record of every `command.result` from every caller.
+- **Readiness is `programmer.status`, re-evaluated whenever `devices.changed` fires** and published
+  as `readiness.changed`, so the dashboard's "can I flash this now?" is the dry-run of the same
+  guards a flash runs.
+- **Static assets and `/`:** the built UI is served at the root, with the bench name substituted
+  into the page title on the server before any JavaScript runs. If the UI has not been built, `/`
+  says so plainly.
+- **The dashboard's own status route** reports what the dashboard can write and which routes it
+  uses, so its claim can be checked against its source (`dashboard.md`).
+- **No write route belongs to the dashboard.** Every action calls a registry command.
+
 ## TOOL MCP
 
 - **A separate MCP server, `nrf-workbench`. It does not share the ESP testbench MCP.** See the

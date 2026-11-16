@@ -177,6 +177,29 @@ bound**, derived from a measurement by whoever calls it, and `no_bound` refuses 
 The one exception is configuration that records a measured value together with the measurement it
 came from. **[stated and derived, `programmer.md`]**
 
+## TOOL the event bus and the activity log
+
+Added for the dashboard (`dashboard.md`), which needs a live view of the whole bench and a record of
+what every caller did. `core` owns both; nothing else does.
+
+- **An event** has a `type` (for example `devices.changed`, `console.line`, `flash.progress`,
+  `command.result`), the `area` that raised it, a typed payload, a monotonic and a wall timestamp,
+  and a **cursor**: a per-bus integer that only goes up.
+- **Areas publish; subscribers wait.** The API's `/ws/events` feed and the activity log are
+  subscribers. A subscriber waits on the next event; nothing polls.
+- **The activity log records every `command.result`:** the caller (`cli`, `api`, `mcp`,
+  `dashboard`, plus the token's label if one was used), the command, its arguments (any secret
+  redacted), the `class` and `code`, and the duration. A refusal is recorded exactly like a
+  success. This is the record of what an AI did to hardware.
+- **Every retained stream declares its bound, with no default:** `retain` (a count) and
+  `max_age_days`, both required, each with its derivation written beside it. An unbounded log is
+  retained for ever by oversight. A stream without a bound refuses to start (`no_bound`).
+  **[prior art: the mesh-gw dashboard's streams]**
+- **Resume from a cursor.** A subscriber asks for events after cursor N. If N is older than what is
+  retained, it is told **how many events were lost** (a `gap` event), never silently skipped.
+- **Events are the same data the commands return.** A `devices.changed` payload is the port's
+  device record from `devices.md`, so the feed and `devices.list` cannot disagree.
+
 ## TOOL streams
 
 A `stream` command yields typed events, each with a monotonic timestamp and a wall-clock timestamp.
