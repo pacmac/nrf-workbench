@@ -9,10 +9,11 @@ counterpart of the ESP32 testbench in
 It runs on any Linux host (a Raspberry Pi, a PC, a server, a VM, a container). It does not assume a
 Pi, a particular distribution, a particular folder, or that anything is wired to the board.
 
-> **Status: pre-release. The installer below is specified but not built yet, so the install
-> commands on this page will not work until it is.** What exists today is the design
-> (`docs/specs/`) and read-only probes (`scripts/`). This notice is removed when the installer
-> lands and its commands are tested.
+> **Status: the installer works; the rest of the product is not built yet.** The commands below
+> were run against GitHub itself on Debian 13: a full install, verify and re-run on x86_64, and
+> the plan (`--check`) on a Raspberry Pi 4B (aarch64). **A fresh Raspberry Pi OS Lite install has
+> not been run yet.** Today the installer sets up the environment and the tools; the service, CLI
+> and dashboard are specified in `docs/specs/` and arrive in later releases.
 
 ## Install
 
@@ -100,9 +101,10 @@ how to get it, instead of failing in the middle.
 - `git` is **not** needed. (It is used only if you ask for a developer checkout with `--git`.)
 - Network access to GitHub and PyPI, or a pre-built wheelhouse (`--wheelhouse DIR`)
 
-**Tested so far:** Debian 13 on a Raspberry Pi 4B (aarch64) and on x86_64 hosts. Other
-distributions, 32-bit ARM, musl, and hosts without systemd are **untested**; the installer says
-"untested on this class" and tries, and it will not claim a pass for something it did not run.
+**Tested so far:** a full install on Debian 13 x86_64; on a Raspberry Pi 4B (aarch64) only the
+plan (`--check`). Other distributions, 32-bit ARM, musl, and hosts without systemd are
+**untested**; the installer says "untested on this class" and tries, and it will not claim a pass
+for something it did not run.
 
 ## Where to read more
 
