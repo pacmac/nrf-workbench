@@ -45,6 +45,9 @@ Area: `install` (tool). Files: `install/` (the installer and its feature manifes
    `avahi-daemon`). So a fresh Pi OS Lite has no `git`, and the earlier "git is present" reading
    was that earlier manual step. That is true of **this one image only**; other images are
    **[unknown]**. Every prerequisite is now detected with a stated outcome (see the bootstrap).
+9. **This spec had drifted Pi-shaped, and Peter said not to assume a Pi.** The first brief says
+   any Linux host; the installer spec then leaned on a Raspberry Pi, Debian and `apt`, systemd, a
+   user `pi`, a group `dialout`, root, and Peter's own `/usr/share/pac`. See "any Linux host".
 8. **`curl ... | sh` has two traps.** The script's standard input is the pipe, so a prompt that reads
    stdin would swallow the script or hang; and a download cut short would execute a partial script.
    The design below closes both. A non-interactive SSH command also has no terminal **[verified]**.
@@ -155,6 +158,29 @@ says so rather than hide it.
   (`curl -fsSLo install.sh ...; less install.sh; sh install.sh`). The bootstrap is kept small enough to read.
 - The repository owner controls what the one-liner runs; that is inherent and is stated.
 
+## TOOL any Linux host, not only a Pi
+
+Peter, 2026-11-16: "DO NOT ASSUME that it will always be installed on a PI." The project is
+host-agnostic from the first brief; this spec had drifted Pi-shaped. Every place it assumed a Pi,
+a Debian system, systemd, a `pi` user or Peter's own folder is replaced by detection.
+
+| dimension | the first draft assumed | now | tested on |
+|---|---|---|---|
+| hardware | a Raspberry Pi | nothing about the hardware. Pi-only features (pin I/O, the header UART) are offered only if the device-tree model says Raspberry Pi (`core.md`). A host with no board attached is a normal install, not a failure. | Pi 4B (aarch64); bare-metal Proxmox host and a dev container (x86_64) |
+| distribution | Debian family, `apt` | read `/etc/os-release` (`ID`, `ID_LIKE`). Everything that needs no system package (a venv and wheels) works wherever the prerequisites exist. A step that needs a system package runs only on `apt`; on any other family it stops with what is missing and never guesses package names. | Debian 13 on all three; **Ubuntu, Fedora, Alpine and others: [unknown]** |
+| architecture | aarch64 | x86_64 and aarch64 wheels are verified (`api.md`). **32-bit ARM (`armv7l`, which a 32-bit Pi OS is) is [unknown]**: compiled wheels may not exist. Detected, tried, and reported, never claimed. | x86_64, aarch64 |
+| C library | glibc | musl (Alpine) cannot load manylinux wheels **[recalled]**; detected and reported as unverified | glibc only |
+| init system | systemd | detected (`/run/systemd/system`, `systemctl`); the service unit is offered only if present, otherwise it prints how to run the service in the foreground. A container may or may not have systemd. | systemd on all three |
+| users and groups | a user `pi`, the group `dialout` | no user is assumed. The group that owns serial nodes is **read from an existing serial node**, not named (it is `dialout` on Debian and may be another elsewhere **[recalled]**); with no serial node to read it says it cannot tell. `--add-user NAME` only on request. | Debian: `dialout` |
+| install location | `/usr/share/pac/nrf-workbench` | **Peter's convention is used only where it exists.** If `/usr/share/pac` exists, the default is `/usr/share/pac/nrf-workbench`. If not, the installer does not invent it: it proposes `/opt/nrf-workbench` when privileged and the user's data directory (`~/.local/share/nrf-workbench`) when not, and asks; non-interactive needs `--prefix`. | `/usr/share/pac` on all three |
+| privilege | root | a rootless install (a venv in a user-writable prefix, no system packages) is supported; a feature that needs a system package or device access says what it needs | root only so far |
+| Python | the distribution's, new enough | whatever the host has, checked against the floor of 3.10 (`api.md`). An older one stops the install with the version found; Python is never built from source. | 3.13.5 on all three |
+| network | direct to PyPI and GitHub | the standard proxy environment variables are honoured by `curl` and `pip`; a wheelhouse covers a bench with no network | direct only |
+
+**Support is only ever claimed for what was run.** The installer detects a host class it has not
+been tested on, says "untested on this class", and tries; it does not refuse a class on a guess, and
+it does not print `ok` for one on a guess.
+
 ## TOOL features, not one big blob
 
 What a host needs depends on what it will do. Each area declares its requirements in the feature
@@ -169,7 +195,7 @@ the installer.
 | `build` | `platformio` 6.2.0 (a wheel; its toolchain downloads on first build) | building firmware |
 | `swd` | `pyocd`, or system `openocd` | SWD (later) |
 | `ble` | `bleak` and, where needed, BlueZ | BLE (later) |
-| `gpio` | **Pi only:** system `python3-libgpiod` and `gpiod`, as the Pi already has them | pin I/O (later) |
+| `gpio` | **only where the device-tree model says Raspberry Pi:** system `python3-libgpiod` and `gpiod` (the Pi probed already has them **[verified on one Pi]**) | pin I/O (later) |
 
 **The default is `core`, `flash` and `console`**: what v0.1 needs. `build` is opt-in because of the
 toolchain. The pins are the versions **verified together** (`api.md`); a pin changes only when it
@@ -192,8 +218,9 @@ is re-verified.
 
 ## TOOL where things go
 
-- **`<prefix>` defaults to the checkout's own location, normally `/usr/share/pac/nrf-workbench`**
-  **[stated: the install folder]**, and `--prefix` overrides it. The venv is `<prefix>/venv`,
+- **`<prefix>` defaults to `/usr/share/pac/nrf-workbench` where `/usr/share/pac` exists**
+  **[stated: Peter's install folder]**, and otherwise is proposed and confirmed (see "any Linux
+  host"); `--prefix` overrides it. The venv is `<prefix>/venv`,
   host configuration is `<prefix>/config/`, the log is `<prefix>/install.log`. All are gitignored.
 - **System-wide paths are not used.** Peter's hosts keep everything under `/usr/share/pac`. Where a
   system integration needs a path elsewhere (a systemd unit), the file lives in the prefix and is
@@ -229,14 +256,16 @@ none beyond `python3-venv`, which the Pi already has **[verified]**.
 
 - **Never touches a serial device**, never flashes, never requests a mode change, never writes
   DTR or RTS. It installs software; it does not drive hardware.
-- **Never edits the Pi's boot configuration** (`config.txt`, `cmdline.txt`), enables a UART, or
+- **Never edits boot configuration on any host** (a Pi's `config.txt` and `cmdline.txt`, a PC's
+  bootloader), enables a UART, or
   removes the kernel console. It reports the lines needed and that a reboot follows
   (`console.md`); changing them is a hardware decision and an explicit `--enable-uart` step of the
   console area, with a backup, later.
 - **Never changes the system Python** and never runs `pip` outside the venv.
-- **Never adds a user to a group by itself.** Access to serial nodes needs `dialout` (`pi` and
-  `root` are in it on the Pi **[verified]**); the installer reports membership and offers
-  `--add-user NAME`, because a group change is a privilege change.
+- **Never adds a user to a group by itself.** Access to serial nodes needs the group that owns
+  them, read from an existing node rather than assumed (on the probed Pi it is `dialout` and the
+  users `pi` and `root` are in it **[verified, one host]**); the installer reports membership and
+  offers `--add-user NAME`, because a group change is a privilege change.
 - **Never contains a sleep or a made-up timeout.** It waits on process exit. A network step is
   bounded by pip's own retry limits and the human's Ctrl-C, and says so.
 - **Never reports PASS for a check that did not run.** A feature that could not be verified (no
@@ -254,8 +283,9 @@ none beyond `python3-venv`, which the Pi already has **[verified]**.
    tests, and the shell is only there because Python may be missing or the wrong version, so it
    must itself assume nothing beyond `sh`.
 3. **A venv under the prefix, not the system Python and not a shared environment.** Constraint:
-   the Pi has no system `pip`, a venv is self-contained and removable, and each host's `/usr/share/pac`
-   layout already differs (`py` on the dev host, `venv` on the Proxmox host).
+   the Pi probed has no system `pip` (a venv needs none, on any host), a venv is self-contained and
+   removable, and each host's `/usr/share/pac` layout already differs (`py` on the dev host, `venv`
+   on the Proxmox host).
 4. **Default features are `core`, `flash`, `console`; `build` is opt-in.** Constraint: v0.1's needs,
    and an unmeasured toolchain download on first build.
 5. **Plan first, always; ask on the terminal only what is the user's to decide; never block without
@@ -278,9 +308,14 @@ none beyond `python3-venv`, which the Pi already has **[verified]**.
 
 ## VERIFY
 
-- **A fresh Pi, one command:** from an empty `/usr/share/pac`, the `curl` one-liner ends with every
-  default feature PASS. Same on the Proxmox host (x86_64) and the dev container. **The Pi used so
-  far is not a fresh image**, so this needs a freshly imaged card, which only Peter can provide.
+- **A fresh host, one command:** on a freshly imaged Pi, and on a clean x86_64 Debian host (a VM
+  or container created for the test), the `curl` one-liner ends with every default feature PASS.
+  **The Pi used so far is not a fresh image**, so the Pi run needs a freshly imaged card, which only
+  Peter can provide. A clean x86_64 container can be made without hardware.
+- **A host with no `/usr/share/pac`, run unprivileged,** installs into the user's data directory
+  and verifies, proving the Pi-and-Peter defaults are not load-bearing.
+- **A class that is not tested is reported as untested**: 32-bit ARM, musl, a non-`apt` family and
+  a host with no systemd each produce "untested on this class" or a clear stop, never a silent `ok`.
 - **Each absence, simulated:** the bootstrap is run with a restricted `PATH` that hides, one at a
   time, `git`, `curl` (leaving `wget`), `tar`, `python3`, and with Python 3.9 first, and reports
   the stated outcome every time. This needs no fresh image.
