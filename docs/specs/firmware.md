@@ -220,9 +220,12 @@ and everything else as query parameters.
 
 ## TOOL how each front end reaches it
 
-- **HTTP:** `POST /api/firmware` and `POST /api/programmer/flash_stream` with the raw bytes;
-  `GET /api/firmware`, `GET /api/firmware/<id>`, `DELETE /api/firmware/<id>` (the `delete` row is a
-  `write`); `POST /api/programmer/flash` with JSON.
+- **HTTP** (the routes the registry generates, one shape for every command, **corrected 2026-11-16**:
+  an earlier draft here named RESTful routes such as `DELETE /api/firmware/<id>`, which `api.md` does not
+  generate): `POST /api/firmware/put` and `POST /api/programmer/flash_stream` with the raw bytes as the
+  body and the other arguments as query parameters; `GET /api/firmware/list`;
+  `GET /api/firmware/show?id=`; `POST /api/firmware/delete` and `POST /api/programmer/flash` with a JSON
+  object body; `GET /api/devices/list`. **Built and tested over a real ASGI client, 2026-11-16.**
 - **CLI, two modes, one command set:**
   - **on the host that has the board** the CLI runs the library in-process with no service
     (`api.md`, CLI and service) and reads a local file directly: `flash FILE` is `put` then `flash`

@@ -31,6 +31,27 @@ Area: `api` (service). Imports only `core`. Contains no rules of its own.
 
 ---
 
+## Files this spec allows (the HTTP build, 2026-11-16, Peter: "go")
+
+`nrf_workbench/api/__init__.py`, `api/auth.py` (the bearer check and the two access modes),
+`api/body.py` (a synchronous `read(n)` over the request's asynchronous body, so a handler that reads a
+file as a stream is the same function from the console and from a request), `api/app.py` (the Starlette
+application generated from the registry), and `tests/api/`. **Not in this unit:** websocket streams,
+the login page and cookie (they belong with the dashboard), the MCP server, the OpenAPI document, the
+listen-port holder and privilege checks, and `service.py`, the composition root that wires it.
+`api` imports only `core` and the web framework.
+
+**Built and tested, 2026-11-16:** `api/auth.py`, `api/body.py`, `api/app.py`: 71 tests (auth 12, the body
+bridge 9, the app 33, the registered commands over real HTTP 13, and 4 against a real uvicorn server on a
+loopback socket). 24 mutants of the guards were caught; the one that survived the ASGI test client
+(reading the whole body before the handler runs) cannot be seen through that client at all, so the live
+tests prove it instead: **an upload is streamed** (the handler is reading while the client has sent only
+a few KB of 3 MiB), and **a client that vanishes mid-upload leaves nothing in the store**. A raw upload
+that fails authorisation is refused before a byte is read. One mutant is equivalent at that level and is
+left to the unit test of the body bridge. **Not built:** websocket streams, the login page and cookie, the
+MCP server, the OpenAPI document, the listen-port holder and privilege checks, and the composition root.
+A JSON body is read whole (it is small; an upload is the streamed case), and has no size cap yet.
+
 ## TOOL what is generated, and from what
 
 Everything below comes from the registry. The service holds no command of its own.
