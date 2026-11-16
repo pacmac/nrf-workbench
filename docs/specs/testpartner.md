@@ -50,6 +50,35 @@ Nothing is vendored from another repository (see Dependencies).
 - **Never sleeps the system, never starts the radio, never writes flash, never prints.** It has no
   console output at all, so a silent port is the expected state.
 
+## TOOL the pinscan image (second env of the same project)
+
+Peter, 2026-11-16: "you could also listen on the serial dongle?" then "the serial dongle might not
+work on the mt-alarm, because ... the mt-alarm uses different pin for serial debugging. but you could
+test that on the parking firmware?" A 150 s capture of the dongle with mt-alarm running returned
+nothing **[verified]**, which does not say whether the wire, the dongle or the pin is at fault.
+
+- **Which pin the dongle is wired to is not known** (the prior art's note says gpio17 out and gpio31 in
+  for mt-alarm; Peter doubts it for this bench). It is not guessed.
+- **Env `pinscan`** is the parking image plus a debug banner: in turn on each candidate edge pin it
+  sends `NRFWB-PIN <n>` at 115200 8N1 (the dongle tool's fixed rate), then returns that pin to a
+  high-impedance input. Reading the dongle shows which pin number arrives. It announces its own
+  product string, `nrfwb-pinscan 1`, so a flash of it is verified like any other.
+- **Candidates:** the pins the board variant says reach an edge or a UART (gpio 4, 5, 9, 10, 13, 14,
+  15, 16, 17, 31, 34) plus 21 and 33, which are the WisBlock IO3 and switch pins **from memory of the
+  RAK variant, not from this repository: [unknown], marked as such in the source**. gpio 6 and 8 go to
+  the on-board debug chip, not to a wire, and are excluded.
+- **Why bit-banged:** the core builds `Serial2` for one fixed pin pair at compile time. The line is
+  written from the cycle counter (exact to a cycle, 64 MHz) with interrupts masked for the ~87 us of a
+  byte. Non-active pins are inputs, so a pin that is wired to the dongle's TX is never driven against it.
+- **Receive side (dongle TX to a RAK pin) is a later step**; this finds the transmit pin only.
+- **Result, 2026-11-16 [verified on the bench]:** pinscan flashed (4.428 s, 108 of 108 marks, product
+  string confirmed), the dongle read for 30 s (six scan rounds) and **received nothing from any of the
+  13 candidates**. The dongle itself is sound (enumerates as `cdc_acm`, opened by its by-id name). So
+  the dongle's RX is not on any listed pin, or the common ground is missing, or the scan's bit timing
+  is wrong **[unknown which]**. The next input is Peter's: which RAK pins the two dongle wires and the
+  ground actually go to. The unit was restored to the mt-alarm package afterwards (21.539 s, 649 of 649
+  marks, board-default product string confirmed).
+
 ## TOOL dependencies and build
 
 - **Board and variant:** `NRFWB_RAK_DIR` names a directory containing `boards/wiscore_rak4631.json`
