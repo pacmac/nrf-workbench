@@ -210,6 +210,14 @@ Each line: the constraint, then the conclusion.
    profile holds a **set of ids per mode**, not one, and the product strings differ between modes
    too. VID:PID alone cannot identify a board; the serial survives the transition.
 
+## TOOL where the file comes from: the firmware store (see `firmware.md`)
+
+`flash_file` takes a path and that is all it takes. How a caller gets a built image onto the host
+that has the cable, without `scp`, is a separate spec: `firmware.md` (a content-addressed store, upload
+by raw HTTP body, `programmer.flash` by id, `programmer.flash_stream` in one call, and the MCP path).
+That spec's `programmer.flash` calls the flash described here against the stored file; it does not
+change the guards, the verdict or the one-attempt rule.
+
 ## TOOL command surface — one definition, three front ends (decided 2026-11-16)
 
 Peter's requirement: a structured CLI that matches the API, so a command can be called over the API

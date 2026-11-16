@@ -50,6 +50,12 @@ the API body]**
 
 A command whose `requires` is unmet is absent from the list and returns 404 here, not 500.
 
+**One deliberate exception to "a `write` takes a JSON body": a row may declare `body: raw`**, so the
+request body is the file itself and the other arguments are query parameters. It exists for firmware
+upload (`firmware.md`: `firmware.put`, `programmer.flash_stream`). A raw-body row is still generated,
+still listed in `GET /api/commands` and the OpenAPI document, still returns the unmodified `Result`,
+and still needs the token.
+
 ## TOOL CLI and service: the narrowed rule
 
 Replaces the "neither front end calls the other" bullet in the command surface section of

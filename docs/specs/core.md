@@ -90,6 +90,11 @@ returned, never a tail. **[brief]**
 | `protected` | refused | the unit is protected | serial |
 | `bad_package` | refused | not a zip, no `manifest.json`, a `.hex`, or truncated | what was missing |
 | `wrong_softdevice` | refused | package `softdevice_req` does not match the device | both values |
+| `firmware_unknown` | refused | an id (or id prefix) names no stored firmware, or more than one (`firmware.md`) | the id, and the candidates if ambiguous |
+| `checksum_mismatch` | refused | the SHA-256 the caller sent is not the SHA-256 of the bytes received (`firmware.md`) | both hashes |
+| `length_required` | refused | an upload came with no `Content-Length` (a chunked body), so its size and the free space cannot be checked first (`firmware.md`) | |
+| `store_full` | refused | the filesystem cannot hold the upload; nothing is evicted (`firmware.md`) | bytes needed, bytes free |
+| `in_use` | refused | a stored firmware is a unit's declared return path, so it cannot be deleted (`firmware.md`) | the unit(s) |
 | `not_in_bootloader` | refused | a file flash was asked of a board not in the bootloader | state |
 | `no_bound` | refused | a waiting command was started without a caller-supplied bound | |
 | `capability_missing` | refused | the host or device lacks a required capability | the capability |
@@ -109,7 +114,7 @@ returned, never a tail. **[brief]**
 | `port_privileged` | refused | the listen port is below the unprivileged limit and the service has neither root nor the capability | the port, the limit read from the host |
 | `token_missing` | refused | a non-loopback listen address was configured with no token | the address |
 | `flash_failed` | failed | the write ran and the tool said it failed | whole output |
-| `flash_suspect` | suspect | the write reported success but duration or output disagrees | output, duration, healthy duration |
+| `flash_suspect` | suspect | the write reported success but the content disagrees: the progress marks are not one per 512-byte packet of the image, or the returned application reports another product than the image announces (`programmer.md`). **Not judged on duration** (a duration floor wrongly condemned the first real flash, 21.554 s on native USB) | the whole output, the marks and packets, the duration (recorded, not judged), the expected and reported product |
 | `run_node_not_returned` | failed | after a flash the run node did not return within the bound | the bound, the elapsed time |
 
 The list grows with each area's spec; it is closed per release.
@@ -121,7 +126,7 @@ One function maps a `Result` to both, so the CLI and API cannot disagree.
 | class | CLI exit | HTTP |
 |---|---|---|
 | ok | 0 | 200 |
-| refused | 1 | 409 for state, holder, lock, serial, protected and link-wiring refusals (`link_absent`, `link_rx_only`, `voltage_unverified`, `dtr_rts_unsafe`); 422 for `bad_package`, `wrong_softdevice`, `no_bound`, `baud_refused`, `not_a_declared_link` |
+| refused | 1 | 409 for state, holder, lock, serial, protected and link-wiring refusals (`link_absent`, `link_rx_only`, `voltage_unverified`, `dtr_rts_unsafe`); 422 for `bad_package`, `wrong_softdevice`, `no_bound`, `baud_refused`, `not_a_declared_link`, `checksum_mismatch`; 404 for `firmware_unknown`; 411 for `length_required`; 507 for `store_full`; 409 for `in_use` |
 | (usage error: bad arguments) | 2 | 400 |
 | failed | 3 | 500 |
 | suspect | 4 | 500, `ok` false |
