@@ -381,7 +381,9 @@ class DashboardWiring(Base):
         self.assertIn("<title>Pi Bench · nrf-workbench</title>", client.get("/").text)
 
     def test_the_banner_says_whether_the_ui_is_built(self):
-        rc, apps, out, err = self.run_main(["--listen", "127.0.0.1:%d" % free_port()])
+        os.makedirs(self.path("empty"))
+        with mock.patch.object(service, "STATIC_DIR", self.path("empty")):      # not the repo's own build
+            rc, apps, out, err = self.run_main(["--listen", "127.0.0.1:%d" % free_port()])
         self.assertIn("UI NOT built (a plain page says so)", out)
         with mock.patch.object(service, "STATIC_DIR", self.path("static")):
             os.makedirs(self.path("static"))

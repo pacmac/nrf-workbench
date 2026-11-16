@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- The server replaces the placeholder BEFORE any script runs, HTML-escaped, so the title is right even
+         when the API is wedged and two tabs are open. The meta tag lets the UI show the same name. -->
+    <meta name="bench-name" content="{{BENCH_NAME}}" />
+    <!-- An inline icon: the page asks for no /favicon.ico, so it makes no request that can only 404. -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232563eb'/%3E%3Cpath d='M4 12V4h2l4 5V4h2v8h-2L6 7v5z' fill='white'/%3E%3C/svg%3E" />
+    <title>{{BENCH_NAME}} · nrf-workbench</title>
+    <script>
+      /* The theme class is set before first paint, so there is no flash of the wrong theme. */
+      (function () {
+        try {
+          var t = localStorage.getItem("nrfwb-theme");
+          var dark = t === "dark" || ((t === null || t === "system") && matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", dark);
+        } catch (e) {}
+      })();
+    </script>
+    <script type="module" crossorigin src="./assets/index-MGvIiUkz.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-D2_NSzkp.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

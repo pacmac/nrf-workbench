@@ -70,6 +70,38 @@ and touch no hardware; the claim is checked three ways (source, mounted routes, 
 real browser yet** (that is the next verification, with the UI). **Not built:** a login rate limit (by design,
 above), the UI.
 
+**Built and checked in a real browser, 2026-11-16: the UI** (`ui/`, built into `nrf_workbench/dashboard/static/`,
+committed). `python3 scripts/verify_dashboard.py` runs the real service against a fake sysfs and a pokeable uevent
+source and drives Chrome through login (wrong token, right token), the live band, a board attached and removed
+while the page is open, all four pages, a generated read and a refused write from the Commands page, the
+activity log naming the dashboard, logout, and a foreign-Origin login, in light and dark at 390, 768 and 1280
+wide: **225 checks, 0 failed**, screenshots looked at. A live attach showed in 4 to 26 ms. The checks found and
+this commit fixes: a `/favicon.ico` 404 on every page load, a duplicated command summary, "took 0.000 s", a
+wrapped phone nav. **Not yet checked on the Pi with a real board** (the verification uses a fake bus), and a flash
+from the browser has not been run; the form is the generated one and the flash itself is unchanged and proven.
+The development container's fontconfig maps `system-ui` to a monospace face, so named sans fonts come first.
+
+## Files for the UI (added 2026-11-16, Peter: "get this completed")
+
+`ui/` (React 19, Vite 8, Tailwind 4, **exact versions pinned**, `package-lock.json` committed), the **built
+output committed** at `nrf_workbench/dashboard/static/` (**overriding this spec's earlier "not committed to
+git"**: the installer fetches a GitHub tarball of a commit, so assets that are not in the commit never reach
+the Pi; they are text and rebuilt from `ui/`), `tests/dashboard/test_ui_rules.py` (the UI source checks, each
+mutation-tested), `scripts/build_ui.py` (runs the build, then writes `nrf_workbench/dashboard/static/source.sha256`,
+the digest of every file the build reads, and the test recomputes it: **a committed build that is older than its
+source fails a test** instead of shipping a dashboard that is not the one in `ui/`), `scripts/verify_dashboard.py` (the real-browser check: both themes, three widths, the login),
+and `.gitignore` (`ui/node_modules/`), and `tests/service/test_service.py` (its "UI is not built" banner test supplied no static
+directory of its own and so depended on whether the repo had a build; it now supplies an empty one).
+**Design rules the checks enforce:** no `setInterval` and no
+`setTimeout` anywhere (so there are no ticking "ages": every value shows the TIME of its last event, which is
+the same information with no clock), no literal host, port or URL, and **no write URL in the source except
+`login` and `logout`**: every other write goes to a path the server listed in `GET /api/commands`. A dropped
+feed is shown as dropped, with when, and reconnects on the browser's own `online` and `visibilitychange`
+events or a button, never on a timer. **What the band does and does not claim:** it shows each board's state
+and mode from the live feed; it does **not** claim "ready", because the readiness verdict is a dry run of the
+flash guards that no command exposes yet. The Commands page is generated from the registry, so every present
+command, including both flashes, can be run from the browser with its guards.
+
 ## GAP defects first
 
 1. **The live feed does not exist yet.** `api.md` has request and response and a websocket per
