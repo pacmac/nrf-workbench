@@ -178,6 +178,39 @@ serial_stable_across_modes: true # VERIFY per family; false means identity needs
   vs `RAKWireless` seen). They corroborate; they never identify.
 - Board-specific pins, the reset line and timings live here, never in code. **[brief]**
 
+## TOOL entering the bootloader without a hand
+
+Peter, 2026-11-16: an nRF does not need to be put into DFU by hand; the control lines can do it. A
+human double-tap is only the manual fallback. The profile's `bootloader.entry` names which method
+this board uses, and the driver's `enter_bootloader()` performs it.
+
+| `entry` | what causes the transition | needs | state on the current bench |
+|---|---|---|---|
+| `1200-baud-touch` | open the board's own USB CDC at 1200 baud and close it; the application resets into the bootloader (the exact line-coding and DTR sequence is **[recalled]** from the Adafruit core) | nothing wired; the board's CDC node | possible now; `pio`'s upload already does it |
+| `gpio-on-reset` / `double-tap-reset` | two reset pulses inside the bootloader's double-reset window, on a RESET line | a host line wired to RESET: a Pi GPIO, or an adapter's RTS or DTR | **not stated as wired** |
+| `dfu-pin` | hold the DFU or boot pin low through a reset | a wired DFU pin and a reset | not stated as wired |
+| `gpregret-swd` | write the bootloader's entry marker into `GPREGRET` over SWD, then reset (the value comes from the bootloader source, not from memory) | an SWD probe | no probe attached |
+
+Rules:
+
+- **Exactly one transition per flash, so exactly one actor** (brief rule 2). If the uploader already
+  does the entry (`pio`'s touch), the profile says `entry_performed_by: uploader` and the driver
+  does not repeat it: a second touch is a second reset. `enter_bootloader()` is for a flash path
+  where nothing else will do it, and for causing a mode change on purpose (such as observing it).
+- **A control line is declared in the slot's wiring and owned here**, never by `console`
+  (`console.md`). A wired RTS-to-RESET or GPIO-to-RESET is a **reset line** with a declared voltage
+  domain, and an unverified domain is refused, as for debug links.
+- **The double-reset window is measured on the real board, not chosen.** The pulse spacing the
+  bootloader accepts is a number to read from the bootloader and confirm with a measured pulse, and
+  the host's own timing jitter is measured too (brief section 5b), because a pulse sent over HTTP
+  would be too coarse; the timed pulse runs on the host, not across a request.
+- **A mode change passes through `absent`.** `enter_bootloader()` waits on the handover event with a
+  caller-supplied bound, never a sleep.
+- **It is verified, not assumed.** The device's own boot counter (read through the debug link,
+  `console.md`) must advance by exactly 1 for the transition.
+- **The probes never do it.** Observing a mode change (serial stability, the id sets) uses the
+  profile's method through the driver once it exists, or the manual fallback until then.
+
 ## TOOL protected
 
 `protected` is a flag **per serial**, held in host configuration (`units.yaml`), not in the

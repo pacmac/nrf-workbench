@@ -129,6 +129,15 @@ links:
   is harmless only where DTR does not reach a reset or boot pin, which is why
   `dtr_rts_reach_dut` must be declared and a link where it is true is refused for a DUT whose
   bootloader can be entered that way.
+- **A control line wired ON PURPOSE is a different thing and has a different owner.** Peter,
+  2026-11-16: an nRF need not be put into DFU by hand; the control lines can do it. That works only
+  if a host line is wired to the DUT's RESET (or a DFU pin): an adapter's RTS or DTR, or a Pi GPIO
+  (`nrf-workbench.md` section 5b). Such a line is declared in the slot's wiring as a **reset or boot
+  control line owned by the family driver** (`enter_bootloader()` and `reset()`, `devices.md`),
+  never by `console`. `console` does not toggle it, and a link whose modem lines reach reset or boot
+  is refused (`dtr_rts_unsafe`) **unless that line is declared as such a control line**. An
+  accidental DTR flick on open and a deliberate double-reset pulse are therefore never the same code
+  path.
 - **Hold the adapter exclusively** (`TIOCEXCL` and a lock), so nothing else reads or writes it.
 - **Never drive a DUT pin from a 5 V adapter.** The declared voltages must match before a send.
 - **The only module that opens a serial device is `nrf_workbench/console/`.** A gate test fails

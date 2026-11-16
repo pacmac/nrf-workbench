@@ -61,7 +61,11 @@ Files this spec allows (the only files its task may create):
 
 **Serial stability without events.** A container may receive no uevents. The fallback needs no
 event at all: run `probe_host.py` once with the board in the app mode and once in the bootloader
-mode (double-tap), and compare the `usb` section: the board's id, product and serial are read from
+mode, and compare the `usb` section. **No hand is required to change the mode**: the board's
+profile names an entry method (a 1200-baud touch on its own USB CDC, a double reset on a wired
+reset line, a DFU pin held low at reset, or SWD), and the family driver's `enter_bootloader()`
+performs it (`devices.md`). A double-tap is only the manual fallback. The probe still causes
+nothing itself: the board's id, product and serial are read from
 sysfs each time. Same serial, two ids: stable.
 
 ## Results so far (this host, 2026-11-16; serials and hostnames deliberately not recorded)
