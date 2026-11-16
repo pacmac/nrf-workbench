@@ -214,7 +214,7 @@ def unlink_unit(prefix, host, log, ui, link_dir=SYSTEM_UNIT_DIR, run=run_logged)
     if rc != 0:
         raise ApplyError("`systemctl disable --now %s` failed (exit %d)" % (UNIT_NAME, rc))
     link = os.path.join(link_dir, UNIT_NAME)
-    if os.path.lexists(link):                 # does `disable` remove a linked unit? checked on a real host
+    if os.path.lexists(link):                 # `disable` removes the link itself (checked on the Pi); this is a guard
         os.remove(link)
     rc, _out = run(["systemctl", "daemon-reload"], log, ui)
     if rc != 0:
