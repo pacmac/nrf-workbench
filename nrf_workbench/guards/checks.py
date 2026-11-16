@@ -12,6 +12,35 @@ from ..core.result import Result
 RETURN_METHODS = ("flash", "reset-line", "swd", "power-cycle")
 
 
+def dfu_package(profile, path):
+    """(refusal or None, info). A DFU package is a zip with manifest.json and the image it names,
+    and its `softdevice_req` must include the SoftDevice the profile says is installed. A hex file,
+    a truncated download or a package for another SoftDevice is refused BEFORE anything is written,
+    not discovered by the bootloader with a half-written image. info carries the image size, which
+    the flash verdict is derived from."""
+    import json
+    if not path or not os.path.isfile(path):
+        return Result.refused("bad_package", "the package does not exist", {"package": path}), None
+    try:
+        with zipfile.ZipFile(path) as z:
+            manifest = json.loads(z.read("manifest.json").decode("utf-8"))
+            app = (manifest.get("manifest") or {}).get("application") or {}
+            image = app.get("bin_file")
+            size = z.getinfo(image).file_size if image else 0
+    except (zipfile.BadZipFile, KeyError, ValueError, OSError):
+        return Result.refused("bad_package",
+                              "not a DFU package: expected a zip with manifest.json and the image it names "
+                              "(a .hex is not one)", {"package": path}), None
+    if not size:
+        return Result.refused("bad_package", "the package names no application image", {"package": path}), None
+    req = (app.get("init_packet_data") or {}).get("softdevice_req")
+    have = ((profile.get("memory") or {}).get("softdevice") or {}).get("fwid")
+    if have is not None and (not req or have not in req):
+        return Result.refused("wrong_softdevice", "the package requires a different SoftDevice than the device has",
+                              {"package_requires": req, "device_has": have}), None
+    return None, {"image_bytes": size, "softdevice_req": req, "package": path}
+
+
 def holders(node, proc="/proc", self_pid=None):
     """[(pid, cmdline)] of processes holding `node` open, matched by DEVICE NUMBER, not by path, so
     a process that reached the same device through another alias is not missed."""

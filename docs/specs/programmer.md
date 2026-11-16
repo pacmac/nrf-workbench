@@ -63,6 +63,36 @@ to keep, generalise, and where it contradicts the brief, to settle.
 
 ---
 
+## Files this spec allows (the flash build, 2026-11-16)
+
+`nrf_workbench/programmer/__init__.py`, `nrf_workbench/programmer/flash_file.py`, an added package
+check in `nrf_workbench/guards/checks.py`, and `tests/programmer/`. Nothing else.
+
+## TOOL the flash verdict, derived (2026-11-16)
+
+`flash_file` writes a prebuilt DFU zip to a board **already in its bootloader** (it never requests
+one: that is `devices.md`, `enter_bootloader()`). It judges the write by **output AND duration**, not
+exit status (brief rule 5; a 15 s run once "succeeded" and boot-looped a board).
+
+- **The duration floor is derived, not chosen.** The image crosses a UART at the profile's baud, 10
+  bits per byte on the wire (start, eight data bits, stop), and protocol framing and
+  acknowledgements only add time. So a write cannot take less than
+  `wire_s = image_bytes * 10 / baud`. A run shorter than that is physically impossible for a
+  complete image and is `suspect`, never `ok`. Check against the brief's measurement: the mt-alarm
+  v3 image is about 333 KB, and 333 000 * 10 / 115 200 = 28.9 s, against the brief's healthy
+  25 to 29 s on a RAK4631.
+- **The ceiling is the caller's bound** (required, no default): for a first measurement about 2 x
+  `wire_s` plus the handover, then replaced by 2 to 3 x the measured time.
+- **Success needs all of:** the tool exits 0, its output contains `Device programmed.`, the duration
+  is at least `wire_s`, and the board returns as the application (a new enumeration, found on events
+  within the bound). Anything else is `flash_failed`, `flash_suspect` or `run_node_not_returned`, with
+  the WHOLE tool output as evidence (brief rule 7), never a tail.
+- **Package guards, before anything is written:** a zip containing `manifest.json`, whose
+  `softdevice_req` includes the profile's SoftDevice id (182 for S140 6.1.1), else `bad_package` or
+  `wrong_softdevice`; the board must be in the bootloader (`not_in_bootloader` otherwise), carry
+  the named serial, not be protected, have a node that joins by device number, and not be held.
+- **One attempt.** A failed write stops and is reported; a retry is a new, deliberate call.
+
 ## TOOL purpose and scope
 
 A local, single-host command that is the **only** sanctioned way to put firmware on an attached nRF
