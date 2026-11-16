@@ -28,6 +28,7 @@ from .core.activity import ActivityLog
 from .core.events import Bus, Streams
 from .core.registry import Registry
 from .core.result import Result
+from .dashboard import server as dashboard_server
 from .devices import commands as device_commands
 from .devices import profile as profilemod
 from .devices.monitor import DeviceMonitor
@@ -36,6 +37,8 @@ from .programmer import flash_file
 
 # The profiles ship with the product (they are data about boards, not a host path).
 PACKAGE_PROFILES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "profiles")
+# Where the built dashboard UI lives. It may not exist yet: the dashboard then serves a plain page saying so.
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "static")
 UNPRIVILEGED_LIMIT = "/proc/sys/net/ipv4/ip_unprivileged_port_start"
 
 
@@ -120,11 +123,18 @@ def build_streams(cfg):
     return Streams(events, activity, absent)
 
 
-def build(cfg, token=None, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
+def bench_name(cfg):
+    """What the dashboard calls this bench: the configured name, else this machine's own host name."""
+    return cfg["service"]["bench_name"] or socket.gethostname()
+
+
+def build(cfg, token=None, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None, static_dir=STATIC_DIR):
     """(app, host, registry, capabilities) from a loaded configuration."""
     host, registry, caps = build_host(cfg, sysfs, devroot, proc, hooks)
     host.streams = build_streams(cfg)
-    app = build_app(registry, host, Auth(token, cfg["service"]["access"]), caps, host.streams)
+    auth = Auth(token, cfg["service"]["access"])
+    pages = dashboard_server.routes(bench_name(cfg), static_dir, auth.authorise)
+    app = build_app(registry, host, auth, caps, host.streams, pages)
     return app, host, registry, caps
 
 
@@ -230,6 +240,7 @@ def _parser():
     p.add_argument("--listen", help="addr:port; with none set the service listens on 127.0.0.1:8080 only")
     p.add_argument("--access", choices=cfgmod.ACCESS_MODES, help="token (default) or open-read")
     p.add_argument("--token-file", dest="token_file", help="a file holding the token (readable only by its owner)")
+    p.add_argument("--bench-name", dest="bench_name", help="what the dashboard calls this bench (default: this machine's host name)")
     p.add_argument("--firmware-dir", dest="firmware_dir", help="the firmware store directory")
     p.add_argument("--lock", help="the host lock file")
     p.add_argument("--profiles", help="a directory of board profiles (default: the ones shipped with the product)")
@@ -247,7 +258,8 @@ def main(argv=None, run=None, env=None, make_monitor=DeviceMonitor):
     args = _parser().parse_args(argv)
     overrides = {"service": {}, "paths": {}, "streams": {"events": {}, "activity": {}}}
     for flag, section, key in (("listen", "service", "listen"), ("access", "service", "access"),
-                               ("token_file", "service", "token_file"), ("firmware_dir", "paths", "firmware"),
+                               ("token_file", "service", "token_file"), ("bench_name", "service", "bench_name"),
+                               ("firmware_dir", "paths", "firmware"),
                                ("lock", "paths", "lock"), ("profiles", "paths", "profiles"),
                                ("units", "paths", "units")):
         if getattr(args, flag):
@@ -289,6 +301,8 @@ def main(argv=None, run=None, env=None, make_monitor=DeviceMonitor):
         host_addr, port, "loopback only" if loopback else "NETWORK, UNENCRYPTED http",
         "; token required" if token and cfg["service"]["access"] == "token" else
         "; reads open, writes need the token" if token else "; no token"), flush=True)
+    print("dashboard: bench %r, UI %s" % (bench_name(cfg), "built" if os.path.isfile(os.path.join(STATIC_DIR, "index.html"))
+                                         else "NOT built (a plain page says so)"), flush=True)
     print("commands: %s" % ", ".join(c.name for c in registry.commands(caps)), flush=True)
     absent = [c.name for c in registry.commands() if registry.unmet(c, caps)]
     if absent:

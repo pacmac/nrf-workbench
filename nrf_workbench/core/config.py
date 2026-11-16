@@ -21,6 +21,7 @@ DEFAULTS = {
         "listen": "127.0.0.1:8080",     # loopback on an unprivileged port; leaving it needs a token (api.md)
         "access": "token",              # token | open-read
         "token_file": None,
+        "bench_name": None,             # shown in the dashboard's title; unset means this machine's host name
     },
     "paths": {"lock": None, "profiles": None, "firmware": None, "units": None},
     # Each retained stream needs BOTH bounds and has NO default: an unbounded log is retained for ever by
@@ -37,6 +38,7 @@ ENV = {
     "NRFWB_LISTEN": ("service", "listen"),
     "NRFWB_ACCESS": ("service", "access"),
     "NRFWB_TOKEN_FILE": ("service", "token_file"),
+    "NRFWB_BENCH_NAME": ("service", "bench_name"),
     "NRFWB_LOCK": ("paths", "lock"),
     "NRFWB_PROFILES": ("paths", "profiles"),
     "NRFWB_FIRMWARE_DIR": ("paths", "firmware"),
@@ -147,6 +149,9 @@ def validate(cfg):
         problems.append("service.listen: %s" % exc)
     if cfg["service"]["access"] not in ACCESS_MODES:
         problems.append("service.access must be one of: %s" % ", ".join(ACCESS_MODES))
+    name = cfg["service"]["bench_name"]
+    if name is not None and (not isinstance(name, str) or not name.strip()):
+        problems.append("service.bench_name must be a non-empty string (or unset: the host name is used)")
     for name, bounds in cfg["streams"].items():
         retain, days = bounds["retain"], bounds["max_age_days"]
         if retain is None and days is None:

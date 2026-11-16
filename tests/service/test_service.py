@@ -363,6 +363,43 @@ class StreamsWiring(Base):
         self.assertIn("has no default", help_text)
 
 
+class DashboardWiring(Base):
+    def run_main(self, argv):
+        apps = []
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = service.main(argv, run=lambda app, **kw: apps.append(app), env={}, make_monitor=FakeMonitor)
+        return rc, apps, out.getvalue(), err.getvalue()
+
+    def test_the_bench_name_flag_reaches_the_page_and_the_banner(self):
+        from starlette.testclient import TestClient
+        rc, apps, out, err = self.run_main(["--listen", "127.0.0.1:%d" % free_port(), "--bench-name", "Pi Bench"])
+        self.assertEqual(rc, 0, err)
+        self.assertIn("dashboard: bench 'Pi Bench'", out)
+        client = TestClient(apps[0])
+        self.addCleanup(client.close)
+        self.assertIn("<title>Pi Bench · nrf-workbench</title>", client.get("/").text)
+
+    def test_the_banner_says_whether_the_ui_is_built(self):
+        rc, apps, out, err = self.run_main(["--listen", "127.0.0.1:%d" % free_port()])
+        self.assertIn("UI NOT built (a plain page says so)", out)
+        with mock.patch.object(service, "STATIC_DIR", self.path("static")):
+            os.makedirs(self.path("static"))
+            with open(self.path("static", "index.html"), "w") as fh:
+                fh.write("<title>x</title>")
+            rc, apps, out, err = self.run_main(["--listen", "127.0.0.1:%d" % free_port()])
+        self.assertIn("UI built", out)
+        self.assertNotIn("NOT built", out)
+
+    def test_with_no_name_the_banner_uses_the_host_name(self):
+        import socket
+        rc, apps, out, err = self.run_main(["--listen", "127.0.0.1:%d" % free_port()])
+        self.assertIn("bench %r" % socket.gethostname(), out)
+
+    def test_the_flag_is_in_the_help(self):
+        self.assertIn("--bench-name", service._parser().format_help())
+
+
 class Holder(Base):
     def proc(self, listening=True, state="0A", port=8080, owned=True):
         import shutil

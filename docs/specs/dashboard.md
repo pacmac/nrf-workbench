@@ -12,6 +12,32 @@ service.
 
 ---
 
+## Files for the first server slice (added 2026-11-16, Peter: "nothing is being served")
+
+`nrf_workbench/dashboard/__init__.py` and `dashboard/server.py` (the page at `/`, the bench name put into the
+title **on the server before any JavaScript runs**, the plain page that says the UI has not been built when it has
+not, built assets served under `/assets/` when they exist, and `GET /api/dashboard/status`), a small change in
+`nrf_workbench/api/app.py` (`build_app` accepts extra routes, so `api` and `dashboard` never import each other),
+the wiring in `nrf_workbench/service.py` (the composition root: the one module allowed to import both) and
+`nrf_workbench/core/config.py` (`service.bench_name`), and `tests/dashboard/`. **Decided while building:** the page
+at `/` is public in every access mode because it is static and carries no data (a page load cannot carry a bearer
+header, and every byte of data still comes through the authenticated API and feed); the login, the session cookie
+and the CSRF header are the next slice. The bench name defaults to the machine's own host name, which is a fact
+about the machine and not an invented number.
+
+**Built and tested, 2026-11-16: the page, the assets and the status** (`dashboard/server.py`; 39 tests; 27
+mutants caught). The bench name is in the page **before any script**, HTML-escaped (a hostile name cannot inject
+markup, and a name containing the placeholder does not confuse the substitution). The page that says the UI has
+not been built has **no script**, both colour schemes, a phone-width viewport and a single base font size, and links
+the real API routes. Asset paths cannot leave their folder: literal and encoded `..`, an absolute path, a NUL
+byte, a **symlink that points outside**, and a **sibling folder whose name merely starts with the assets path**
+are all 404 (the last was a mutant that survived until a test used the encoded form, because an HTTP client
+normalises a literal `../` away before it is sent). The page is public in every access mode and the API stays
+behind its token. **The status route's "no write route" claim is checked three ways:** every route's methods are
+reads, a write to every route is a 405, and the source is scanned for a `Route` with another method. A test also
+checks this package never imports `api`. **Not built:** the login page, the session cookie, the CSRF header, the
+cookie-authenticated websocket, and the UI itself.
+
 ## GAP defects first
 
 1. **The live feed does not exist yet.** `api.md` has request and response and a websocket per

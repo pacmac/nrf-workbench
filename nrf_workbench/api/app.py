@@ -84,9 +84,11 @@ async def _arguments(command, request):
     return data, False, None
 
 
-def build_app(registry, host, auth, capabilities, streams=None):
+def build_app(registry, host, auth, capabilities, streams=None, extra_routes=()):
     """`capabilities` is what this host has; commands needing more are absent. `streams` (core.events.Streams)
-    holds the retained streams: with an activity log, EVERY command a caller runs is recorded in it."""
+    holds the retained streams: with an activity log, EVERY command a caller runs is recorded in it.
+    `extra_routes` are Starlette routes the composition root mounts (the dashboard's): this module never imports
+    the package that made them."""
     capabilities = frozenset(capabilities)
     activity = streams.activity if streams is not None else None
 
@@ -171,6 +173,7 @@ def build_app(registry, host, auth, capabilities, streams=None):
     feeds = feed.feeds_of(streams)
     if feeds:
         routes.append(WebSocketRoute("/ws/events", feed.make_endpoint(feeds, auth)))
+    routes.extend(extra_routes)
     for command in registry.commands(capabilities):
         if command.effect == "stream":
             continue                                    # a websocket, not an HTTP route (not built here)
