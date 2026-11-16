@@ -38,6 +38,38 @@ reads, a write to every route is a 405, and the source is scanned for a `Route` 
 checks this package never imports `api`. **Not built:** the login page, the session cookie, the CSRF header, the
 cookie-authenticated websocket, and the UI itself.
 
+## Files for browser login (added 2026-11-16, Peter: "get this completed")
+
+`nrf_workbench/core/sessions.py` (the session store: both `api` and `dashboard` need it, so it lives in `core`),
+`nrf_workbench/api/auth.py` (accepts a session cookie as well as a bearer token; a write by cookie needs the
+per-session `X-CSRF-Token` and a same-host `Origin`), `nrf_workbench/dashboard/server.py` (`POST /login`,
+`POST /logout`, `GET /api/session`), `nrf_workbench/service.py` (wiring), and tests. **Derived limits, written
+beside the code that uses them:** a session lasts **12 h** (a working day of 8 h at 1.5x, so a session survives
+the day it was opened in and is gone by the next morning) and at most **16** sessions are held (one operator on
+a phone, a laptop and a tablet is 3 live; each re-login before expiry leaves one stale; 3 x (1 live + 1 stale) =
+6, at 2.5x so a busy week never evicts a live one). The id is 256 bits from the OS random source; the CSRF
+value is separate from the id so a page that can read one learns nothing of the other. The cookie is
+`HttpOnly; SameSite=Strict; Path=/` (and `Secure` only when the service is itself behind TLS, which it is not
+yet). There is **no login rate limit** in this slice: the token is 256 bits, so guessing is not a path; a
+lockout would only give an attacker a way to lock the operator out.
+
+**Built and tested, 2026-11-16: browser login** (`core/sessions.py`, the cookie path in `api/auth.py`, the
+login routes in `dashboard/server.py`, the wiring in `service.py`): 69 new tests; 44 mutants caught, the one
+survivor equivalent. **The token is entered once and never held by script:** `POST /login` answers with an
+`HttpOnly; SameSite=Strict; Path=/; Max-Age=43200` cookie (and `Secure` exactly when the request arrived over
+HTTPS, so it is never a cookie the browser would silently refuse to send back over plain HTTP); the body has
+the CSRF value and never the session id or the token. **A write by cookie needs the session's own CSRF value
+in `X-CSRF-Token`** (another session's value, or the session id, does not work) **and an `Origin` that is this
+host**, so a foreign page cannot ride the cookie for a read, a write, a login, a logout or the websocket
+(the Origin is checked before anything else). A login **never inherits an old session** (fixation); a logout
+without the CSRF header logs nobody out; the CSRF value is given only to a request that already holds the
+session. The session limits are **derived and written beside the constants** (12 h; 16), and a test pins them.
+**The status route's write-route claim was changed, and the test that watches it caught the change first:** the
+dashboard now has exactly two POST routes of its own, `/login` and `/logout`, which are session handling only
+and touch no hardware; the claim is checked three ways (source, mounted routes, status). **Not exercised in a
+real browser yet** (that is the next verification, with the UI). **Not built:** a login rate limit (by design,
+above), the UI.
+
 ## GAP defects first
 
 1. **The live feed does not exist yet.** `api.md` has request and response and a websocket per

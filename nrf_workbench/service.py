@@ -28,6 +28,7 @@ from .core.activity import ActivityLog
 from .core.events import Bus, Streams
 from .core.registry import Registry
 from .core.result import Result
+from .core.sessions import SessionStore
 from .dashboard import server as dashboard_server
 from .devices import commands as device_commands
 from .devices import profile as profilemod
@@ -40,6 +41,14 @@ PACKAGE_PROFILES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 # Where the built dashboard UI lives. It may not exist yet: the dashboard then serves a plain page saying so.
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "static")
 UNPRIVILEGED_LIMIT = "/proc/sys/net/ipv4/ip_unprivileged_port_start"
+
+# Browser session limits (docs/specs/dashboard.md, "Files for browser login"), each DERIVED:
+#   age   a working day is 8 h; x1.5 = 12 h, so a session lives through the day it was opened in and is gone by
+#         the next morning. (1/1000th test: 43 s would log the operator out mid-flash, so 12 h is not a safe extreme.)
+SESSION_MAX_AGE_S = 12 * 3600
+#   count one operator on a phone, a laptop and a tablet = 3 live; each re-login before expiry leaves at most one
+#         stale session = 3 x (1 live + 1 stale) = 6; x2.5 = 16, so a busy week never evicts a live one.
+MAX_SESSIONS = 16
 
 
 class Host(object):
@@ -132,8 +141,11 @@ def build(cfg, token=None, sysfs="/sys", devroot="/dev", proc="/proc", hooks=Non
     """(app, host, registry, capabilities) from a loaded configuration."""
     host, registry, caps = build_host(cfg, sysfs, devroot, proc, hooks)
     host.streams = build_streams(cfg)
-    auth = Auth(token, cfg["service"]["access"])
-    pages = dashboard_server.routes(bench_name(cfg), static_dir, auth.authorise)
+    sessions = SessionStore(MAX_SESSIONS, SESSION_MAX_AGE_S)
+    host.sessions = sessions
+    auth = Auth(token, cfg["service"]["access"], sessions)
+    login = dashboard_server.Login(token is not None, auth.token_matches, sessions, cfg["service"]["access"])
+    pages = dashboard_server.routes(bench_name(cfg), static_dir, auth.authorise, login)
     app = build_app(registry, host, auth, caps, host.streams, pages)
     return app, host, registry, caps
 

@@ -210,18 +210,33 @@ class StatusClaim(Base):
             for method in ("post", "put", "delete", "patch"):
                 self.assertEqual(getattr(c, method)(path).status_code, 405, (method, path))
 
-    def test_the_declared_write_routes_equal_what_the_source_defines(self):
+    def test_the_declared_write_routes_equal_what_the_source_defines_and_what_is_mounted(self):
         with open(server.__file__) as fh:
             source = fh.read()
-        declared = set()
-        for m in re.finditer(r"Route\(([^)]*)\)", source):
-            methods = re.search(r"methods=\[([^\]]*)\]", m.group(1))
-            for method in (methods.group(1) if methods else "GET").replace('"', "").replace("'", "").split(","):
+        in_source = set()
+        for m in re.finditer(r'Route\("([^"]+)",\s*\w+,\s*methods=\[([^\]]*)\]', source):
+            for method in m.group(2).replace('"', "").replace("'", "").split(","):
                 if method.strip().upper() not in ("GET", "HEAD", ""):
-                    declared.add(method.strip().upper())
-        self.assertEqual(declared, set(), "a write route was added: WRITE_ROUTES and the status must say so")
-        self.assertEqual(list(server.WRITE_ROUTES), [])
-        self.assertEqual(self.client().get("/api/dashboard/status").json()["write_routes"], list(server.WRITE_ROUTES))
+                    in_source.add("%s %s" % (method.strip().upper(), m.group(1)))
+        self.assertEqual(in_source, set(server.WRITE_ROUTES),
+                         "a write route was added or removed: WRITE_ROUTES and the status must say so")
+        self.assertEqual(set(server.WRITE_ROUTES), {"POST /login", "POST /logout"}, "session handling ONLY")
+        mounted = set()
+        for route in server.routes("b", self.static, None, login=object()):
+            for method in route.methods:
+                if method not in ("GET", "HEAD"):
+                    mounted.add("%s %s" % (method, route.path))
+        self.assertEqual(mounted, set(server.WRITE_ROUTES), "what is really mounted must equal what is declared")
+
+    def test_without_login_the_dashboard_has_no_write_route_and_the_status_says_so(self):
+        self.assertEqual(self.client().get("/api/dashboard/status").json()["write_routes"], [])
+
+    def test_with_login_the_status_lists_exactly_the_session_routes(self):
+        login = server.Login(True, lambda t: False, None, "token")
+        app = Starlette(routes=server.routes("b", self.static, None, login))
+        c = TestClient(app)
+        self.addCleanup(c.close)
+        self.assertEqual(c.get("/api/dashboard/status").json()["write_routes"], ["POST /login", "POST /logout"])
 
     def test_the_package_never_imports_the_api(self):
         pkg = os.path.dirname(server.__file__)

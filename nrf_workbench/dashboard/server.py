@@ -16,13 +16,28 @@ The dashboard has NO write route of its own; every action it will offer calls a 
 same API (dashboard.md, "how it writes"). WRITE_ROUTES is the claim, and a test scans this file to check it.
 """
 import html
+import json
 import os
 
 from starlette.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from starlette.routing import Route
 
+from ..core.sessions import same_origin
+
 PLACEHOLDER = "{{BENCH_NAME}}"
-WRITE_ROUTES = ()            # what the dashboard can write. The status route reports this; a test checks the source.
+COOKIE_NAME = "nrfwb_session"
+CSRF_HEADER = "x-csrf-token"
+# What the dashboard can WRITE. The status route reports this and a test checks it against the source. It is
+# session handling ONLY: nothing here touches hardware or a file, and every action the UI offers goes through a
+# registry command on the same API, so it meets every guard exactly as a CLI call does.
+WRITE_ROUTES = ("POST /login", "POST /logout")
+
+
+class Login(object):
+    """What the login routes need, handed over by the composition root so this package never imports `api`."""
+
+    def __init__(self, required, check_token, sessions, access):
+        self.required, self.check_token, self.sessions, self.access = required, check_token, sessions, access
 
 NOT_BUILT = """<!doctype html>
 <html lang="en">
@@ -78,8 +93,13 @@ def substitute(page, bench_name):
     return page.replace(PLACEHOLDER, html.escape(bench_name, quote=True))
 
 
-def routes(bench_name, static_dir, authorise=None):
-    """The dashboard's routes. `static_dir` holds the built UI (index.html, assets/); it may not exist yet."""
+def _error(code, kind, message):
+    return JSONResponse({"ok": False, "error": kind, "message": message}, status_code=code)
+
+
+def routes(bench_name, static_dir, authorise=None, login=None):
+    """The dashboard's routes. `static_dir` holds the built UI (index.html, assets/); it may not exist yet.
+    `login` (a Login) turns on POST /login, POST /logout and GET /api/session."""
     index_path = os.path.join(static_dir, "index.html") if static_dir else None
     assets_dir = os.path.join(static_dir, "assets") if static_dir else None
 
@@ -110,8 +130,64 @@ def routes(bench_name, static_dir, authorise=None):
             if not allowed:
                 return JSONResponse({"ok": False, "error": "unauthorized", "message": "a valid bearer token is required"},
                                     status_code=401, headers={"WWW-Authenticate": "Bearer"})
-        return JSONResponse({"bench": bench_name, "ui_built": built(), "write_routes": list(WRITE_ROUTES)})
+        return JSONResponse({"bench": bench_name, "ui_built": built(),
+                             "write_routes": list(WRITE_ROUTES) if login is not None else []})
 
-    return [Route("/", index, methods=["GET"]),
-            Route("/assets/{path:path}", asset, methods=["GET"]),
-            Route("/api/dashboard/status", status, methods=["GET"])]
+    def set_cookie(response, request, sid):
+        response.set_cookie(COOKIE_NAME, sid, max_age=int(login.sessions.max_age_s), path="/", httponly=True,
+                            samesite="strict", secure=request.url.scheme == "https")
+
+    def clear_cookie(response, request):
+        response.delete_cookie(COOKIE_NAME, path="/", httponly=True, samesite="strict",
+                               secure=request.url.scheme == "https")
+
+    async def do_login(request):
+        if not same_origin(request.headers):
+            return _error(403, "forbidden_origin", "a login must come from this site")
+        if not login.required:
+            return JSONResponse({"ok": True, "login_required": False})
+        try:
+            candidate = json.loads(await request.body()).get("token")
+        except (ValueError, AttributeError):
+            return _error(400, "usage", 'send {"token": "<the service token>"}')
+        if not login.check_token(candidate):
+            return _error(401, "unauthorized", "that token is not right")
+        old = request.cookies.get(COOKIE_NAME)
+        if old:
+            login.sessions.destroy(old)                       # a login never inherits an old session
+        session = login.sessions.create()
+        response = JSONResponse({"ok": True, "login_required": True, "csrf": session.csrf})
+        set_cookie(response, request, session.sid)
+        return response
+
+    async def do_logout(request):
+        sid = request.cookies.get(COOKIE_NAME)
+        if sid and login.sessions.get(sid) is not None:
+            allowed, _caller = authorise(request.headers, "write") if authorise else (False, None)
+            if not allowed:
+                return _error(403, "forbidden", "a logout needs the session's CSRF header and this site as its origin")
+            login.sessions.destroy(sid)
+        response = JSONResponse({"ok": True})
+        clear_cookie(response, request)
+        return response
+
+    async def session_info(request):
+        info = {"login_required": login.required, "access": login.access, "authenticated": False, "caller": None,
+                "csrf": None, "secure_transport": request.url.scheme == "https"}
+        if authorise is not None:
+            allowed, caller = authorise(request.headers, "read")
+            info["authenticated"], info["caller"] = bool(allowed), caller
+        sid = request.cookies.get(COOKIE_NAME)
+        session = login.sessions.get(sid) if sid else None
+        if session is not None and info["caller"] == "dashboard":
+            info["csrf"] = session.csrf          # given only to a request that already holds the session
+        return JSONResponse(info, headers={"Cache-Control": "no-store"})
+
+    found = [Route("/", index, methods=["GET"]),
+             Route("/assets/{path:path}", asset, methods=["GET"]),
+             Route("/api/dashboard/status", status, methods=["GET"])]
+    if login is not None:
+        found += [Route("/login", do_login, methods=["POST"]),
+                  Route("/logout", do_logout, methods=["POST"]),
+                  Route("/api/session", session_info, methods=["GET"])]
+    return found

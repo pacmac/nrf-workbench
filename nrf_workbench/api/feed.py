@@ -14,23 +14,14 @@ disconnect. The websocket is authenticated like a request, and an `Origin` that 
 """
 import asyncio
 import json
-import urllib.parse
 
 import anyio
 from starlette.websockets import WebSocketDisconnect
 
+from .auth import origin_allowed  # noqa: F401  (one definition, shared with the cookie check; tests reach it here)
+
 CLOSE_FORBIDDEN_ORIGIN = 4403
 CLOSE_UNAUTHORIZED = 4401
-
-
-def origin_allowed(headers):
-    """A request with no Origin is not a browser (a CLI, a script) and is allowed; one with an Origin must
-    name THIS host, or another website could drive the feed through the visitor's browser."""
-    origin = headers.get("origin")
-    if origin is None:
-        return True
-    host = headers.get("host")
-    return bool(host) and urllib.parse.urlsplit(origin).netloc.lower() == host.lower()
 
 
 def feeds_of(streams):
