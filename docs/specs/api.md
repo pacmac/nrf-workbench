@@ -86,6 +86,18 @@ nothing. The listing now raises the SDK's `MCPError` (which carries the message,
 if the module prints to it. **Not built:** a `url` upload argument the service would fetch (the firmware spec
 mentions it; the service has no fetch capability), websocket streams, and prompts or resources.
 
+**Proved on the real bench, 2026-11-16, following the README:** the service ran on the Pi as the README shows
+(foreground, loopback, reached from this machine through an SSH tunnel). **The MCP server**, spawned as a
+process over stdio and driven through the SDK client, listed the seven tools, flashed the stored pinscan
+image **by id** to the real RAK4631 (113 of 113 packets in 4.639 s, the board reporting `nrfwb-pinscan 1`
+on the same serial, handover 0.589 s), and returned a refusal and a usage error whole across real pipes.
+**The CLI in remote mode** then streamed the parking image from this machine in one call (109 of 109 in
+4.428 s, `new: false` because the same bytes were already stored, exit 0), and the board reported
+`nrfwb-parking 2`. Checked independently of both: the Pi's own USB view, and 4 heartbeats in 4 s from the
+firmware on the debug dongle. The README's local-mode commands also ran on the Pi itself. The entry handover
+across all the cycles run so far is **0.362 to 0.589 s** (the earlier 0.4 to 0.5 s in the README is the
+middle of that, not its range).
+
 **The README is tested against the code (2026-11-16):** `tests/cli/test_readme.py` runs every command in
 its "Use it" section against the real service parser and the real generated command line, so a typo in an
 option or a command that does not exist fails a test (four mutants of the README were caught). That also

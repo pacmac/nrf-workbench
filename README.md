@@ -120,7 +120,8 @@ python -m nrf_workbench --host http://pi.local:8080 --token-file token devices l
 `--json` prints the same result the API sends. Exit codes: 0 ok, 1 refused (nothing was done), 2 bad
 usage, 3 failed, 4 suspect (it finished but the evidence says do not trust it). **No wait has a
 default timeout:** you give a ceiling for each, derived from measurement. On a RAK4631 the
-bootloader handover took about 0.4 to 0.5 s and a flash ran at 12 to 15 kB/s.
+bootloader handover took 0.36 to 0.59 s and a flash ran at 12 to 15 kB/s (measured over several
+cycles; your board and cable may differ).
 
 **3. Use it from an AI** by adding the MCP server to its configuration. It is a client of the
 service, so it runs where the firmware is built; an upload tool takes a `path` on that machine and
