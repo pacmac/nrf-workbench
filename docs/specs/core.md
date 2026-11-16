@@ -37,6 +37,7 @@ A row carries:
 | `requires` | capability names the host and device must have (see Capability probe) |
 | `effect` | `read` (observes only), `write` (changes hardware or files), or `stream` |
 | `stream` | for `stream` commands, the event type it yields |
+| `needs_service` | true if the command holds state across calls (a BLE or debug session, a monitor); the CLI then sends it to the running service (`api.md`) |
 | `result` | the shape of `Result.data` on success, so front ends can document it |
 
 Rules:
@@ -91,6 +92,7 @@ returned, never a tail. **[brief]**
 | `not_in_bootloader` | refused | a file flash was asked of a board not in the bootloader | state |
 | `no_bound` | refused | a waiting command was started without a caller-supplied bound | |
 | `capability_missing` | refused | the host or device lacks a required capability | the capability |
+| `service_not_running` | refused | a `needs_service` command was run from the CLI and no service answers | the address tried |
 | `flash_failed` | failed | the write ran and the tool said it failed | whole output |
 | `flash_suspect` | suspect | the write reported success but duration or output disagrees | output, duration, healthy duration |
 | `run_node_not_returned` | failed | after a flash the run node did not return within the bound | the bound, the elapsed time |
@@ -108,6 +110,8 @@ One function maps a `Result` to both, so the CLI and API cannot disagree.
 | (usage error: bad arguments) | 2 | 400 |
 | failed | 3 | 500 |
 | suspect | 4 | 500, `ok` false |
+
+`service_not_running` is only ever raised by the CLI, so it has an exit code (1) and no HTTP status.
 
 Exit 1 for a refusal matches the existing tool (`--idle` exits 1 when someone holds the port) and
 exit 2 is the convention argument parsers already use. **[stated, existing behaviour]**
@@ -174,8 +178,8 @@ on the client closing. No stream or wait is unbounded. **[derive rule]**
 
 - **One row yields three front ends:** a command added with no edit to the CLI or API appears in CLI
   help, the API list and the MCP. (Also in `architecture.md`.)
-- **Mapping is total:** every code in the closed list has an exit code and an HTTP status; a code
-  missing from the mapping fails a test.
+- **Mapping is total:** every code in the closed list has an exit code, and an HTTP status unless
+  it is CLI-only (`service_not_running`); a code missing from the mapping fails a test.
 - **Absent, not failing:** on this x86_64 host with no Pi, the Pi-only commands are absent from all
   three, and `host.capabilities` says why.
 - **The probe is passive:** run under a process that records opens, it opens no serial device.

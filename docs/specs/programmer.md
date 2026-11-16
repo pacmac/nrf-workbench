@@ -136,9 +136,12 @@ or from the console, with one source of truth.
 - **One command registry** in the library: each command is declared once — name, typed arguments,
   handler, capability gate, result schema, and whether it streams. The CLI, the HTTP API and the MCP
   tools are all generated from it. Adding a command is one row, as in upstream's `SPECS`.
-- **Neither front end calls the other.** The API does not shell out to the CLI (subprocess cost,
-  structure lost through stdout, no clean streaming). The CLI does not require a running service
-  (the console must work when the service is down or being recovered). Both call the library.
+- **Neither front end shells out to the other.** The API does not run the CLI (subprocess cost,
+  structure lost through stdout, no clean streaming). One-shot commands run in the CLI process
+  through the library and need no service (the console must work when the service is down or being
+  recovered). **Stateful commands** (sessions, monitors) are the exception: the CLI sends them to the
+  running service over its HTTP API, and refuses with `service_not_running` if none answers. Narrowed
+  in `api.md`; both still use the one registry.
 - **Exclusion is host-wide, not in-process.** The single-instance `flock` and the port-holder check
   are OS-level, so a console command and a service request cannot collide.
 - **Same result, same refusal.** The CLI's `--json` output is the API's response body. A refusal is

@@ -11,8 +11,8 @@ Area: `api` (service). Imports only `core`. Contains no rules of its own.
 
 ## GAP defects first
 
-1. **`architecture.md` says neither front end calls the other. That is too strong, and it is
-   wrong for stateful commands.** A BLE connection, a debug session or a serial monitor holds state
+1. **`programmer.md` (command surface) says neither front end calls the other and that the CLI
+   needs no running service. That is too strong, and it is wrong for stateful commands.** A BLE connection, a debug session or a serial monitor holds state
    across calls. A one-shot CLI process cannot own that; the long-running service must. So the CLI
    has to reach the service for those commands. The rule is narrowed below (see CLI and service).
 2. **A caller cannot derive a bound today.** `core.md` refuses any waiting command without a
@@ -47,7 +47,8 @@ A command whose `requires` is unmet is absent from the list and returns 404 here
 
 ## TOOL CLI and service: the narrowed rule
 
-Replaces the "neither calls the other" line in `architecture.md`.
+Replaces the "neither front end calls the other" bullet in the command surface section of
+`programmer.md`. `architecture.md` is unaffected: it only says `cli` and `api` import `core`.
 
 - **One-shot commands run in the CLI process, through the library, with no service.** Status,
   build, a file flash, an id probe. The console must work when the service is down or being
