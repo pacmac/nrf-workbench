@@ -121,6 +121,54 @@ class Validation(Base):
             self.assertEqual(problems, [], mode)
 
 
+class Streams(Base):
+    """Retained streams: both bounds or neither, and no default for either."""
+
+    def test_no_stream_has_a_bound_by_default(self):
+        cfg, problems = config.load(env={})
+        self.assertEqual(problems, [])
+        for name in ("events", "activity"):
+            self.assertEqual(cfg["streams"][name], {"retain": None, "max_age_days": None})
+            self.assertIsNone(config.stream_bounds(cfg, name))
+
+    def test_both_bounds_give_a_count_and_seconds(self):
+        cfg, problems = config.load(env={}, overrides={"streams": {"activity": {"retain": 500, "max_age_days": 2}}})
+        self.assertEqual(problems, [])
+        self.assertEqual(config.stream_bounds(cfg, "activity"), (500, 2 * 86400))
+        self.assertIsNone(config.stream_bounds(cfg, "events"), "one stream configured does not configure the other")
+
+    def test_days_may_be_fractional(self):
+        cfg, _ = config.load(env={}, overrides={"streams": {"events": {"retain": 10, "max_age_days": 0.5}}})
+        self.assertEqual(config.stream_bounds(cfg, "events"), (10, 43200))
+
+    def test_one_bound_without_the_other_is_a_problem_naming_the_stream(self):
+        for half in ({"retain": 10}, {"max_age_days": 3}):
+            _, problems = config.load(env={}, overrides={"streams": {"activity": half}})
+            self.assertEqual(len(problems), 1, half)
+            self.assertIn("streams.activity", problems[0])
+            self.assertIn("BOTH", problems[0])
+
+    def test_unusable_values_are_problems(self):
+        bad = ({"retain": 0, "max_age_days": 1}, {"retain": -5, "max_age_days": 1}, {"retain": True, "max_age_days": 1},
+               {"retain": 1.5, "max_age_days": 1}, {"retain": "10", "max_age_days": 1},
+               {"retain": 10, "max_age_days": 0}, {"retain": 10, "max_age_days": -1}, {"retain": 10, "max_age_days": True},
+               {"retain": 10, "max_age_days": "1"}, {"retain": 10, "max_age_days": float("inf")})
+        for values in bad:
+            _, problems = config.load(env={}, overrides={"streams": {"events": values}})
+            self.assertTrue(problems, values)
+            self.assertIn("streams.events", problems[0], values)
+
+    def test_a_file_can_set_the_bounds_and_a_typo_is_reported(self):
+        path = self.write("c.yaml", "streams:\n  activity:\n    retain: 100\n    max_age_days: 7\n    retian: 5\n")
+        cfg, problems = config.load(files=[path], env={})
+        self.assertTrue(any("streams.activity.retian" in p for p in problems), problems)
+        self.assertEqual(config.stream_bounds(cfg, "activity"), (100, 7 * 86400))
+
+    def test_a_stream_that_does_not_exist_is_an_unknown_setting(self):
+        _, problems = config.load(env={}, overrides={"streams": {"console": {"retain": 1}}})
+        self.assertTrue(any("streams.console" in p for p in problems), problems)
+
+
 class Listen(unittest.TestCase):
     def test_parse_listen(self):
         self.assertEqual(config.parse_listen("0.0.0.0:80"), ("0.0.0.0", 80))

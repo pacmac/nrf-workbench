@@ -43,5 +43,12 @@ class ActivityLog(object):
             "caller": caller, "command": command, "args": redact(args), "ok": False,
             "class": "usage", "code": "usage", "message": message, "duration_s": duration_s})
 
+    def record_error(self, caller, command, args, message, duration_s):
+        """A command whose handler raised: no Result, and the caller was told it failed. Recorded as an
+        `error`, the class the dashboard can show apart from a refusal."""
+        return self.bus.publish(self.TYPE, "core", {
+            "caller": caller, "command": command, "args": redact(args), "ok": False,
+            "class": "error", "code": "internal", "message": message, "duration_s": duration_s})
+
     def since(self, cursor=0, epoch=None):
         return self.bus.since(cursor, epoch, types=(self.TYPE,))

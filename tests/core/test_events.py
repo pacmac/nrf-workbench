@@ -295,6 +295,41 @@ class Subscribers(unittest.TestCase):
             bus()[0].subscribe("not callable")
 
 
+class Counting(unittest.TestCase):
+    def test_the_subscriber_count_follows_subscribe_and_unsubscribe(self):
+        b, _ = bus()
+        self.assertEqual(b.subscriber_count, 0)
+        t1, t2 = b.subscribe(lambda e: None), b.subscribe(lambda e: None)
+        self.assertEqual(b.subscriber_count, 2)
+        b.unsubscribe(t1)
+        b.unsubscribe(t1)
+        self.assertEqual(b.subscriber_count, 1)
+        b.unsubscribe(t2)
+        self.assertEqual(b.subscriber_count, 0)
+
+    def test_len_is_what_is_held(self):
+        b, _ = bus(retain=5)
+        self.assertEqual(len(b), 0)
+        for _ in range(3):
+            b.publish("t", "a")
+        self.assertEqual(len(b), 3)
+
+
+class StreamsHolder(unittest.TestCase):
+    def test_it_says_what_is_on_and_why_the_rest_is_off(self):
+        from nrf_workbench.core.events import Streams
+        s = Streams(events=Bus(1, 1), activity=None, absent={"activity": "no bound configured"})
+        self.assertEqual(s.to_dict(), {"events": True, "activity": False, "absent": {"activity": "no bound configured"}})
+        self.assertEqual(Streams().to_dict(), {"events": False, "activity": False, "absent": {}})
+
+    def test_the_absent_map_is_copied(self):
+        from nrf_workbench.core.events import Streams
+        reasons = {"events": "x"}
+        s = Streams(absent=reasons)
+        reasons["events"] = "changed"
+        self.assertEqual(s.absent, {"events": "x"})
+
+
 class Concurrency(unittest.TestCase):
     def test_a_resuming_reader_sees_every_event_exactly_once_while_many_threads_publish(self):
         threads_n, per = 8, 250

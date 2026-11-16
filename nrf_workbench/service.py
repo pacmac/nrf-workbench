@@ -24,10 +24,13 @@ import yaml
 from .api.app import build_app
 from .api.auth import Auth
 from .core import config as cfgmod
+from .core.activity import ActivityLog
+from .core.events import Bus, Streams
 from .core.registry import Registry
 from .core.result import Result
 from .devices import commands as device_commands
 from .devices import profile as profilemod
+from .devices.monitor import DeviceMonitor
 from .programmer import commands as programmer_commands
 from .programmer import flash_file
 
@@ -100,10 +103,29 @@ def build_host(cfg, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
     return host, registry, capabilities(host)
 
 
+def build_streams(cfg):
+    """The retained streams. A stream with no configured bound is NOT started (it would be unbounded): it is
+    absent, with the reason, and the service says so."""
+    absent, events, activity = {}, None, None
+    bounds = cfgmod.stream_bounds(cfg, "events")
+    if bounds is None:
+        absent["events"] = "no bound configured: set streams.events.retain and streams.events.max_age_days"
+    else:
+        events = Bus(*bounds)
+    bounds = cfgmod.stream_bounds(cfg, "activity")
+    if bounds is None:
+        absent["activity"] = "no bound configured: set streams.activity.retain and streams.activity.max_age_days"
+    else:
+        activity = ActivityLog(*bounds)
+    return Streams(events, activity, absent)
+
+
 def build(cfg, token=None, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
     """(app, host, registry, capabilities) from a loaded configuration."""
     host, registry, caps = build_host(cfg, sysfs, devroot, proc, hooks)
-    return build_app(registry, host, Auth(token, cfg["service"]["access"]), caps), host, registry, caps
+    host.streams = build_streams(cfg)
+    app = build_app(registry, host, Auth(token, cfg["service"]["access"]), caps, host.streams)
+    return app, host, registry, caps
 
 
 def local(config_path=None, env=None):
@@ -212,18 +234,28 @@ def _parser():
     p.add_argument("--lock", help="the host lock file")
     p.add_argument("--profiles", help="a directory of board profiles (default: the ones shipped with the product)")
     p.add_argument("--units", help="a units file: per-serial settings such as protected")
+    for stream, what in (("events", "the live device feed"), ("activity", "the activity log")):
+        p.add_argument("--%s-retain" % stream, dest="%s_retain" % stream, type=int,
+                       help="how many %s entries to keep. REQUIRED with --%s-max-age-days, and has no default: "
+                            "without both, %s is off and says why" % (stream, stream, what))
+        p.add_argument("--%s-max-age-days" % stream, dest="%s_max_age_days" % stream, type=float,
+                       help="how many days to keep %s entries (see --%s-retain)" % (stream, stream))
     return p
 
 
-def main(argv=None, run=None, env=None):
+def main(argv=None, run=None, env=None, make_monitor=DeviceMonitor):
     args = _parser().parse_args(argv)
-    overrides = {"service": {}, "paths": {}}
+    overrides = {"service": {}, "paths": {}, "streams": {"events": {}, "activity": {}}}
     for flag, section, key in (("listen", "service", "listen"), ("access", "service", "access"),
                                ("token_file", "service", "token_file"), ("firmware_dir", "paths", "firmware"),
                                ("lock", "paths", "lock"), ("profiles", "paths", "profiles"),
                                ("units", "paths", "units")):
         if getattr(args, flag):
             overrides[section][key] = getattr(args, flag)
+    for stream in ("events", "activity"):
+        for flag, key in (("%s_retain" % stream, "retain"), ("%s_max_age_days" % stream, "max_age_days")):
+            if getattr(args, flag) is not None:
+                overrides["streams"][stream][key] = getattr(args, flag)
     try:
         cfg, problems = cfgmod.load(required_files=[args.config] if args.config else [], env=env, overrides=overrides)
     except cfgmod.ConfigError as exc:
@@ -261,10 +293,21 @@ def main(argv=None, run=None, env=None):
     absent = [c.name for c in registry.commands() if registry.unmet(c, caps)]
     if absent:
         print("absent here (GET /api/capabilities says why): %s" % ", ".join(absent), flush=True)
+    for name in ("events", "activity"):
+        reason = host.streams.absent.get(name)
+        print("stream %s: %s" % (name, "OFF (%s)" % reason if reason else "on"), flush=True)
     if run is None:
         import uvicorn
         run = uvicorn.run
-    run(app, host=host_addr, port=port, log_level="info")
+    monitor = None
+    if host.streams.events is not None:
+        monitor = make_monitor(lambda: device_commands.boards(host), host.streams.events.publish)
+        monitor.start()                       # blocks on the kernel's uevents, never a timer
+    try:
+        run(app, host=host_addr, port=port, log_level="info")
+    finally:
+        if monitor is not None:
+            monitor.stop()
     return 0
 
 

@@ -23,7 +23,15 @@ DEFAULTS = {
         "token_file": None,
     },
     "paths": {"lock": None, "profiles": None, "firmware": None, "units": None},
+    # Each retained stream needs BOTH bounds and has NO default: an unbounded log is retained for ever by
+    # oversight (core.md, "the event bus"). With neither set, the stream is absent and says why.
+    "streams": {
+        "events": {"retain": None, "max_age_days": None},
+        "activity": {"retain": None, "max_age_days": None},
+    },
 }
+
+SECONDS_PER_DAY = 86400
 
 ENV = {
     "NRFWB_LISTEN": ("service", "listen"),
@@ -139,7 +147,27 @@ def validate(cfg):
         problems.append("service.listen: %s" % exc)
     if cfg["service"]["access"] not in ACCESS_MODES:
         problems.append("service.access must be one of: %s" % ", ".join(ACCESS_MODES))
+    for name, bounds in cfg["streams"].items():
+        retain, days = bounds["retain"], bounds["max_age_days"]
+        if retain is None and days is None:
+            continue                                   # not configured: the stream is absent, with its reason
+        if retain is None or days is None:
+            problems.append("streams.%s needs BOTH retain and max_age_days (a retained stream has no default "
+                            "bound), or neither" % name)
+            continue
+        if not isinstance(retain, int) or isinstance(retain, bool) or retain < 1:
+            problems.append("streams.%s.retain must be a whole number of at least 1" % name)
+        if isinstance(days, bool) or not isinstance(days, (int, float)) or not days > 0 or days == float("inf"):
+            problems.append("streams.%s.max_age_days must be a positive number" % name)
     return problems
+
+
+def stream_bounds(cfg, name):
+    """(retain, max_age_seconds) for a retained stream, or None when it is not configured."""
+    b = cfg["streams"][name]
+    if b["retain"] is None or b["max_age_days"] is None:
+        return None
+    return b["retain"], b["max_age_days"] * SECONDS_PER_DAY
 
 
 def read_token(path):

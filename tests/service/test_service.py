@@ -235,6 +235,134 @@ class LocalMode(Base):
         self.assertEqual([c.name for c in registry_a.commands()], [c.name for c in registry_b.commands()])
 
 
+class FakeMonitor(object):
+    """Stands in for the device monitor: records how it was built, started and stopped."""
+    instances = []
+
+    def __init__(self, read_state, publish):
+        self.read_state, self.publish, self.started, self.stopped = read_state, publish, 0, 0
+        FakeMonitor.instances.append(self)
+
+    def start(self):
+        self.started += 1
+
+    def stop(self):
+        self.stopped += 1
+
+
+class StreamsWiring(Base):
+    def setUp(self):
+        Base.setUp(self)
+        FakeMonitor.instances = []
+
+    def run_main(self, argv, run=None, env=None):
+        calls = []
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = service.main(argv, run=run or (lambda app, **kw: calls.append(app)), env=env or {},
+                              make_monitor=FakeMonitor)
+        return rc, calls, out.getvalue(), err.getvalue()
+
+    def addr(self):
+        return ["--listen", "127.0.0.1:%d" % free_port()]
+
+    def test_with_no_bounds_both_streams_are_absent_with_their_reasons_and_no_monitor_runs(self):
+        t = Tree()
+        self.addCleanup(t.close)
+        cfg, _ = cfgmod.load(env={})
+        _app, host, _r, _c = service.build(cfg, sysfs=t.sysfs, hooks={"tool": "/fake"})
+        self.assertIsNone(host.streams.events)
+        self.assertIsNone(host.streams.activity)
+        self.assertIn("streams.events.retain", host.streams.absent["events"])
+        self.assertIn("streams.activity.max_age_days", host.streams.absent["activity"])
+
+    def test_bounds_in_days_become_seconds_in_the_streams(self):
+        t = Tree()
+        self.addCleanup(t.close)
+        cfg, _ = cfgmod.load(env={}, overrides={"streams": {"events": {"retain": 50, "max_age_days": 2},
+                                                             "activity": {"retain": 7, "max_age_days": 0.5}}})
+        _app, host, _r, _c = service.build(cfg, sysfs=t.sysfs, hooks={"tool": "/fake"})
+        self.assertEqual((host.streams.events.retain, host.streams.events.max_age_s), (50, 2 * 86400))
+        self.assertEqual((host.streams.activity.bus.retain, host.streams.activity.bus.max_age_s), (7, 43200))
+        self.assertEqual(host.streams.absent, {})
+
+    def test_the_two_streams_are_independent_and_one_alone_is_fine(self):
+        cfg, _ = cfgmod.load(env={}, overrides={"streams": {"activity": {"retain": 5, "max_age_days": 1}}})
+        streams = service.build_streams(cfg)
+        self.assertIsNone(streams.events)
+        self.assertIsNotNone(streams.activity)
+        self.assertEqual(list(streams.absent), ["events"])
+
+    def test_every_command_through_the_built_app_is_recorded(self):
+        from starlette.testclient import TestClient
+        t = Tree()
+        self.addCleanup(t.close)
+        t.app_board()
+        cfg, _ = cfgmod.load(env={}, overrides={"streams": {"activity": {"retain": 10, "max_age_days": 1}}})
+        app, host, _r, _c = service.build(cfg, sysfs=t.sysfs, hooks={"tool": "/fake"})
+        client = TestClient(app)
+        self.addCleanup(client.close)
+        self.assertEqual(client.get("/api/devices/list").status_code, 200)
+        (entry,) = [e.payload for e in host.streams.activity.since(0).events]
+        self.assertEqual((entry["command"], entry["class"], entry["caller"]), ("devices.list", "ok", "local"))
+        self.assertEqual(client.get("/api/activity").json()["events"][0]["payload"]["command"], "devices.list")
+
+    def test_the_flags_reach_the_configuration_and_the_monitor_is_started_then_stopped(self):
+        events = []
+
+        def run(app, **kw):
+            events.append((FakeMonitor.instances[0].started, FakeMonitor.instances[0].stopped))
+
+        rc, calls, out, err = self.run_main(self.addr() + ["--events-retain", "50", "--events-max-age-days", "2"], run=run)
+        self.assertEqual(rc, 0, err)
+        (m,) = FakeMonitor.instances
+        self.assertEqual(events, [(1, 0)], "started before the service ran, not yet stopped")
+        self.assertEqual((m.started, m.stopped), (1, 1), "stopped when the service ended")
+        self.assertIn("stream events: on", out)
+        self.assertIn("stream activity: OFF (no bound configured", out)
+
+    def test_the_monitor_is_stopped_even_when_the_service_raises(self):
+        def run(app, **kw):
+            raise RuntimeError("uvicorn died")
+
+        with self.assertRaises(RuntimeError):
+            self.run_main(self.addr() + ["--events-retain", "5", "--events-max-age-days", "1"], run=run)
+        self.assertEqual((FakeMonitor.instances[0].started, FakeMonitor.instances[0].stopped), (1, 1))
+
+    def test_no_events_bound_means_no_monitor_at_all(self):
+        rc, calls, out, err = self.run_main(self.addr() + ["--activity-retain", "5", "--activity-max-age-days", "1"])
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(FakeMonitor.instances, [])
+        self.assertIn("stream activity: on", out)
+        self.assertIn("stream events: OFF", out)
+
+    def test_the_monitor_reads_the_boards_devices_list_returns_and_publishes_to_the_events_bus(self):
+        rc, calls, out, err = self.run_main(self.addr() + ["--events-retain", "5", "--events-max-age-days", "1"])
+        (m,) = FakeMonitor.instances
+        self.assertIsInstance(m.read_state(), list)
+        self.assertEqual(m.publish.__name__, "publish")
+        event = m.publish("devices.changed", "devices", {"boards": []})
+        self.assertEqual(event.cursor, 1)
+
+    def test_one_bound_without_the_other_never_starts_the_service(self):
+        for argv in (["--events-retain", "5"], ["--activity-max-age-days", "1"]):
+            rc, calls, out, err = self.run_main(self.addr() + argv)
+            self.assertEqual((rc, calls, FakeMonitor.instances), (2, [], []), argv)
+            self.assertIn("BOTH", err)
+
+    def test_unusable_values_never_start_the_service(self):
+        for argv in (["--events-retain", "0", "--events-max-age-days", "1"],
+                     ["--activity-retain", "5", "--activity-max-age-days", "-1"]):
+            rc, calls, out, err = self.run_main(self.addr() + argv)
+            self.assertEqual((rc, calls), (2, []), argv)
+
+    def test_the_flags_are_in_the_help_and_say_there_is_no_default(self):
+        help_text = service._parser().format_help()
+        for flag in ("--events-retain", "--events-max-age-days", "--activity-retain", "--activity-max-age-days"):
+            self.assertIn(flag, help_text)
+        self.assertIn("has no default", help_text)
+
+
 class Holder(Base):
     def proc(self, listening=True, state="0A", port=8080, owned=True):
         import shutil

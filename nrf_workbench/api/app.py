@@ -17,15 +17,18 @@ over the request (api.body) and the declared Content-Length.
 import functools
 import json
 import logging
+import time
 
 import anyio
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
-from starlette.routing import Route
+from starlette.routing import Route, WebSocketRoute
 
 from ..core import status
+from ..core.events import Streams
 from ..core.registry import Context, UnknownCommand, UsageError, http_path
+from . import feed
 from .body import RequestBody
 
 log = logging.getLogger("nrf_workbench.api")
@@ -81,33 +84,66 @@ async def _arguments(command, request):
     return data, False, None
 
 
-def build_app(registry, host, auth, capabilities):
-    """`capabilities` is what this host has; commands needing more are absent."""
+def build_app(registry, host, auth, capabilities, streams=None):
+    """`capabilities` is what this host has; commands needing more are absent. `streams` (core.events.Streams)
+    holds the retained streams: with an activity log, EVERY command a caller runs is recorded in it."""
     capabilities = frozenset(capabilities)
+    activity = streams.activity if streams is not None else None
 
     def make_endpoint(command):
         async def endpoint(request):
             allowed, caller = auth.authorise(request.headers, command.effect)
             if not allowed:
                 return _unauthorized()
+            started = time.monotonic()
             try:
                 args, from_text, body = await _arguments(command, request)
             except _BadRequest as exc:
+                if activity is not None:
+                    activity.record_usage(caller, command.name, {}, str(exc), time.monotonic() - started)
                 return _error(400, "usage", str(exc))
             ctx = Context(host, caller, body)
             call = functools.partial(registry.call, command.name, args, ctx, capabilities, from_text)
             try:
                 result = await anyio.to_thread.run_sync(call)
             except UsageError as exc:
+                if activity is not None:
+                    activity.record_usage(caller, command.name, args, str(exc), time.monotonic() - started)
                 return _error(400, "usage", str(exc), arg=exc.arg)
             except UnknownCommand:
                 return _error(404, "not_found", "no such command here")
             except Exception as exc:                    # a handler bug: say so, leak no traceback
                 log.exception("command %s raised", command.name)
+                if activity is not None:
+                    activity.record_error(caller, command.name, args, "the command raised %s" % type(exc).__name__,
+                                          time.monotonic() - started)
                 return _error(500, "internal", "the command raised an unexpected error (%s)" % type(exc).__name__)
+            if activity is not None:
+                activity.record(caller, command.name, args, result, time.monotonic() - started)
             return JSONResponse(result.to_dict(), status_code=status.http_status(result) or 500)
 
         return endpoint
+
+    async def get_activity(request):
+        allowed, _caller = auth.authorise(request.headers, "read")
+        if not allowed:
+            return _unauthorized()
+        if activity is None:
+            reason = (streams.absent.get("activity") if streams is not None else None) or "no activity log is configured"
+            return _error(404, "not_found", "the activity log is absent here: %s" % reason)
+        try:
+            args = _query_args(request)
+            cursor = int(args.get("cursor", "0"))
+            page = activity.since(cursor, args.get("epoch") or None)
+        except (_BadRequest, ValueError) as exc:
+            return _error(400, "usage", "cursor must be a whole number, 0 or more (%s)" % exc)
+        return JSONResponse(page.to_dict())
+
+    async def get_streams(request):
+        allowed, _caller = auth.authorise(request.headers, "read")
+        if not allowed:
+            return _unauthorized()
+        return JSONResponse((streams or Streams()).to_dict())
 
     async def list_commands(request):
         allowed, _caller = auth.authorise(request.headers, "read")
@@ -124,7 +160,12 @@ def build_app(registry, host, auth, capabilities):
         return JSONResponse({"present": sorted(capabilities), "absent": absent})
 
     routes = [Route("/api/commands", list_commands, methods=["GET"]),
-              Route("/api/capabilities", list_capabilities, methods=["GET"])]
+              Route("/api/capabilities", list_capabilities, methods=["GET"]),
+              Route("/api/streams", get_streams, methods=["GET"]),
+              Route("/api/activity", get_activity, methods=["GET"])]
+    feeds = feed.feeds_of(streams)
+    if feeds:
+        routes.append(WebSocketRoute("/ws/events", feed.make_endpoint(feeds, auth)))
     for command in registry.commands(capabilities):
         if command.effect == "stream":
             continue                                    # a websocket, not an HTTP route (not built here)

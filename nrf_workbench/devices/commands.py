@@ -11,17 +11,23 @@ from . import identity
 NEEDS = ("sysfs",)
 
 
-def _list(ctx):
-    host = ctx.host
+def boards(host):
+    """The attached boards, by identity: what `devices.list` returns AND what the live feed publishes, one
+    function, so the two cannot disagree. Reads sysfs only."""
     inv = identity.inventory(host.sysfs)
-    boards = []
+    found = []
     for prof in host.profiles:
         for dev in identity.board_devices(prof, inv):
-            boards.append({"profile": prof["name"], "mode": dev["mode"], "state": identity.state(prof, dev["serial"], inv),
-                           "id": dev["id"], "serial": dev["serial"], "product": dev["product"],
-                           "sysfs": dev["name"], "enum": dev["enum"]})
-    boards.sort(key=lambda b: (b["profile"], b["serial"] or "", b["mode"]))
-    return Result.success({"boards": boards}, "%d attached" % len(boards))
+            found.append({"profile": prof["name"], "mode": dev["mode"], "state": identity.state(prof, dev["serial"], inv),
+                          "id": dev["id"], "serial": dev["serial"], "product": dev["product"],
+                          "sysfs": dev["name"], "enum": dev["enum"]})
+    found.sort(key=lambda b: (b["profile"], b["serial"] or "", b["mode"]))
+    return found
+
+
+def _list(ctx):
+    found = boards(ctx.host)
+    return Result.success({"boards": found}, "%d attached" % len(found))
 
 
 def register(registry, host):

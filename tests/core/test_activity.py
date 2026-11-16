@@ -48,6 +48,13 @@ class Recording(unittest.TestCase):
         self.assertEqual((p["class"], p["code"], p["ok"], p["caller"], p["message"]),
                          ("usage", "usage", False, "dashboard", "needs the argument firmware"))
 
+    def test_a_handler_that_raised_is_recorded_as_an_error_apart_from_a_refusal(self):
+        self.log.record_error("api", "demo.crash", {"api_key": "SECRET-VALUE", "n": 1}, "the command raised RuntimeError", 0.2)
+        (p,) = self.entries()
+        self.assertEqual((p["class"], p["code"], p["ok"], p["message"], p["duration_s"]),
+                         ("error", "internal", False, "the command raised RuntimeError", 0.2))
+        self.assertEqual(p["args"], {"api_key": REDACTED, "n": 1})
+
     def test_an_entry_is_a_summary_never_the_whole_result(self):
         huge = "line of tool output\n" * 5000
         self.log.record("api", "programmer.flash", {}, Result.failed("flash_failed", "m", {"output": huge}, {"d": 1}), 1)

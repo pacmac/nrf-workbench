@@ -50,6 +50,17 @@ class Page(object):
                 "latest": self.latest, "epoch": self.epoch}
 
 
+class Streams(object):
+    """The retained streams a service runs with, and WHY any is absent. A stream with no configured
+    bound is not started (it would be unbounded), and is reported, not hidden."""
+
+    def __init__(self, events=None, activity=None, absent=None):
+        self.events, self.activity, self.absent = events, activity, dict(absent or {})
+
+    def to_dict(self):
+        return {"events": self.events is not None, "activity": self.activity is not None, "absent": dict(self.absent)}
+
+
 def _positive_number(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0
 
@@ -113,6 +124,12 @@ class Bus(object):
     def unsubscribe(self, token):
         with self._lock:
             return self._subscribers.pop(token, None) is not None
+
+    @property
+    def subscriber_count(self):
+        """How many callbacks are registered: a consumer that goes away must leave none behind."""
+        with self._lock:
+            return len(self._subscribers)
 
     # -- reading --------------------------------------------------------------------------------------
     def __len__(self):

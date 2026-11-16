@@ -41,6 +41,54 @@ the login page and cookie (they belong with the dashboard), the MCP server, the 
 listen-port holder and privilege checks, and `service.py`, the composition root that wires it.
 `api` imports only `core` and the web framework.
 
+**Files for the live feed (added 2026-11-16, Peter: "continue", dashboard slice 2):**
+`nrf_workbench/devices/monitor.py` (publishes `devices.changed`: it blocks on the kernel uevent socket and a
+wake pipe with **no timeout**, so it needs no bound and does no polling, and it stops by a byte on the pipe),
+`nrf_workbench/api/feed.py` (the `/ws/events` handler), `nrf_workbench/api/app.py` (records every command
+in the activity log; `GET /api/activity`), `nrf_workbench/core/config.py` (the stream bounds, **no
+defaults**), `nrf_workbench/service.py` (wiring), `nrf_workbench/devices/commands.py` (the board list as a
+function the monitor shares with `devices.list`, so the feed and the command cannot disagree), and tests.
+**The protocol:** the client sends `{"want": {"devices": {"cursor": N, "epoch": E}, "activity": {...}}}`;
+the server answers with `{"type": "events", "feed": F, "page": {events, lost, reset, latest, epoch}}` for
+each feed at once and again whenever it has something new. A `want` may be sent again to change feeds. A
+slow client is never a reason to drop an event silently: events stay in the bus and the next page says how
+many were lost. An unknown feed is an `error` message, not a disconnect. **Authentication** for the
+websocket is the same `Auth` as for requests (a bearer header; the browser cookie is the next slice), and an
+`Origin` that is not this host is refused. **A stream with no configured bound is ABSENT** (not an error):
+the feed or log is not offered and `GET /api/capabilities` says why, so an unbounded log can never start.
+
+**Built and tested, 2026-11-16: the live feed** (`devices/monitor.py`, `api/feed.py`, the activity recording
+in `api/app.py`, `GET /api/activity`, `GET /api/streams`, the stream bounds in `core/config.py`, and the wiring in
+`service.py`): 82 new tests (monitor 17, feed and activity 42, config 7, service 11, core 5); 49 mutants caught.
+How it behaves, and what the tests found:
+- **No polling and no clock anywhere.** The monitor blocks in `select()` on the uevent socket and a wake
+  pipe with **no timeout** (a test fails if `select` is ever given one, and another if the module contains a
+  sleep). The websocket is woken by the bus calling a callback, and then **resumes by cursor**.
+- **The wake-up is thread-safe by construction, and a test proves it.** `asyncio.Event.set()` called from a
+  publisher's thread can leave an idle loop asleep; a mutant that did exactly that **survived a test that waited
+  for delivery**, because uvicorn's own timers wake the loop within seconds. It is now caught by a test that
+  checks the callback goes through `call_soon_threadsafe`.
+- **Loss is accounted, not hidden.** With a bus that holds 5 and 500 events published at full speed, every
+  event is either delivered or counted in `lost`, delivered ones are increasing and never repeat, and the
+  newest always arrives. **A hang in an earlier version of that test was my test's fault** (it published more
+  than the bus held and then waited for events that no longer existed), found with the fault handler.
+- **After a reset the connection follows the new epoch** (otherwise every later page would replay everything).
+- **A foreign `Origin` is refused before the token is looked at**, so a foreign page is not even told a token
+  exists; a request with no `Origin` is not a browser and is allowed.
+- **Every command is recorded:** success, refusal, bad argument (`usage`), and a handler that crashed
+  (`error`, with no detail). The duration is the measured time (a test fakes the clock). An unauthorised
+  request is not a command that ran and is not recorded. Secrets are redacted by argument name.
+- **A stream with no bound is off, and the service says so** (`stream activity: OFF (no bound configured: set ...)`);
+  one bound without the other, or an unusable value, is a configuration error and the service does not start.
+  There is **no default** for either bound: the values are the operator's, from the measured rate.
+- **The monitor is stopped even if the service raises**, and a client that vanishes without a close handshake
+  leaves no subscriber behind (measured with a real socket).
+**Not yet exercised on the real Pi:** the monitor against the kernel's real uevents (it is tested here against a
+socketpair, and the opener returns a socket or an `OSError`, never anything else). **Not built:** the browser
+cookie login for the websocket, the CSRF header, the UI, and the **handover drawn as one transition**
+(today the feed publishes each distinct state, so a re-enumeration shows the empty state between the two
+modes; the dashboard will draw that as a transition).
+
 **Files for the CLI and the MCP (added 2026-11-16, Peter: "yes", CLI and MCP before the dashboard):**
 `nrf_workbench/core/remote.py` (the client of the service: stdlib only, ONE definition of how a registry row
 becomes an HTTP request and how a response becomes a `Result`; it lives in `core` because `cli` and `api`
