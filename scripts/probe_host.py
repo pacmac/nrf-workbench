@@ -22,7 +22,7 @@ import subprocess
 import sys
 import time
 
-PROBE_VERSION = 4   # 2: gpio chip label/lines; 3: uart section; 4: gpio dedupe + gpiodetect, btmgmt phy/advinfo
+PROBE_VERSION = 4   # 2: gpio chip label/lines; 3: uart section; 4: gpio dedupe + gpiodetect (btmgmt is NOT run: it hangs on stdin=/dev/null)
 
 # name -> argv after the program. A tool NOT listed here is only looked for, never run
 # (JLinkExe is interactive; btmgmt and hciconfig are not version-queries).
@@ -257,17 +257,17 @@ def section_uart(bound):
 
 
 def section_bluetooth(bound):
-    """Which BLE features the onboard controller really has. Read-only management queries only:
-    `btmgmt phy` and `btmgmt advinfo`. Deliberately NOT `btmgmt info`, which prints the adapter's
-    address. On a Pi 4B, root: phy listed only LE1MTX/LE1MRX (no 2M, no Coded) and advinfo gave a
-    31-byte advertising limit (no extended advertising)."""
+    """Which controllers exist. The BLE feature queries are NOT run here: `btmgmt` hangs when its
+    stdin is /dev/null (measured on a Pi 4B: `timeout 5 btmgmt phy </dev/null` exits 124 after 5 s,
+    while it answers in 3 ms from a shell), and this probe closes stdin on purpose. Run by hand:
+
+        btmgmt phy; btmgmt advinfo      # NOT `btmgmt info`: it prints the adapter's address
+
+    On the Pi 4B, as root, these gave: phy only LE1MTX and LE1MRX (no 2M, no Coded); advinfo a
+    31-byte advertising limit and no extended-advertising flags."""
     ctl = sorted(os.listdir("/sys/class/bluetooth")) if os.path.isdir("/sys/class/bluetooth") else []
-    out = {"controllers": ctl, "btmgmt_phy": None, "btmgmt_advinfo": None}
-    if ctl and shutil.which("btmgmt"):
-        for key, sub in (("btmgmt_phy", "phy"), ("btmgmt_advinfo", "advinfo")):
-            ok, text = run_bounded(["btmgmt", sub], bound)
-            out[key] = text.splitlines()[:8] if ok else text
-    return out
+    return {"controllers": ctl, "btmgmt": shutil.which("btmgmt"),
+            "note": "BLE features (PHYs, advertising limits) need `btmgmt phy` and `btmgmt advinfo` run by hand"}
 
 
 def section_libs():

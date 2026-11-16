@@ -144,7 +144,12 @@ lock directory writable.
   `LE1MRX`, so **no LE 2M and no LE Coded PHY**; `btmgmt advinfo` gives a **31-byte** advertising
   limit and no extended-advertising flags. It supports `le`, `advertising`, `secure-conn` and
   `phy-configuration`. It is a BLE 4.x-class radio. This settles the brief's open question and
-  backs the decision for a dedicated nRF52840 radio.
+  backs the decision for a dedicated nRF52840 radio. These two were run by hand over SSH, not by the
+  probe: **`btmgmt` hangs when its stdin is `/dev/null`** (`timeout 5 btmgmt phy </dev/null` exited
+  124 after 5 s) yet answers in 3 ms from a shell, and the probe closes stdin on purpose. My
+  first probe version ran them and reported "no answer within 0.86 s"; that bound was derived for
+  `--version` calls and the real cause was the hang, so the calls were removed. Commands to run
+  by hand: `btmgmt phy; btmgmt advinfo` (not `btmgmt info`, which prints the adapter address).
 - **Tools and libraries on the Pi:** `bluetoothctl` 5.82, `btmgmt`, `hciconfig` and `gpioinfo`
   present; no `pio`, `adafruit-nrfutil`, `nrfutil`, `openocd` or `pyocd`; Python libraries `gpiod`
   and `PyYAML` only.
