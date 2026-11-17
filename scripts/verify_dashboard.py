@@ -54,7 +54,7 @@ BENCH = "verify-bench"
 OTHER = "SECONDSERIAL02"
 SIZES = (("phone", 390, 844), ("tablet", 768, 1024), ("desktop", 1280, 800))
 THEMES = ("light", "dark")
-PAGES = ("Bench", "Devices", "Firmware", "Console", "GPIO", "Activity", "Commands")
+PAGES = ("Bench", "Devices", "Firmware", "Wiring", "Console", "GPIO", "Activity", "Commands")
 
 # How long a check waits for the fake device to hear a line the page sent. The bytes are written before the page's
 # request returns, so this is only the give-up for a FAILING check, never a wait.
@@ -805,6 +805,131 @@ def gpio_page(page, bench, shot, tag):
     check("%s gpio: after unassign the pin is free on the header" % tag, True)
 
 
+def wiring_page(page, bench, shot, tag):
+    """The Wiring preview on sample data (docs/specs/wiring.md): devices as cards, connections as wire sentences, the
+    collapsing add sheet, a plugged-in adapter noticed live, claimed things greyed with their holder, the coloured header."""
+    nav = page.get_by_role("navigation", name="Pages")
+    nav.get_by_role("button", name="Wiring").click()
+    page.get_by_role("group", name="Devices").wait_for()
+    check("%s wiring: it says plainly that this is a preview on sample data" % tag,
+          page.get_by_role("note").filter(has_text="Preview.").count() == 1 and "Nothing here touches the bench" in page.get_by_role("note").first.inner_text())
+    cards = page.get_by_role("group", name="Devices").get_by_role("button")
+    check("%s wiring: both devices are cards and the first is chosen" % tag,
+          cards.count() == 2 and cards.nth(0).get_attribute("aria-pressed") == "true" and cards.nth(1).get_attribute("aria-pressed") == "false")
+    wires = page.get_by_role("list", name=re.compile("^Connections of RAK4631 D953"))
+    check("%s wiring: the chosen device's two wires are written as sentences" % tag,
+          "Reading the debug log of RAK4631 D953… through USB adapter USB Single Serial at 115200 baud, receive only." in wires.inner_text()
+          and "Resets RAK4631 D953… with GPIO17" in wires.inner_text(), wires.inner_text()[:200])
+    check("%s wiring: nothing is waiting in the plugged-in box yet" % tag, page.get_by_role("group", name=re.compile("plugged in but not connected")).count() == 0)
+    shot("9-wiring-start")
+
+    # a USB adapter is plugged in: the page notices and asks which device it is wired to
+    page.get_by_role("button", name="Simulate: plug in a USB adapter").click()
+    box = page.get_by_role("group", name=re.compile("FT232R USB UART is plugged in but not connected"))
+    box.wait_for()
+    check("%s wiring: a plugged-in adapter appears with the question already asked" % tag, "Which device is it wired to?" in box.inner_text())
+    setup = box.get_by_role("button", name="Set up the connection")
+    check("%s wiring: Set up stays off until a device is chosen" % tag, setup.is_disabled())
+    shot("9-wiring-plugged-in")
+    box.get_by_label(re.compile("^Device wired to")).select_option(label="RAK4631 A1B2… (bootloader)")
+    setup.click()
+    sheet = page.get_by_role("region", name=re.compile("^Connect something to RAK4631 A1B2"))
+    sheet.wait_for()
+    check("%s wiring: the sheet opens for the second device with what is known already answered" % tag,
+          "Read its debug log" in sheet.inner_text() and "FT232R USB UART (8C2D…)" in sheet.inner_text())
+    check("%s wiring: only the next question is open, the later ones are not shown" % tag,
+          sheet.get_by_text("What baud rate does its firmware use?").count() == 1 and sheet.get_by_text("Should the bench be able to send to it?").count() == 0)
+    check("%s wiring: no baud is pre-chosen" % tag, sheet.get_by_role("radio", checked=True).count() == 0)
+    shot("9-wiring-sheet-baud")
+    sheet.locator("label", has_text=re.compile(r"^115200$")).click()          # a chip: the label is what a person clicks
+    sheet.get_by_role("radio", name=re.compile("^No, only watch")).click()
+    sentence = sheet.get_by_test_id("sentence")
+    sentence.wait_for()
+    check("%s wiring: the finished sentence is the connection, receive only" % tag,
+          sentence.inner_text() == "Reading the debug log of RAK4631 A1B2… through USB adapter FT232R USB UART at 115200 baud, receive only.", sentence.inner_text())
+    sheet.get_by_role("button", name="Change: What baud rate does its firmware use?").click()
+    sheet.locator("label", has_text=re.compile(r"^9600$")).click()
+    sheet.get_by_test_id("sentence").wait_for()
+    check("%s wiring: changing an answer updates the sentence and keeps the later answers that still apply" % tag,
+          "at 9600 baud, receive only." in sheet.get_by_test_id("sentence").inner_text(), sheet.get_by_test_id("sentence").inner_text())
+    # turning sending on asks the voltage question (and only then); turning it off drops it again
+    sheet.get_by_role("button", name="Change: Should the bench be able to send to it?").click()
+    sheet.get_by_role("radio", name=re.compile("^Yes, let the bench send")).click()
+    check("%s wiring: choosing to send opens the voltage question with its warning" % tag,
+          sheet.get_by_text("What voltage is the adapter's signal?").count() == 1 and "5 V adapter on a 3.3 V pin damages the board" in sheet.inner_text())
+    sheet.get_by_role("radio", name=re.compile("^I haven't measured it")).click()
+    check("%s wiring: an unmeasured voltage keeps the connection receive only, and says so" % tag,
+          "receive only until the voltage is measured" in sheet.get_by_test_id("sentence").inner_text(), sheet.get_by_test_id("sentence").inner_text())
+    sheet.get_by_role("button", name="Change: Should the bench be able to send to it?").click()
+    sheet.get_by_role("radio", name=re.compile("^No, only watch")).click()
+    check("%s wiring: going back to receive only drops the voltage question" % tag,
+          sheet.get_by_text("What voltage is the adapter's signal?").count() == 0 and "receive only." in sheet.get_by_test_id("sentence").inner_text())
+    shot("9-wiring-sheet-done")
+    sheet.get_by_role("button", name="Connect", exact=True).click()
+    page.get_by_role("list", name=re.compile("^Connections of RAK4631 A1B2")).wait_for()
+    check("%s wiring: the new wire is on the second device and the plugged-in box is gone" % tag,
+          page.get_by_role("group", name=re.compile("plugged in but not connected")).count() == 0)
+
+    # back on the first device: what is taken is greyed and says who has it
+    cards.nth(0).click()
+    page.get_by_role("button", name="Connect something").click()
+    sheet = page.get_by_role("region", name=re.compile("^Connect something to RAK4631 D953"))
+    sheet.get_by_role("radio", name=re.compile("^Read its debug log")).click()
+    taken = sheet.get_by_role("radio", name=re.compile("^USB adapter USB Single Serial"))
+    check("%s wiring: an adapter another connection owns is shown, disabled, and names who has it" % tag,
+          taken.is_disabled() and "Already used by the debug log of RAK4631 D953" in sheet.inner_text(), sheet.inner_text()[:400])
+    check("%s wiring: so is the one the other device owns" % tag,
+          sheet.get_by_role("radio", name=re.compile("^USB adapter FT232R")).is_disabled() and "debug log of RAK4631 A1B2" in sheet.inner_text())
+    check("%s wiring: a free Pi UART says it needs a Pi setting change" % tag, "device-tree overlay" in sheet.inner_text())
+    shot("9-wiring-claimed")
+
+    # a control line: intent first, then only the pins that are free
+    sheet.get_by_role("button", name="Change: What do you want to do?").click()
+    sheet.get_by_role("radio", name=re.compile("^Reset, boot or power it")).click()
+    sheet.get_by_role("radio", name=re.compile("^Reset it")).click()
+    pins = sheet.get_by_role("radio", name=re.compile("^GPIO17"))
+    check("%s wiring: a pin another connection owns is disabled in the pin list, with the reason" % tag,
+          pins.is_disabled() and "reset line of RAK4631 D953" in sheet.inner_text(), sheet.inner_text()[:300])
+    sheet.locator("label", has_text=re.compile(r"^GPIO18 ")).click()
+    sheet.get_by_role("radio", name=re.compile("^Low")).click()
+    sheet.get_by_role("radio", name=re.compile("^I haven't measured it")).click()
+    sheet.get_by_label("Longest pulse it may ever be given (ms)").fill("50")
+    sheet.get_by_role("button", name="Done").click()
+    sentence = sheet.get_by_test_id("sentence")
+    sentence.wait_for()
+    check("%s wiring: an unmeasured voltage is said plainly in the sentence" % tag,
+          "does nothing until the voltage is measured" in sentence.inner_text(), sentence.inner_text())
+    sheet.get_by_role("button", name="Connect", exact=True).click()
+    fold = page.locator("details").filter(has_text="Which pin is wired to what")
+    if not fold.evaluate("el => el.open"):                                       # folded on a phone: a person opens it
+        fold.get_by_text("Which pin is wired to what").click()
+    header = page.get_by_role("group", name="Pi header, coloured by device")
+    check("%s wiring: the header shows the new pin with what it does" % tag, "reset" in header.inner_text() and header.get_by_title(re.compile("^GPIO18: reset")).count() == 1)
+    shot("9-wiring-header")
+
+    # analog: the Pi cannot do it alone, and the page says so and offers the way out
+    page.get_by_role("button", name="Connect something").click()
+    sheet = page.get_by_role("region", name=re.compile("^Connect something to RAK4631 D953"))
+    sheet.get_by_role("radio", name=re.compile("^Measure a voltage")).click()
+    check("%s wiring: measuring a voltage explains it needs an ADC chip and offers to add one first" % tag,
+          "no analog input of its own" in sheet.inner_text() and sheet.get_by_role("button", name="Connect the ADC chip first").count() == 1)
+    sheet.get_by_role("button", name="Connect the ADC chip first").click()
+    check("%s wiring: that switches the sheet to a bus connection" % tag, sheet.get_by_text("Which bus?").count() == 1)
+    sheet.get_by_role("button", name="Cancel").first.click()
+
+    # remove asks inline, and Open console goes to the console
+    wires = page.get_by_role("list", name=re.compile("^Connections of RAK4631 D953"))
+    before = wires.get_by_role("listitem").count()
+    wires.get_by_role("button", name="Remove").last.click()
+    ask = page.get_by_role("group", name=re.compile("^Remove this connection from RAK4631"))
+    check("%s wiring: remove asks first, inline" % tag, ask.count() == 1)
+    ask.get_by_role("button", name="Yes").click()
+    check("%s wiring: the wire is gone after yes" % tag, wires.get_by_role("listitem").count() == before - 1)
+    wires.get_by_role("button", name="Open console").first.click()
+    check("%s wiring: Open console goes to the Console page" % tag,
+          nav.get_by_role("button", name="Console").get_attribute("aria-current") == "page")
+
+
 def run_viewport(browser, bench, theme, size, shots, first):
     label, width, height = size
     tag = "%s-%s" % (theme, label)
@@ -821,7 +946,12 @@ def run_viewport(browser, bench, theme, size, shots, first):
             if r.status >= 400 else None)
 
     def shot(name):
+        # A full-page screenshot overrides the viewport and leaves the scroll to be re-clamped later, which makes the next
+        # click land on the wrong element (traced to an event log, not a page fault). Put the scroll back and let two
+        # frames pass, so a click after a screenshot hits what it was aimed at.
+        y = page.evaluate("window.scrollY")
         page.screenshot(path=os.path.join(shots, "%s-%s.png" % (tag, name)), full_page=True)
+        page.evaluate("(y) => { window.scrollTo(0, y); return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); }", y)
 
     page.goto(bench.url)
     page.get_by_label("Service token").wait_for()
@@ -931,6 +1061,7 @@ def run_viewport(browser, bench, theme, size, shots, first):
         firmware_page(page, bench, band, shot, tag)
         console_page(page, bench, shot, tag)
         gpio_page(page, bench, shot, tag)
+        wiring_page(page, bench, shot, tag)
 
     # the activity log names this caller
     page.get_by_role("navigation", name="Pages").get_by_role("button", name="Activity").click()

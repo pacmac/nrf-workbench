@@ -14,10 +14,11 @@ import Activity from "./Activity.jsx";
 import Commands from "./Commands.jsx";
 import Console from "./Console.jsx";
 import Gpio from "./Gpio.jsx";
+import Wiring from "./wiring/Wiring.jsx";
 import FlashDialog from "./FlashDialog.jsx";
 import { addLines } from "./consoleLog.js";
 
-const PAGES = [["bench", "Bench"], ["devices", "Devices"], ["firmware", "Firmware"], ["console", "Console"], ["gpio", "GPIO"], ["activity", "Activity"], ["commands", "Commands"]];
+const PAGES = [["bench", "Bench"], ["devices", "Devices"], ["firmware", "Firmware"], ["wiring", "Wiring"], ["console", "Console"], ["gpio", "GPIO"], ["activity", "Activity"], ["commands", "Commands"]];
 
 // How many activity rows the browser keeps in memory. Same derivation as the draw limit: the server's retention
 // is the real bound, this only stops a tab that stays open for weeks from growing without limit. 5 x the
@@ -215,6 +216,7 @@ export default function App() {
         {page === "bench" && <Bench name={name} session={session} info={info} feed={feed} />}
         {page === "devices" && <Devices boards={boards} boardsAt={boardsAt} onFlash={openFlash} />}
         {page === "firmware" && <Firmware commands={info.commands} boards={boards} onFlash={openFlash} onDone={onCommandDone} />}
+        {page === "wiring" && <Wiring onOpenPage={setPage} />}
         {page === "console" && consoleOn && <Console commands={info.commands} links={links} lines={consoleLines} activity={activity} feed={consoleFeed} onDone={onCommandDone} />}
         {page === "gpio" && gpioOn && <Gpio commands={info.commands} onDone={onCommandDone} />}
         {page === "activity" && <Activity activity={activity} />}
