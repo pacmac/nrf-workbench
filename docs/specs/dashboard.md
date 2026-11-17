@@ -240,6 +240,38 @@ The store is a folder per project (`firmware.md`, "projects"), so the dialog bro
 folder" with a package chosen started a flash), no Enter guard (Enter in the product box started a flash), and the
 choice carried across folders.
 
+### The Console page (added 2026-11-17, Peter: "the serial console needs a command line input … history … up and down arrow … just like a console")
+
+The page over the console backend (`console.md`, "slice 1"). It appears only when the console is on (`/api/streams`
+says `console: true` and `console.links` is listed), and it adds no rule of its own: **what a link may do is the
+service's**, and the page shows the service's answer whole.
+
+- **Link select.** A native `<select>` of the declared links, "name, state". Under it, chips: the state (`open`,
+  `absent`, `held`, `error`, `unusable`) with the service's reason, the baud, **receive only** or **can send**, and the
+  voltage as **verified** or **NOT verified**, plus each problem an unusable link carries. Nothing is chosen for the
+  person: with several links the first is shown, with none the page says none is declared and where (`links.yaml`).
+  **"GPIO pins" is a `pi-uart` link in the same list the day that backend lands** (`console.md`); today the list is
+  whatever is declared.
+- **The log** is the `console` feed on the one websocket, kept per link, **2 000 lines at most in the browser** (50
+  screens of 40 lines; at the 1 024-byte line cap that is 2 MB worst case); the service's retention is the real
+  record and `console.since` reads it. It follows the end while the person is at the end, and **stops following the
+  moment they scroll up** (a log that jumps while being read is unreadable), with a "Jump to latest" button. A reply
+  line (the link's `reply_marker`) is drawn distinctly, a cut line ends in `…`, and **what was sent is drawn in the
+  same log, marked `>`,** from the activity feed's `console.send` rows, ordered by the service's clock, so a device that
+  does not echo still shows the conversation. A send from the CLI or the AI appears too.
+- **The input is one line.** Enter sends (`console.send`), the text stays if the service refuses, and the answer
+  (class, code, message) is shown under it. It is disabled, **with the reason**, when the link is not `open`, is
+  receive only, or its voltage is not verified. **That is a courtesy: the service refuses the same send with the same
+  words** (`link_rx_only`, `voltage_unverified`), and a test sends it anyway.
+- **History is the bench's, not the browser's.** Up and Down walk the earlier `console.send` rows for the selected link
+  from the activity feed, **whoever sent them and whatever the service answered** (a shell recalls a refused command
+  too), newest first, collapsing consecutive repeats. Down past the newest returns the line being typed, which is kept
+  while walking. Escape clears the input. Nothing is stored in the browser (the UI rules forbid it), so the history
+  survives a reload and is the same in every browser.
+- **Macros** (`console.macro_*`): a list of name and lines, each with Run, Edit and Delete; a form with a name and a
+  text area of lines. Run sends the macro on the selected link through the same guards, and the page shows **every line's
+  result**, stopping where the service stopped. Delete asks inline ("Delete? Yes / No"), not a dialog.
+
 ## Files for the UI (added 2026-11-16, Peter: "get this completed")
 
 `ui/` (React 19, Vite 8, Tailwind 4, **exact versions pinned**, `package-lock.json` committed), the **built

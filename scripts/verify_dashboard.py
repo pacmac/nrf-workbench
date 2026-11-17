@@ -21,6 +21,7 @@ import json
 import math
 import os
 import re
+import select
 import socket
 import sys
 import tempfile
@@ -35,6 +36,7 @@ sys.path.insert(0, os.path.join(ROOT, "tests", "devices"))
 sys.path.insert(0, os.path.join(ROOT, "tests", "programmer"))
 
 import uvicorn  # noqa: E402
+import yaml  # noqa: E402
 from playwright.sync_api import expect, sync_playwright  # noqa: E402
 
 from nrf_workbench import service  # noqa: E402
@@ -52,7 +54,11 @@ BENCH = "verify-bench"
 OTHER = "SECONDSERIAL02"
 SIZES = (("phone", 390, 844), ("tablet", 768, 1024), ("desktop", 1280, 800))
 THEMES = ("light", "dark")
-PAGES = ("Bench", "Devices", "Firmware", "Activity", "Commands")
+PAGES = ("Bench", "Devices", "Firmware", "Console", "Activity", "Commands")
+
+# How long a check waits for the fake device to hear a line the page sent. The bytes are written before the page's
+# request returns, so this is only the give-up for a FAILING check, never a wait.
+HEARD_CEILING_S = 5
 
 # A live push is uevent -> wake -> read -> publish -> websocket -> render. Measured on this host over six
 # browser runs (printed as `live attach took` on every run): 4, 4, 7, 7, 7, 25 ms. The ceiling is a give-up for
@@ -92,15 +98,33 @@ class Bench(object):
         self.lock_path = os.path.join(self.tmp, "lock")
         self.gate = threading.Event()                # cleared by a check that wants the "flash" to stay running
         self.gate.set()
+        # Two debug links over pseudo-terminal pairs: `dbg` can send, `rxonly` is wired receive only. The pair's master
+        # end is "the device": what it writes the page must show, and what the page sends it must hear.
+        self.ptys = {}
+        for name, serial, can_send in (("dbg", "S1", True), ("rxonly", "S2", False)):
+            master, slave = os.openpty()
+            self.ptys[name] = {"master": master, "slave": slave, "node": os.ttyname(slave), "present": True}
+            self.ptys[name]["raw"] = {"name": name, "backend": "usb-adapter", "adapter": {"ids": ["1a86:55d4"], "serial": serial},
+                                      "baud": 115200, "dut_tx_to_host": True, "host_tx_to_dut": can_send,
+                                      "voltage": {"dut": 3.3, "adapter": 3.3, "verified": True}, "dtr_rts_reach_dut": False,
+                                      "reply_marker": "< "}
+        self.links_file = os.path.join(self.tmp, "links.yaml")
+        with open(self.links_file, "w") as fh:
+            yaml.safe_dump({"links": [self.ptys[n]["raw"] for n in ("dbg", "rxonly")]}, fh)
+        self.uevent_a, self.uevent_b = socket.socketpair()       # the kernel's uevents, as far as the broker can tell
         hooks = {"tool": "/fake/adafruit-nrfutil", "watcher": FakeWatcher(),
                  "touch": Touch(on_touch=self._to_bootloader), "runner": Runner(on_run=self._uploader_done),
-                 "ledger": TouchLedger(self.lock_path + ".touches.json")}
+                 "ledger": TouchLedger(self.lock_path + ".touches.json"),
+                 "open_uevents": lambda: self.uevent_a, "console_resolve": self._console_resolve}
         cfg, _ = cfgmod.load(env={}, overrides={
-            "paths": {"firmware": os.path.join(self.tmp, "fw")}, "service": {"bench_name": BENCH},
-            "streams": {"events": {"retain": 100, "max_age_days": 1}, "activity": {"retain": 100, "max_age_days": 1}}})
+            "paths": {"firmware": os.path.join(self.tmp, "fw"), "links": self.links_file,
+                      "console": os.path.join(self.tmp, "console")}, "service": {"bench_name": BENCH},
+            "streams": {"events": {"retain": 100, "max_age_days": 1}, "activity": {"retain": 100, "max_age_days": 1},
+                        "console": {"retain": 1000, "max_age_days": 1}}})
         self.app, self.host, _registry, _caps = service.build(cfg, token=TOKEN, sysfs=self.tree.sysfs, devroot=self.tree.dev,
                                                                   proc=self.tree.proc, hooks=hooks)
         self.host.lock_path = self.lock_path
+        self.host.console.start()
         self.package = os.path.join(self.tmp, "package.zip")
         with open(self.package, "wb") as fh:
             fh.write(pkg())
@@ -119,6 +143,28 @@ class Bench(object):
         self.thread = threading.Thread(target=lambda: self.server.run(sockets=[self.sock]), daemon=True)
         self.thread.start()
         self.url = "http://127.0.0.1:%d/" % self.port
+
+    def _console_resolve(self, link):
+        pty = self.ptys[link.name]
+        return (({"device": {}, "node": pty["node"]}, "") if pty["present"] else (None, "the adapter is not attached"))
+
+    def device_says(self, name, data):
+        os.write(self.ptys[name]["master"], data)
+
+    def device_heard(self, name, n):
+        """The n bytes the page sent to the device, read as the device would; a ceiling only for a failing check."""
+        got = b""
+        while len(got) < n:
+            ready, _, _ = select.select([self.ptys[name]["master"]], [], [], HEARD_CEILING_S)
+            if not ready:
+                return got
+            got += os.read(self.ptys[name]["master"], 4096)
+        return got
+
+    def set_present(self, name, present):
+        """Plug or unplug the fake adapter: the kernel's uevent is what makes the broker look again."""
+        self.ptys[name]["present"] = present
+        self.uevent_b.send(b"x")
 
     def _to_bootloader(self):
         self.tree.unplug("1-3")
@@ -148,9 +194,13 @@ class Bench(object):
     def close(self):
         self.server.should_exit = True
         self.thread.join()                      # returns when uvicorn has drained: an event, not a clock
+        self.host.console.stop()
         self.monitor.stop()
-        for s in (self.poke_r, self.poke_w):
+        for s in (self.poke_r, self.poke_w, self.uevent_a, self.uevent_b):
             s.close()
+        for pty in self.ptys.values():
+            for fd in (pty["master"], pty["slave"]):
+                os.close(fd)
         self.tree.close()
 
 
@@ -512,6 +562,150 @@ def firmware_page(page, bench, band, shot, tag):
     shot("11b-firmware-after")
 
 
+def console_page(page, bench, shot, tag):
+    """The Console page against two real pseudo-terminal links: the log, the input and its history, the disabled
+    reasons, a link's state changing live, following the end of the log, and macros. Every wait is for the thing
+    itself; the only time constant is the give-up on a device that never hears (HEARD_CEILING_S)."""
+    nav = page.get_by_role("navigation", name="Pages")
+    nav.get_by_role("button", name="Console").click()
+    select_link = page.get_by_label("Link")
+    select_link.wait_for()
+    log = page.get_by_role("log", name="Console log")
+    cmd = page.get_by_label("Command to send")
+    rows = log.locator("div[data-kind]")
+
+    def texts():
+        return rows.evaluate_all("els => els.map(e => e.dataset.kind + ' ' + e.innerText)")
+
+    options = select_link.locator("option").all_inner_texts()
+    check("%s console: both declared links are offered with their state" % tag, options == ["dbg, open", "rxonly, open"], options)
+    check("%s console: the sendable link says so, with its voltage" % tag,
+          page.get_by_text("can send", exact=True).count() == 1 and page.get_by_text("voltage verified", exact=True).count() == 1)
+    check("%s console: nothing is received yet, and the page says a quiet link is not a silent device" % tag,
+          "not a silent device" in log.inner_text())
+
+    # what the device says appears, a reply line is drawn as a reply
+    bench.device_says("dbg", b"boot 1\n< pong\n")
+    log.get_by_text("< pong").wait_for()
+    check("%s console: lines the device printed are shown" % tag, any(t.startswith("rx") and "boot 1" in t for t in texts()), texts())
+    reply_class = log.locator("div[data-kind=rx]", has_text="< pong").locator("span").last.get_attribute("class")
+    check("%s console: a reply line is drawn distinctly" % tag, "emerald" in (reply_class or ""), reply_class)
+
+    # a send: the device hears it with the link's line ending, the input is emptied and keeps the focus
+    cmd.fill("status")
+    cmd.press("Enter")
+    log.locator("div[data-kind=tx]", has_text="> status").wait_for()
+    check("%s console: the device heard the line and its ending" % tag, bench.device_heard("dbg", 7) == b"status\n")
+    check("%s console: the input is emptied after a send" % tag, cmd.input_value() == "")
+    check("%s console: the input keeps the focus" % tag,
+          page.evaluate("document.activeElement && document.activeElement.getAttribute('aria-label')") == "Command to send")
+    bench.device_says("dbg", b"< ok\n")
+    log.locator("div[data-kind=rx]", has_text="< ok").wait_for()
+    seen = texts()
+    sent_at = next(i for i, t in enumerate(seen) if t.startswith("tx") and "> status" in t)
+    reply_at = next(i for i, t in enumerate(seen) if t.startswith("rx") and "< ok" in t)
+    check("%s console: the sent line is drawn before the reply it caused" % tag, sent_at < reply_at, seen)
+    shot("9-console")
+
+    # history: up and down, the typed line kept, repeats collapsed, escape clears
+    for sent_so_far, line in ((1, "reboot"), (2, "reboot")):
+        cmd.fill(line)
+        cmd.press("Enter")
+        # the page ignores a second Enter while one is in flight, so wait for this one to be drawn before the next
+        page.wait_for_function("n => document.querySelectorAll('div[data-kind=tx]').length >= n", arg=sent_so_far + 1)
+        bench.device_heard("dbg", len(line) + 1)
+    walked = []
+    for key in ("ArrowUp", "ArrowUp", "ArrowUp", "ArrowDown", "ArrowDown", "ArrowDown"):
+        cmd.press(key)
+        walked.append(cmd.input_value())
+    check("%s console: up and down walk the history, newest first, repeats collapsed, and stop at both ends" % tag,
+          walked == ["reboot", "status", "status", "reboot", "", ""], walked)
+    cmd.fill("sta")
+    cmd.press("ArrowUp")
+    cmd.press("ArrowUp")
+    cmd.press("ArrowDown")
+    cmd.press("ArrowDown")
+    check("%s console: the line being typed is kept while walking the history" % tag, cmd.input_value() == "sta", cmd.input_value())
+    cmd.press("Escape")
+    check("%s console: escape clears the input" % tag, cmd.input_value() == "")
+
+    # the history belongs to the bench: a reload keeps it
+    page.reload()
+    nav.wait_for()
+    nav.get_by_role("button", name="Console").click()
+    page.get_by_label("Command to send").wait_for()
+    page.get_by_role("log", name="Console log").locator("div[data-kind=tx]", has_text="> reboot").first.wait_for()
+    cmd = page.get_by_label("Command to send")
+    cmd.press("ArrowUp")
+    check("%s console: the history survives a reload (it is the bench's, not the browser's)" % tag, cmd.input_value() == "reboot", cmd.input_value())
+    cmd.press("Escape")
+    log = page.get_by_role("log", name="Console log")
+    rows = log.locator("div[data-kind]")
+
+    # a receive-only link: the input is off, with the reason
+    select_link = page.get_by_label("Link")
+    select_link.select_option("rxonly")
+    page.get_by_text("receive only", exact=True).first.wait_for()
+    check("%s console: a receive-only link's input and button are disabled" % tag,
+          cmd.is_disabled() and page.get_by_role("button", name="Send", exact=True).is_disabled())
+    note = page.get_by_role("note").filter(has_text="link_rx_only")
+    check("%s console: the page gives the service's reason by name" % tag, note.count() == 1 and "receive only" in note.inner_text(), note.count())
+    check("%s console: the other link's log is not shown here" % tag, "boot 1" not in log.inner_text())
+    shot("9-console-rx-only")
+    select_link.select_option("dbg")
+
+    # a link's state changing is shown with no reload and no timer
+    bench.set_present("dbg", False)
+    page.get_by_text("absent", exact=True).first.wait_for()
+    check("%s console: an adapter that goes away is shown, and the input is off" % tag, cmd.is_disabled())
+    check("%s console: the page says the adapter is absent" % tag, page.get_by_role("note").filter(has_text="The adapter is absent").count() == 1)
+    shot("9-console-absent")
+    bench.set_present("dbg", True)
+    page.get_by_text("open", exact=True).first.wait_for()
+    cmd.wait_for(state="visible")
+    page.wait_for_function("!document.querySelector('input[aria-label=\"Command to send\"]').disabled")
+    check("%s console: the adapter coming back re-enables the input" % tag, True)
+
+    # following the end of the log, and not following once the person has scrolled up
+    bench.device_says("dbg", b"".join(b"line %d\n" % i for i in range(80)))
+    log.get_by_text("line 79").wait_for()
+    at_end = "el => el.scrollHeight - el.scrollTop - el.clientHeight < 5"
+    check("%s console: the log follows the end while the person is at the end" % tag, log.evaluate(at_end))
+    log.evaluate("el => { el.scrollTop = 0; }")
+    jump = page.get_by_role("button", name="Jump to latest")
+    jump.wait_for()
+    bench.device_says("dbg", b"line 80\n")
+    log.get_by_text("line 80").wait_for(state="attached")
+    check("%s console: scrolled up, the log does not jump when a line arrives" % tag, log.evaluate("el => el.scrollTop < 5"))
+    jump.click()
+    check("%s console: Jump to latest returns to the end" % tag, log.evaluate(at_end))
+    jump.wait_for(state="detached")
+
+    # macros: save, run through the guards, edit, delete
+    page.get_by_label("Macro name").fill("boot")
+    page.get_by_label("Lines to send").fill("reset\nstatus")
+    page.get_by_role("button", name="Save macro").click()
+    item = page.locator("li", has_text="boot").filter(has=page.get_by_role("button", name="Run"))
+    item.first.wait_for()
+    check("%s macros: a saved macro is listed with its lines" % tag, "reset" in item.first.inner_text() and "status" in item.first.inner_text())
+    item.first.get_by_role("button", name="Run").click()
+    page.get_by_role("status").filter(has_text="ran 2 lines").wait_for()
+    check("%s macros: running it sends every line in order" % tag, bench.device_heard("dbg", len(b"reset\nstatus\n")) == b"reset\nstatus\n")
+    shot("9-console-macros")
+    item.first.get_by_role("button", name="Edit").click()
+    check("%s macros: Edit loads the macro into the form" % tag,
+          page.get_by_label("Macro name").input_value() == "boot" and page.get_by_label("Lines to send").input_value() == "reset\nstatus")
+    select_link.select_option("rxonly")
+    check("%s macros: Run is disabled on a link that cannot send" % tag, item.first.get_by_role("button", name="Run").is_disabled())
+    select_link.select_option("dbg")
+    item.first.get_by_role("button", name="Delete").click()
+    ask = page.get_by_role("group", name="Delete boot?")         # the row now holds the question, not the Run button
+    check("%s macros: Delete asks first, inline" % tag, ask.count() == 1 and "Delete?" in ask.inner_text())
+    ask.get_by_role("button", name="Yes").click()
+    page.get_by_text("No macros yet").wait_for()
+    check("%s macros: a deleted macro is gone after the service's answer" % tag, True)
+
+
 def run_viewport(browser, bench, theme, size, shots, first):
     label, width, height = size
     tag = "%s-%s" % (theme, label)
@@ -595,6 +789,8 @@ def run_viewport(browser, bench, theme, size, shots, first):
               page.get_by_role("navigation", name="Pages").get_by_role("button", name=name).get_attribute("aria-current") == "page")
         if name == "Firmware":
             page.get_by_text("Loading the store…").wait_for(state="detached", timeout=15000)   # the list, not the spinner text
+        if name == "Console":
+            page.get_by_label("Link").wait_for()
         check("%s page %s: no horizontal scroll" % (tag, name), overflow(page) <= 0, overflow(page))
         shot("5-" + name.lower())
 
@@ -631,6 +827,7 @@ def run_viewport(browser, bench, theme, size, shots, first):
         flash_flows(page, bench, band, shot, tag)
         in_progress(page, bench, band, shot, tag)
         firmware_page(page, bench, band, shot, tag)
+        console_page(page, bench, shot, tag)
 
     # the activity log names this caller
     page.get_by_role("navigation", name="Pages").get_by_role("button", name="Activity").click()

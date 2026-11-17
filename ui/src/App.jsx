@@ -12,9 +12,11 @@ import Devices from "./Devices.jsx";
 import Firmware from "./Firmware.jsx";
 import Activity from "./Activity.jsx";
 import Commands from "./Commands.jsx";
+import Console from "./Console.jsx";
 import FlashDialog from "./FlashDialog.jsx";
+import { addLines } from "./consoleLog.js";
 
-const PAGES = [["bench", "Bench"], ["devices", "Devices"], ["firmware", "Firmware"], ["activity", "Activity"], ["commands", "Commands"]];
+const PAGES = [["bench", "Bench"], ["devices", "Devices"], ["firmware", "Firmware"], ["console", "Console"], ["activity", "Activity"], ["commands", "Commands"]];
 
 // How many activity rows the browser keeps in memory. Same derivation as the draw limit: the server's retention
 // is the real bound, this only stops a tab that stays open for weeks from growing without limit. 5 x the
@@ -48,6 +50,10 @@ export default function App() {
   const [activity, setActivity] = useState({ rows: [], lost: 0, reset: false });
   const [running, setRunning] = useState([]);                    // started and not yet ended, from the activity feed
   const [info, setInfo] = useState({ commands: null, capabilities: null, streams: null, status: null });
+  const [links, setLinks] = useState(null);                    // the declared console links with their state, or null before they load
+  const [consoleLines, setConsoleLines] = useState({});         // {link: [line]}, from the console feed
+  const [consoleFeed, setConsoleFeed] = useState({ state: "connecting", at: null, detail: "" });
+  const [linksTick, setLinksTick] = useState(0);                // bumped when a link's state changes, to read the links again
   const [flashing, setFlashing] = useState(null);
   const [flashInitial, setFlashInitial] = useState(null);        // a package chosen on the Firmware page, or none
   const openFlash = useCallback((board, initial = null) => { setFlashInitial(initial); setFlashing(board); }, []);
@@ -101,6 +107,14 @@ export default function App() {
     }
   }, []);
 
+  // The console has its own feed on its own socket, opened for the whole session when the service has the console, so
+  // lines keep arriving while another page is open. A state change of a link says "read the links again".
+  const onConsolePage = useCallback((feedName, p) => {
+    if (feedName !== "console") return;
+    setConsoleLines((old) => addLines(old, p.events, p.epoch, p.reset));
+    if (p.events.some((e) => e.type === "console.link")) setLinksTick((n) => n + 1);
+  }, []);
+
   const loadInfo = useCallback(async () => {
     const get = async (path) => { try { const r = await readJson(path); return r.ok ? r.body : null; } catch (e) { return null; } };
     const [commands, capabilities, streams, status] = await Promise.all([
@@ -128,6 +142,26 @@ export default function App() {
     return () => { f.stop(); feedRef.current = null; };
   }, [authenticated, loadInfo, onPage]);
 
+  const linksRow = (info.commands || []).find((c) => c.name === "console.links") || null;
+  const consoleOn = Boolean(authenticated && linksRow && info.streams && info.streams.console);
+  const linksPath = linksRow ? linksRow.path : null;
+
+  useEffect(() => {
+    if (!consoleOn) return undefined;
+    const f = createFeed({ feeds: ["console"], onPage: onConsolePage, onState: setConsoleFeed });
+    f.start();
+    return () => f.stop();
+  }, [consoleOn, onConsolePage]);
+
+  useEffect(() => {
+    if (!consoleOn || !linksPath) return undefined;
+    let live = true;
+    readJson(linksPath).then((r) => {
+      if (live && r.ok && r.body && r.body.data) setLinks(r.body.data.links || []);
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [consoleOn, linksPath, linksTick]);
+
   // A write that came back 401 means the session ended (expiry, restart, another login): show the login again.
   const onCommandDone = useCallback((r) => { if (r && r.status === 401) { setExpired(true); refreshSession(); } }, [refreshSession]);
 
@@ -141,7 +175,7 @@ export default function App() {
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 py-4">
         <h1 className="text-xl font-semibold">{name}</h1>
         <nav aria-label="Pages" className="flex flex-wrap gap-1">
-          {PAGES.map(([id, label]) => (
+          {PAGES.filter(([id]) => id !== "console" || consoleOn).map(([id, label]) => (
             <button
               key={id}
               onClick={() => setPage(id)}
@@ -160,7 +194,7 @@ export default function App() {
         <div className="ml-auto flex items-center gap-2">
           <Button tone="quiet" onClick={() => setTheme(nextTheme(theme))} title="Light, dark, or follow the system">Theme: {theme}</Button>
           {session.login_required && (
-            <Button tone="quiet" onClick={async () => { await logout(); setExpired(false); setBoards(null); setActivity({ rows: [], lost: 0, reset: false }); setRunning([]); refreshSession(); }}>Log out</Button>
+            <Button tone="quiet" onClick={async () => { await logout(); setExpired(false); setBoards(null); setActivity({ rows: [], lost: 0, reset: false }); setRunning([]); setLinks(null); setConsoleLines({}); refreshSession(); }}>Log out</Button>
           )}
         </div>
       </header>
@@ -179,6 +213,7 @@ export default function App() {
         {page === "bench" && <Bench name={name} session={session} info={info} feed={feed} />}
         {page === "devices" && <Devices boards={boards} boardsAt={boardsAt} onFlash={openFlash} />}
         {page === "firmware" && <Firmware commands={info.commands} boards={boards} onFlash={openFlash} onDone={onCommandDone} />}
+        {page === "console" && consoleOn && <Console commands={info.commands} links={links} lines={consoleLines} activity={activity} feed={consoleFeed} onDone={onCommandDone} />}
         {page === "activity" && <Activity activity={activity} />}
         {page === "commands" && <Commands commands={info.commands} onDone={onCommandDone} />}
       </div>
