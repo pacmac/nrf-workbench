@@ -54,7 +54,7 @@ BENCH = "verify-bench"
 OTHER = "SECONDSERIAL02"
 SIZES = (("phone", 390, 844), ("tablet", 768, 1024), ("desktop", 1280, 800))
 THEMES = ("light", "dark")
-PAGES = ("Bench", "Devices", "Firmware", "Console", "Activity", "Commands")
+PAGES = ("Bench", "Devices", "Firmware", "Console", "GPIO", "Activity", "Commands")
 
 # How long a check waits for the fake device to hear a line the page sent. The bytes are written before the page's
 # request returns, so this is only the give-up for a FAILING check, never a wait.
@@ -112,13 +112,18 @@ class Bench(object):
         with open(self.links_file, "w") as fh:
             yaml.safe_dump({"links": [self.ptys[n]["raw"] for n in ("dbg", "rxonly")]}, fh)
         self.uevent_a, self.uevent_b = socket.socketpair()       # the kernel's uevents, as far as the broker can tell
+        # The GPIO page exists only on a Raspberry Pi, which is what the device tree says: this bench's does.
+        os.makedirs(os.path.join(self.tree.proc, "device-tree"), exist_ok=True)
+        with open(os.path.join(self.tree.proc, "device-tree", "model"), "wb") as fh:
+            fh.write(b"Raspberry Pi 4 Model B Rev 1.4\0")
         hooks = {"tool": "/fake/adafruit-nrfutil", "watcher": FakeWatcher(),
                  "touch": Touch(on_touch=self._to_bootloader), "runner": Runner(on_run=self._uploader_done),
                  "ledger": TouchLedger(self.lock_path + ".touches.json"),
                  "open_uevents": lambda: self.uevent_a, "console_resolve": self._console_resolve}
         cfg, _ = cfgmod.load(env={}, overrides={
             "paths": {"firmware": os.path.join(self.tmp, "fw"), "links": self.links_file,
-                      "console": os.path.join(self.tmp, "console")}, "service": {"bench_name": BENCH},
+                      "console": os.path.join(self.tmp, "console"), "gpio": os.path.join(self.tmp, "gpio")},
+            "service": {"bench_name": BENCH},
             "streams": {"events": {"retain": 100, "max_age_days": 1}, "activity": {"retain": 100, "max_age_days": 1},
                         "console": {"retain": 1000, "max_age_days": 1}}})
         self.app, self.host, _registry, _caps = service.build(cfg, token=TOKEN, sysfs=self.tree.sysfs, devroot=self.tree.dev,
@@ -706,6 +711,100 @@ def console_page(page, bench, shot, tag):
     check("%s macros: a deleted macro is gone after the service's answer" % tag, True)
 
 
+def gpio_page(page, bench, shot, tag):
+    """The GPIO page: the header as drawn on the board, a form that states every field, the service's refusals shown
+    whole, an edit, and an unassign. It records assignments only; nothing here can drive a pin."""
+    page.get_by_role("navigation", name="Pages").get_by_role("button", name="GPIO").click()
+    header = page.get_by_role("group", name="40-pin header")
+    header.wait_for()
+    cells = header.get_by_role("button")
+    check("%s gpio: the 28 header GPIOs are buttons" % tag, cells.count() == 28, cells.count())
+    reserved = header.get_by_role("button", name=re.compile(r"^Pin 2[78], GPIO [01],"))
+    check("%s gpio: the HAT EEPROM pins are reserved and disabled" % tag,
+          reserved.count() == 2 and all(reserved.nth(i).is_disabled() for i in range(2)), reserved.count())
+    order = header.evaluate("el => Array.from(el.querySelectorAll('button')).slice(0, 4).map(b => b.getAttribute('aria-label'))")
+    check("%s gpio: drawn as on the board, odd pins left and even right, from pin 1" % tag,
+          order[0].startswith("Pin 3,") and order[1].startswith("Pin 5,") and order[2].startswith("Pin 7,") and order[3].startswith("Pin 8,"), order)
+    check("%s gpio: nothing is assigned yet and no form is open" % tag,
+          page.get_by_text("Choose a GPIO above").count() == 1 and header.get_by_text("free").count() >= 1)
+
+    def field(label):
+        return page.locator("label").filter(has=page.locator("span", has_text=re.compile("^%s$" % re.escape(label)))).locator("input, select").first
+
+    # a new output on GPIO17 (physical pin 11): every field must be stated before the button works
+    header.get_by_role("button", name=re.compile(r"^Pin 11, GPIO 17,")).click()
+    page.get_by_role("heading", name="Assignment for GPIO 17").wait_for()
+    submit = page.get_by_role("button", name="Assign", exact=True)
+    check("%s gpio: Assign is disabled until every field is stated" % tag, submit.is_disabled())
+    check("%s gpio: the yes/no fields start on 'choose', never on a pre-picked answer" % tag,
+          all(field(l).input_value() == "" for l in ("Active low", "Voltage measured", "Direction")))
+    field("Name").fill("dut-reset")
+    field("Service").fill("programmer")
+    field("Action").fill("reset")
+    field("Purpose").fill("Resets the RAK for a flash.")
+    field("Direction").select_option("output")
+    check("%s gpio: choosing output shows the output fields and no pull" % tag,
+          page.get_by_text("Longest pulse (ms)").count() == 1 and page.get_by_text("State when taken").count() == 1
+          and page.get_by_text("Drives a DUT pin").count() == 1 and page.get_by_text("The bias on the input").count() == 0)
+    check("%s gpio: the longest pulse has no suggested value" % tag, field("Longest pulse (ms)").input_value() == "")
+    field("Active low").select_option("no")
+    field("Signal voltage (V)").fill("3.3")
+    field("Voltage measured").select_option("no")
+    field("State when taken").select_option("inactive")
+    field("Longest pulse (ms)").fill("100")
+    check("%s gpio: still disabled with one field unstated" % tag, submit.is_disabled())
+    field("Drives a DUT pin").select_option("yes")
+    check("%s gpio: enabled once everything is stated" % tag, submit.is_enabled())
+    shot("9-gpio-form")
+    # HARNESS ARTIFACT, found with an event trace (not a page fault): a full-page screenshot overrides the viewport, and
+    # the next blur of the focused field makes Chrome re-clamp the scroll by 271 px between mousedown and mouseup, so the
+    # click lands on the form instead of the button. Without the screenshot the same click submits. A person never takes
+    # one, so the cure belongs here: blur the field and let two frames pass before clicking.
+    page.evaluate("document.activeElement && document.activeElement.blur()")
+    page.evaluate("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
+    submit.click()
+    page.get_by_role("status").filter(has_text="assigned").wait_for()
+    check("%s gpio: the service's answer is shown whole" % tag, page.get_by_role("status").filter(has_text="assigned").first.inner_text() != "")
+    page.get_by_role("button", name=re.compile(r"^Pin 11, GPIO 17, assigned to dut-reset")).wait_for()
+    check("%s gpio: the header now shows the name on its pin" % tag, True)
+    shot("9-gpio-assigned")
+
+    # a refusal is the service's, by name: a 5 V signal
+    header.get_by_role("button", name=re.compile(r"^Pin 15, GPIO 22,")).click()
+    field("Name").fill("door")
+    field("Service").fill("manual")
+    field("Action").fill("sense")
+    field("Purpose").fill("Tells if the bench door is shut.")
+    field("Direction").select_option("input")
+    field("Active low").select_option("yes")
+    field("Signal voltage (V)").fill("5")
+    field("Voltage measured").select_option("yes")
+    field("Pull").select_option("up")
+    page.get_by_role("button", name="Assign", exact=True).click()
+    page.get_by_role("status").filter(has_text="voltage_unsafe").wait_for()
+    check("%s gpio: a 5 V signal is refused by the service, by name" % tag, True)
+    check("%s gpio: a refused assignment is not on the header" % tag,
+          header.get_by_role("button", name=re.compile(r"^Pin 15, GPIO 22, assigned")).count() == 0)
+
+    # an edit: the assigned pin loads its record, and saving says replaced
+    header.get_by_role("button", name=re.compile(r"^Pin 11, GPIO 17, assigned to dut-reset")).click()
+    check("%s gpio: an assigned pin loads its assignment for editing" % tag,
+          field("Name").input_value() == "dut-reset" and field("Direction").input_value() == "output"
+          and field("Longest pulse (ms)").input_value() == "100" and field("Drives a DUT pin").input_value() == "yes")
+    field("Longest pulse (ms)").fill("50")
+    page.get_by_role("button", name="Save changes").click()
+    page.get_by_role("status").filter(has_text="replaced").wait_for()
+    check("%s gpio: saving an edit says it replaced the assignment" % tag, True)
+
+    # unassign asks inline, then the pin is free again
+    page.get_by_role("button", name="Unassign", exact=True).click()
+    ask = page.get_by_role("group", name="Unassign dut-reset?")
+    check("%s gpio: unassign asks first, inline" % tag, ask.count() == 1)
+    ask.get_by_role("button", name="Yes").click()
+    page.get_by_role("button", name=re.compile(r"^Pin 11, GPIO 17, free")).wait_for()
+    check("%s gpio: after unassign the pin is free on the header" % tag, True)
+
+
 def run_viewport(browser, bench, theme, size, shots, first):
     label, width, height = size
     tag = "%s-%s" % (theme, label)
@@ -791,6 +890,8 @@ def run_viewport(browser, bench, theme, size, shots, first):
             page.get_by_text("Loading the store…").wait_for(state="detached", timeout=15000)   # the list, not the spinner text
         if name == "Console":
             page.get_by_label("Link").wait_for()
+        if name == "GPIO":
+            page.get_by_role("group", name="40-pin header").wait_for()
         check("%s page %s: no horizontal scroll" % (tag, name), overflow(page) <= 0, overflow(page))
         shot("5-" + name.lower())
 
@@ -824,10 +925,12 @@ def run_viewport(browser, bench, theme, size, shots, first):
     dialog.wait_for(state="hidden")
     if first:
         refusals_expected.append(("POST", "/api/programmer/flash", 500))
+        refusals_expected.append(("POST", "/api/gpio/assign", 422))          # the 5 V signal the GPIO flow tries on purpose
         flash_flows(page, bench, band, shot, tag)
         in_progress(page, bench, band, shot, tag)
         firmware_page(page, bench, band, shot, tag)
         console_page(page, bench, shot, tag)
+        gpio_page(page, bench, shot, tag)
 
     # the activity log names this caller
     page.get_by_role("navigation", name="Pages").get_by_role("button", name="Activity").click()

@@ -272,6 +272,24 @@ service's**, and the page shows the service's answer whole.
   text area of lines. Run sends the macro on the selected link through the same guards, and the page shows **every line's
   result**, stopping where the service stopped. Delete asks inline ("Delete? Yes / No"), not a dialog.
 
+### The GPIO page (added 2026-11-17, Peter: "the ability to assign GPIOs on the PI to services / actions")
+
+The page over the pin map (`gpio.md`). It appears only when `gpio.header` is in the command list, which is only on a
+Raspberry Pi with a pin-map folder, and it **records assignments and nothing else: no pin is driven or read**. It adds
+no rule of its own; every refusal (`pin_reserved`, `pin_taken`, `voltage_unsafe` ...) is the service's, shown whole.
+
+- **The header is drawn as it is on the board:** two columns, odd physical pins on the left and even on the right, pin 1
+  at the top. A power or ground pin is shown and not clickable. A GPIO is a button giving its pin number, its label and
+  its state: **free**, **bus** (flagged, assignable), **reserved** (disabled, with the reason) or the **name it is
+  assigned to**. Clicking an assigned pin loads its assignment for editing; clicking a free one starts a new one.
+- **The form states everything.** The service has no defaults and the page invents none: a yes/no field (active low,
+  voltage measured, drives a DUT pin) starts on "choose", never on "no", because a pre-picked "no" would be the default
+  the product refuses. Output-only fields (initial state, longest pulse, drives a DUT pin) and the input-only field
+  (pull) appear only for their direction. **The longest pulse has no suggested value**: it is derived from what the line
+  drives, by the person who knows (`gpio.md`). The button stays disabled until every shown field is chosen; the service
+  checks again.
+- **Unassign asks inline** ("Unassign? Yes / No"), not in a dialog, and the answer is shown whole like every write.
+
 ## Files for the UI (added 2026-11-16, Peter: "get this completed")
 
 `ui/` (React 19, Vite 8, Tailwind 4, **exact versions pinned**, `package-lock.json` committed), the **built

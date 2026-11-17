@@ -21,7 +21,8 @@ function collect(command, values) {
   command.args.forEach((a) => {
     const v = values[a.name];
     if (a.type === "bool") {
-      if (v !== Boolean(a.default)) sent[a.name] = v;
+      // A required boolean is always sent: an unchecked box is the answer "false", and leaving it out would read as "missing".
+      if (a.required || v !== Boolean(a.default)) sent[a.name] = v;
     } else if (v !== "" && v !== undefined) {
       sent[a.name] = a.type === "int" || a.type === "float" ? Number(v) : v;
     }

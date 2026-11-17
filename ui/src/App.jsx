@@ -13,10 +13,11 @@ import Firmware from "./Firmware.jsx";
 import Activity from "./Activity.jsx";
 import Commands from "./Commands.jsx";
 import Console from "./Console.jsx";
+import Gpio from "./Gpio.jsx";
 import FlashDialog from "./FlashDialog.jsx";
 import { addLines } from "./consoleLog.js";
 
-const PAGES = [["bench", "Bench"], ["devices", "Devices"], ["firmware", "Firmware"], ["console", "Console"], ["activity", "Activity"], ["commands", "Commands"]];
+const PAGES = [["bench", "Bench"], ["devices", "Devices"], ["firmware", "Firmware"], ["console", "Console"], ["gpio", "GPIO"], ["activity", "Activity"], ["commands", "Commands"]];
 
 // How many activity rows the browser keeps in memory. Same derivation as the draw limit: the server's retention
 // is the real bound, this only stops a tab that stays open for weeks from growing without limit. 5 x the
@@ -145,6 +146,7 @@ export default function App() {
   const linksRow = (info.commands || []).find((c) => c.name === "console.links") || null;
   const consoleOn = Boolean(authenticated && linksRow && info.streams && info.streams.console);
   const linksPath = linksRow ? linksRow.path : null;
+  const gpioOn = Boolean(authenticated && (info.commands || []).some((c) => c.name === "gpio.header"));   // only on a Pi with a pin-map folder
 
   useEffect(() => {
     if (!consoleOn) return undefined;
@@ -175,7 +177,7 @@ export default function App() {
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 py-4">
         <h1 className="text-xl font-semibold">{name}</h1>
         <nav aria-label="Pages" className="flex flex-wrap gap-1">
-          {PAGES.filter(([id]) => id !== "console" || consoleOn).map(([id, label]) => (
+          {PAGES.filter(([id]) => (id !== "console" || consoleOn) && (id !== "gpio" || gpioOn)).map(([id, label]) => (
             <button
               key={id}
               onClick={() => setPage(id)}
@@ -214,6 +216,7 @@ export default function App() {
         {page === "devices" && <Devices boards={boards} boardsAt={boardsAt} onFlash={openFlash} />}
         {page === "firmware" && <Firmware commands={info.commands} boards={boards} onFlash={openFlash} onDone={onCommandDone} />}
         {page === "console" && consoleOn && <Console commands={info.commands} links={links} lines={consoleLines} activity={activity} feed={consoleFeed} onDone={onCommandDone} />}
+        {page === "gpio" && gpioOn && <Gpio commands={info.commands} onDone={onCommandDone} />}
         {page === "activity" && <Activity activity={activity} />}
         {page === "commands" && <Commands commands={info.commands} onDone={onCommandDone} />}
       </div>
