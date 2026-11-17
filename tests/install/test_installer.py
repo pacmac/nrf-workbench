@@ -286,7 +286,7 @@ class Interactive(Base):
     def test_prompts_use_the_terminal_not_the_pipe(self):
         target = self.fresh_prefix()
         rc, out, left = self.run_interactive(["--features", "core"], [
-            ("Choice:", target), ("Apply this plan?", "n")])
+            ("Choice:", target), ("Choice:", "1"), ("Apply this plan?", "n")])      # the second Choice is where it listens
         self.assertEqual(rc, 3, out)
         self.assertEqual(left, [], "a prompt was never shown:\n" + out)
         self.assertIn("declined; nothing was changed", out)
@@ -295,7 +295,7 @@ class Interactive(Base):
     def test_a_bad_prefix_is_refused_and_asked_again(self):
         target = self.fresh_prefix()
         rc, out, left = self.run_interactive(["--features", "core"], [
-            ("Choice:", "/usr"), ("Choice:", target), ("Apply this plan?", "n")])
+            ("Choice:", "/usr"), ("Choice:", target), ("Choice:", "1"), ("Apply this plan?", "n")])
         self.assertEqual(rc, 3, out)
         self.assertIn("not usable", out)
         self.assertEqual(left, [], out)

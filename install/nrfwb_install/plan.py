@@ -68,9 +68,10 @@ def _esc(text):
     return text.replace("%", "%%").replace("$", "$$")
 
 
-def unit_text(prefix, user, serial_group):
+def unit_text(prefix, user, serial_group, bind_capability=False):
     """The whole unit, derived in docs/specs/install.md ("the unit"). The service reads every setting
-    from config/host.yaml, so the command line names only that file."""
+    from config/host.yaml, so the command line names only that file. `bind_capability` adds
+    CAP_NET_BIND_SERVICE for a non-root service whose recorded port is below the unprivileged limit."""
     py = os.path.join(prefix, "venv", "bin", "python")
     cfg = os.path.join(prefix, "config", "host.yaml")
     lines = [
@@ -95,6 +96,10 @@ def unit_text(prefix, user, serial_group):
         lines.append("User=" + user)
         if serial_group:
             lines.append("SupplementaryGroups=" + serial_group)
+    if bind_capability:
+        # Only the capability to bind a low port, and only on the ambient set so the unprivileged service gets it
+        # at exec; the bounding set is limited to that one capability so nothing else can be gained.
+        lines += ["AmbientCapabilities=CAP_NET_BIND_SERVICE", "CapabilityBoundingSet=CAP_NET_BIND_SERVICE"]
     lines += ["", "[Install]", "WantedBy=multi-user.target", ""]
     return "\n".join(lines)
 
@@ -196,8 +201,12 @@ def build(ctx):
             missing.append("(host.yaml sets no paths.firmware: it is left as it is and the lines to add are printed)")
     except OSError:
         pass
+    config_lines = ["missing: " + ", ".join(missing)] if missing else []
+    choice = ctx.get("listen")
+    if choice and choice.get("listen"):
+        config_lines.append(choice["summary"])
     steps.append({"id": "config", "title": "Create host configuration in %s and the package store (only what is missing)" % cfg,
-                  "lines": ["missing: " + ", ".join(missing)] if missing else [],
+                  "lines": config_lines,
                   "skip": not missing, "why_skip": "all present; never overwritten", "needs_person": False})
 
     # 4b. the packages this repo carries, into the store, through the product's own CLI (validated like any upload)

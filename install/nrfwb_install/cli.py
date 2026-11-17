@@ -12,6 +12,7 @@ from . import FAILED, MARKER, MIN_PYTHON, NEEDS_PERSON, OK, PREREQ, USAGE
 from . import apply as applymod
 from . import features as featmod
 from . import host as hostmod
+from . import listen as listenmod
 from . import plan as planmod
 from . import prefix as prefixmod
 from . import verify as verifymod
@@ -34,6 +35,10 @@ def make_parser():
     p.add_argument("--ref", default="main", help="the commit, tag or branch (install.sh resolves it)")
     p.add_argument("--git", action="store_true", help="make a developer git checkout at the prefix")
     p.add_argument("--wheelhouse", help="install packages from this folder with no network")
+    p.add_argument("--listen", help="where the dashboard and API listen, ADDRESS:PORT (default: ask on a terminal; with none, "
+                                    "127.0.0.1:8080, this machine only). A non-loopback address creates the token file.")
+    p.add_argument("--access", choices=("token", "open-read"),
+                   help="recorded with --listen: token (default) or open-read (reads need no token; writes always do)")
     p.add_argument("--add-user", dest="add_user", help="add this user to the group that owns serial devices")
     p.add_argument("--uninstall", action="store_true", help="remove the venv and the record; keeps config and logs")
     p.add_argument("--no-verify", dest="no_verify", action="store_true", help="skip the verify step")
@@ -84,6 +89,82 @@ def choose_prefix(args, h, ui):
         if ok:
             return path
         ui.say("  not usable: " + why)
+
+
+def _same_address(a, b):
+    try:
+        return listenmod.parse(a) == listenmod.parse(b)
+    except ValueError:
+        return False
+
+
+def _summary(choice, state, owner_root, limit):
+    host, port = listenmod.parse(choice["listen"])
+    where = "service.listen: %s  (%s)" % (choice["listen"], listenmod.state_text(port, state, owner_root, limit))
+    if not listenmod.is_loopback(host):
+        where += "; token file %s (mode 0600, created if absent, never printed)" % applymod.token_path(choice["prefix"])
+    if choice.get("access") == "open-read":
+        where += "; access: open-read"
+    return where
+
+
+def choose_listen(args, h, ui, prefix, proc="/proc"):
+    """Where the service listens (docs/specs/install.md, "where it listens"). Returns None when nothing is to be
+    recorded, else {'listen', 'access', 'prefix', 'summary'}. An existing host.yaml is NEVER edited, so against one a
+    --listen that differs from what it records is refused with the lines to put in it. With no terminal and no
+    --listen the answer is the product's own default (this machine only), which records nothing: --yes never exposes
+    the service."""
+    wanted, access = args.listen, args.access
+    cfg = os.path.join(prefix, "config", "host.yaml")
+    if wanted is not None:
+        try:
+            listenmod.parse(wanted)
+        except ValueError as exc:
+            raise UsageError("--listen %s: %s" % (wanted, exc))
+    if os.path.exists(cfg):
+        with open(cfg, "r") as fh:
+            rec = listenmod.recorded(fh.read())
+        have = rec.get("listen", listenmod.DEFAULT)
+        if wanted is not None and not _same_address(wanted, have):
+            extra = "" if listenmod.is_loopback(listenmod.parse(wanted)[0]) else \
+                "  (a non-loopback address also needs a token_file: the service refuses the network without one)"
+            raise UsageError("%s records %s and the installer never edits an existing host.yaml, so it will not change it to %s. "
+                             "To change it, put  listen: \"%s\"  under  service:  in that file and restart the service%s."
+                             % (cfg, have, wanted, wanted, extra))
+        if access is not None and access != rec.get("access", "token"):
+            raise UsageError("%s records access %s; the installer never edits it. Put  access: %s  under service: to change it."
+                             % (cfg, rec.get("access", "token"), access))
+        return None
+    owner_root = planmod.service_owner(prefix) is None
+    limit = listenmod.unprivileged_start()
+    if wanted is None:
+        if not ui.terminal:
+            if access is not None:
+                raise UsageError("--access needs --listen")
+            return None
+        offers = [("this machine only", listenmod.DEFAULT), ("the whole network", "0.0.0.0:80")]
+        ui.say("")
+        ui.say("Where should the dashboard and API listen?")
+        for i, (what, addr) in enumerate(offers, 1):
+            port = listenmod.parse(addr)[1]
+            ui.say("  %d) %-20s %-16s %s" % (i, what + ":", addr,
+                                             listenmod.state_text(port, listenmod.port_state(port, proc), owner_root, limit)))
+        ui.say("  or type ADDRESS:PORT")
+        while True:
+            reply = ui.ask("Choice:")
+            if reply.isdigit() and 1 <= int(reply) <= len(offers):
+                wanted = offers[int(reply) - 1][1]
+                break
+            try:
+                listenmod.parse(reply)
+                wanted = reply
+                break
+            except ValueError as exc:
+                ui.say("  not usable: %s" % exc)
+    host, port = listenmod.parse(wanted)
+    choice = {"listen": listenmod.join(host, port), "access": access, "prefix": prefix}
+    choice["summary"] = _summary(choice, listenmod.port_state(port, proc), owner_root, limit)
+    return choice
 
 
 def choose_features(args, manifest, ui):
@@ -140,9 +221,11 @@ def main(argv=None):
         manifest = featmod.load(args.source)
         prefix = choose_prefix(args, h, ui)
         feats = choose_features(args, manifest, ui)
+        listen_choice = choose_listen(args, h, ui, prefix)
         pin_list = featmod.pins(manifest, feats)
         ctx = {"prefix": prefix, "features": feats, "pins": pin_list, "pins_hash": featmod.pins_hash(pin_list),
-               "source": args.source, "staged": args.staged, "commit": args.commit, "args": args, "host": h}
+               "source": args.source, "staged": args.staged, "commit": args.commit, "args": args, "host": h,
+               "listen": listen_choice}
         plan = planmod.build(ctx)
 
         ui.say("")
@@ -207,7 +290,7 @@ def main(argv=None):
             elif sid == "venv":
                 applymod.build_venv(prefix, pin_list, args.wheelhouse, log, ui)
             elif sid == "config":
-                for note in applymod.write_config(prefix, log):
+                for note in applymod.write_config(prefix, log, listen_choice):
                     ui.say("      note: " + note)
             elif sid == "seed":
                 applymod.seed_store(prefix, log, ui)

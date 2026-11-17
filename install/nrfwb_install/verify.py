@@ -73,6 +73,38 @@ def unit_result(linked, unit_name):
     return (label, "FAIL", ("state: %s\n%s" % (state, status.strip())).strip())
 
 
+def http_result(prefix, wait=None, get=None):
+    """GET / on the address host.yaml records, once the unit is active. The dashboard page is served without a login,
+    so a 200 proves the service is bound where the installer said and is answering, not just running. `wait` and `get`
+    are seams for tests."""
+    from . import listen as listenmod
+    wait = wait or listenmod.wait_for_bind
+    cfg = os.path.join(prefix, "config", "host.yaml")
+    try:
+        with open(cfg, "r") as fh:
+            where = listenmod.recorded(fh.read()).get("listen") or listenmod.DEFAULT
+    except OSError:
+        where = listenmod.DEFAULT
+    try:
+        host, port = listenmod.parse(where)
+    except ValueError as exc:
+        return ("service: GET / answers", "FAIL", "host.yaml records %r, which is not usable: %s" % (where, exc))
+    url = "http://%s/" % listenmod.join(listenmod.client_address(host), port)
+    label = "service: GET %s answers" % url
+    if not wait(host, port):
+        return (label, "FAIL", "nothing accepted a connection within %.0f s of the unit being active" % listenmod.BIND_CEILING_S)
+    try:
+        if get is None:
+            import urllib.request
+            with urllib.request.urlopen(url, timeout=listenmod.HTTP_TIMEOUT_S) as resp:        # noqa: S310 (our own loopback URL)
+                status = resp.status
+        else:
+            status = get(url)
+    except Exception as exc:                                  # the answer is the evidence; any failure is a FAIL with it
+        return (label, "FAIL", "%s: %s" % (type(exc).__name__, exc))
+    return (label, "PASS", "") if status == 200 else (label, "FAIL", "HTTP %s" % status)
+
+
 def run(prefix, features, manifest, linked=None, unit_name=None):
     """[(label, status, detail)]. `linked` and `unit_name` add the service unit's line (see unit_result)."""
     results = []
@@ -101,5 +133,7 @@ def run(prefix, features, manifest, linked=None, unit_name=None):
     unit = unit_result(linked, unit_name)
     if unit:
         results.append(unit)
+        if unit[1] == "PASS":                                 # only a running service can answer; otherwise the line above says why
+            results.append(http_result(prefix))
     results.append(("hardware", "not verified: the installer never touches a board or a serial device", ""))
     return results

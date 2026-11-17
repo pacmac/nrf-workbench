@@ -186,16 +186,37 @@ Where should the dashboard and API listen?
 - **A non-loopback choice creates the token**: a random value written to `<prefix>/config/token`
   with mode 0600 and created exclusively, never overwritten on an upgrade. The installer prints the
   path, **never the value**, so it does not reach a log or scrollback.
-- **The choice is recorded in `config/host.yaml`** (`service.listen`, `service.access`). A re-run
-  never silently changes it: a different `--listen` shows the difference and asks (terminal), or
-  refuses and says how.
+- **The choice is recorded in `config/host.yaml`** (`service.listen`, `service.token_file` for a
+  non-loopback address, `service.access` only when `--access open-read` was given). **Built
+  2026-11-17 (afk), with these decisions:** the flags are `--listen ADDRESS:PORT` and `--access
+  token|open-read`; on a terminal with no flag the menu above is shown (each offer with its port's
+  real state); with no terminal and no `--listen` the answer is the product's own default (this
+  machine only) and **nothing is recorded**, so `--yes` never exposes the service; `--access` with no
+  address and no terminal is a usage error. **An existing `host.yaml` is never edited** (this is the
+  rule the file has always had, and the one that keeps a hand-tuned bench file safe), so against one a
+  `--listen` that differs from what it records, or an `--access` that differs, is **refused before any
+  plan, with the lines to put in the file**, and one that matches is accepted and changes nothing. A
+  file that records no address means the default, `127.0.0.1:8080`. The installer reads `service:` by
+  line match (no YAML parser); a file written in flow style (`service: {listen: …}`) reads as nothing
+  recorded. A port that is already in use is **reported** in the plan, not refused: the service
+  refuses to start and names the holder (`api.md`), and the installer never kills another process.
+  Reverse any of this by editing `host.yaml`: nothing else holds the choice.
+- **The token** is 32 random bytes, url-safe (43 characters, 256 bits), created with an exclusive
+  `open(..., "x")` and `chmod 0600` **before** the secret is written, so the file is never readable
+  with the value in it; an existing file or link is left alone (`kept`), so an upgrade never logs a
+  client out. The value is never printed, logged or put in a note; only the path is.
 - **The unit** lives at `<prefix>/systemd/nrf-workbench.service` and is linked into place
   (`systemctl link`), only where systemd is detected; elsewhere the installer prints how to run the
   service in the foreground. **Enabling it at boot and starting it are asked on a terminal**, and
   `--yes` does neither, because starting a network service is not a safe default. What the unit
   contains, and why, is under "the unit".
-- **Verify** requests `/` on the chosen address once the service is running, and reads
-  "not verified: the service was not started" when it was not.
+- **Verify** requests `/` on the recorded address once `systemctl is-active` says the unit is
+  active (a wildcard address is asked through loopback), and the unit line says "not verified: the
+  service was not started" when it was not. **`is-active` is not enough:** the unit is `Type=simple`,
+  so it is active when the process starts, before the port is bound. The request therefore retries a
+  refused connection every 0.1 s (a seventh of the 0.7 s start measured on the bench Pi) and gives up
+  at 3 s (4x that start); an already-bound port answers at once with no wait. A 200 is a PASS; any
+  other status, a refusal at 3 s or an unusable recorded address is a FAIL with the evidence.
 
 ## TOOL the unit: what it contains, and who it runs as
 
@@ -217,12 +238,14 @@ what the service needs, not copied from the transient unit.
 - **Serial access for a non-root owner is `SupplementaryGroups=<group>`**, with the group read
   from an existing serial node (`any Linux host`), never named. With no serial node to read the
   installer says it cannot tell and writes no group line; it does not guess `dialout`.
-- **`AmbientCapabilities=CAP_NET_BIND_SERVICE` is not written.** A non-root service needs it only
-  to bind below `ip_unprivileged_port_start`, and the installer does not yet know the port: the
-  listen choice ("where it listens") is its own task. A fresh install listens on 8080, which needs
-  nothing, and least privilege says a capability is added when a port needs it, not before. A
-  non-root service later pointed at port 80 fails to bind and systemd shows why; that is a visible
-  failure, not a silent one. **[gap: the listen task adds the capability beside the port check]**
+- **`AmbientCapabilities=CAP_NET_BIND_SERVICE` is written only when it is needed (built 2026-11-17).**
+  A non-root service needs it only to bind below `ip_unprivileged_port_start`. The port is the one
+  `host.yaml` records (the config step runs before the unit step; with none recorded it is 8080), and
+  the limit is read from the machine at that moment. The unit then also says
+  `CapabilityBoundingSet=CAP_NET_BIND_SERVICE`, so that one capability is all the service can ever
+  hold. A root service, a port at or above the limit, or a limit that cannot be read gets neither
+  line, and the file is rewritten (and `daemon-reload`ed) whenever the answer changes. Least privilege
+  stands: a capability is added when a port needs it, not before.
 - **`Restart=on-failure`, `RestartSec=2s`, `StartLimitIntervalSec=30s`, `StartLimitBurst=5`.** A
   crash comes back in 2 s, the value the transient unit has run with; **[measured on the bench Pi:
   kill -9, serving again 2.7 s later]**. The first draft of this spec leaned on systemd's default
@@ -254,8 +277,8 @@ what the service needs, not copied from the transient unit.
   enables nothing and uninstall removes it (it stops and disables the unit first, and touches only a
   link that points at its own prefix). **Verify** reads systemd's own answer
   (`systemctl is-active`): `active` is PASS, anything else (`activating` is a restart loop) is FAIL,
-  and a unit nobody started reads "not verified: the service was not started".
-  **[gap: the HTTP request to `/` waits for the listen task, which is what records the address]**
+  and a unit nobody started reads "not verified: the service was not started". The HTTP request
+  to `/` follows an active unit (see "where it listens").
 - **A second run rewrites the file only if its text changed**, so an upgrade does not touch the
   mtime of a unit that is right, and reports `unchanged`.
 

@@ -11,14 +11,36 @@ import sys
 import time
 
 from . import MARKER
+from . import listen as listenmod
 from .plan import (SEEDS, SYSTEM_UNIT_DIR, UNIT_NAME, console_path, link_state, links_path, service_owner,
                    sets_firmware, store_path, unit_path, unit_text, venv_python)
 
-def host_yaml_text(prefix):
+def token_path(prefix):
+    return os.path.join(prefix, "config", "token")
+
+
+def service_section(prefix, listen):
+    """The `service:` block for a recorded listen choice, or '' when none was made (the service then listens on
+    127.0.0.1:8080 only, its own default). `listen` is {'listen': 'ADDR:PORT', 'access': 'token'|'open-read'|None}.
+    Every value is a double-quoted JSON string, a valid YAML scalar. A non-loopback address names the token file,
+    which write_config creates: the service refuses to start on the network without one."""
+    if not listen or not listen.get("listen"):
+        return ""
+    host, _port = listenmod.parse(listen["listen"])
+    out = ["# Where the dashboard and API listen, chosen at install time (docs/specs/install.md).\n",
+           "service:\n", "  listen: %s\n" % json.dumps(listen["listen"])]
+    if not listenmod.is_loopback(host):
+        out.append("  token_file: %s\n" % json.dumps(token_path(prefix)))
+    if listen.get("access") == "open-read":
+        out.append("  access: open-read\n")
+    return "".join(out)
+
+
+def host_yaml_text(prefix, listen=None):
     """The host configuration a fresh install starts with: it names the package store, so the service turns
     the store on (docs/specs/install.md, "the core system's own folder"). The path is a double-quoted
     JSON string, which is also a valid YAML scalar, so no character in it can break the file."""
-    return ("# nrf-workbench host configuration. Created by the installer, never overwritten.\n"
+    return ("# nrf-workbench host configuration. Created by the installer, never overwritten.\n" + service_section(prefix, listen) +
             "# The package store: where uploaded firmware lives, one folder per project (docs/specs/firmware.md).\n"
             "# The console: the declared debug links (config/links.yaml, none declared yet) and the folder for its\n"
             "# macros (docs/specs/console.md). Other settings: docs/specs/core.md.\n"
@@ -196,19 +218,26 @@ def seed_store(prefix, log, ui, run=run_logged):
             log.stamp("seeded %s into project %s" % (name, project))
 
 
-def write_config(prefix, log):
+def write_config(prefix, log, listen=None):
     """Create what is missing, never overwrite. Returns notes for the person: things left as they were that
-    they may want to change."""
+    they may want to change. `listen` is the recorded choice for a NEW host.yaml (see service_section); an existing
+    host.yaml is never edited for it."""
     cfg = os.path.join(prefix, "config")
     os.makedirs(cfg, exist_ok=True)
     notes = []
-    files = dict(CONFIG_FILES, **{"host.yaml": host_yaml_text(prefix)})
+    files = dict(CONFIG_FILES, **{"host.yaml": host_yaml_text(prefix, listen)})
+    made_host_yaml = not os.path.exists(os.path.join(cfg, "host.yaml"))
     for name, text in sorted(files.items()):
         path = os.path.join(cfg, name)
         if not os.path.exists(path):          # never overwritten
             with open(path, "w") as fh:
                 fh.write(text)
             log.stamp("created " + path)
+    if made_host_yaml and listen and listen.get("listen") and not listenmod.is_loopback(listenmod.parse(listen["listen"])[0]):
+        # the token the new host.yaml names. Created exclusively, owner-only; the value is never printed or logged.
+        what = listenmod.create_token(token_path(prefix))
+        log.stamp("%s %s (mode 0600; the value is not logged)" % (what, token_path(prefix)))
+        notes.append("the service token is in %s (mode 0600); read it there, it is not printed" % token_path(prefix))
     ensure_store(prefix, log)
     with open(os.path.join(cfg, "host.yaml"), "r") as fh:
         if not sets_firmware(fh.read()):
@@ -217,10 +246,27 @@ def write_config(prefix, log):
     return notes
 
 
-def write_unit(prefix, host, log):
+def recorded_listen(prefix):
+    """The listen address host.yaml records, or the product's default when it records none or cannot be read."""
+    try:
+        with open(os.path.join(prefix, "config", "host.yaml"), "r") as fh:
+            return listenmod.recorded(fh.read()).get("listen") or listenmod.DEFAULT
+    except OSError:
+        return listenmod.DEFAULT
+
+
+def write_unit(prefix, host, log, sysctl=listenmod.SYSCTL_UNPRIVILEGED):
     """Write <prefix>/systemd/nrf-workbench.service. Returns 'created', 'updated' or 'unchanged'; a unit
-    that is already right is not rewritten, so its mtime does not move on an upgrade."""
-    text = unit_text(prefix, service_owner(prefix), host["serial_group"])
+    that is already right is not rewritten, so its mtime does not move on an upgrade. The port the service will
+    bind is the one host.yaml records (the config step ran first); a non-root service below the unprivileged
+    limit gets CAP_NET_BIND_SERVICE in its unit, and nothing else does."""
+    owner = service_owner(prefix)
+    try:
+        port = listenmod.parse(recorded_listen(prefix))[1]
+    except ValueError:
+        port = None                                   # an unusable address: the service says so itself when it starts
+    bind = port is not None and listenmod.needs_bind_capability(port, owner is None, listenmod.unprivileged_start(sysctl))
+    text = unit_text(prefix, owner, host["serial_group"], bind_capability=bind)
     path = unit_path(prefix)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     try:
