@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { readJson, writeFile, writeJson } from "./api.js";
-import { ENTER_BOUND_S, bytesText, clock, expectedRangeS, flashBoundS, rangeText, seconds, THROUGHPUT_FASTEST_BPS, THROUGHPUT_SLOWEST_BPS, when } from "./format.js";
+import { DEFAULT_PROJECT, ENTER_BOUND_S, PROJECT_NAME, PROJECT_RULE_TEXT, bytesText, clock, expectedRangeS, flashBoundS, rangeText, seconds, THROUGHPUT_FASTEST_BPS, THROUGHPUT_SLOWEST_BPS, when } from "./format.js";
 import { Button, Chip, Field, inputClass } from "./ui.jsx";
 import { ResultView } from "./Commands.jsx";
 
@@ -31,11 +31,18 @@ export default function FlashDialog({ board, commands, onClose, onDone }) {
   const flash = commands.find((c) => c.name === "programmer.flash") || null;
   const stream = commands.find((c) => c.name === "programmer.flash_stream") || null;
   const list = commands.find((c) => c.name === "firmware.list") || null;
+  const newFolder = commands.find((c) => c.name === "firmware.project_new") || null;
 
-  const [store, setStore] = useState(list ? null : []);          // null while loading
-  const [storeNote, setStoreNote] = useState("");
+  const [store, setStore] = useState(list ? null : { items: [], projects: [] });   // null while loading
+  const [storeError, setStoreError] = useState("");
+  const [attempt, setAttempt] = useState(0);                     // "Try again" runs the listing once more
   const [source, setSource] = useState(list && flash ? "store" : "file");
+  const [project, setProject] = useState(NONE);                  // the folder being browsed; nothing is preselected
   const [chosen, setChosen] = useState(NONE);                    // a stored id; nothing is preselected
+  const [folderName, setFolderName] = useState("");
+  const [folderNote, setFolderNote] = useState("");
+  const [uploadProject, setUploadProject] = useState(DEFAULT_PROJECT);
+  const [uploadNew, setUploadNew] = useState("");
   const [file, setFile] = useState(null);
   const [product, setProduct] = useState("");
   const [enterBound, setEnterBound] = useState(String(ENTER_BOUND_S));
@@ -51,22 +58,41 @@ export default function FlashDialog({ board, commands, onClose, onDone }) {
   useEffect(() => {
     if (!list) return undefined;
     let live = true;
+    // A refresh (a folder was made, a file was uploaded, Try again) keeps what is on screen until the answer comes:
+    // the list is not swapped for "Loading" and the folder selector is not rebuilt under the person's hands.
     readJson(list.path).then((r) => {
       if (!live) return;
-      if (r.ok && r.body && r.body.data) setStore(r.body.data.items || []);
-      else { setStore([]); setStoreNote(`The package store could not be listed (HTTP ${r.status}).`); }
-    }).catch(() => { if (live) { setStore([]); setStoreNote("The package store could not be listed."); } });
+      if (r.ok && r.body && r.body.data) {
+        const items = r.body.data.items || [];
+        // an older service lists no folders: they are the projects the packages name
+        const projects = r.body.data.projects || [...new Set(items.map((i) => i.project || DEFAULT_PROJECT))].sort();
+        setStore({ items, projects });
+        setStoreError("");
+      } else {
+        setStore({ items: [], projects: [] });
+        setStoreError(`HTTP ${r.status}` + (r.body && r.body.message ? `: ${r.body.message}` : ""));
+      }
+    }).catch((e) => {
+      // the reason is shown, not hidden: a request that never got an answer says how it failed
+      if (live) { setStore({ items: [], projects: [] }); setStoreError(e && e.message ? String(e.message) : String(e)); }
+    });
     return () => { live = false; };
-  }, [list]);
+  }, [list, attempt]);
 
   const pending = Boolean(outcome && outcome.pending);
-  const entry = store ? store.find((s) => s.sha256 === chosen) : null;
+  const items = store ? store.items : [];
+  const projects = store ? store.projects : [];
+  const inProject = items.filter((s) => (s.project || DEFAULT_PROJECT) === project);
+  // a choice belongs to the folder it was made in: changing folder leaves it behind with no reset to write
+  const entry = project !== NONE ? inProject.find((s) => s.sha256 === chosen) || null : null;
+  const uploadTarget = uploadNew.trim() !== "" ? uploadNew.trim() : uploadProject;
+  const uploadTargetOk = PROJECT_NAME.test(uploadTarget);
   const imageBytes = source === "store" ? (entry ? entry.image_bytes || entry.bytes : null) : file ? file.size : null;
   const derived = imageBytes ? flashBoundS(imageBytes) : null;
   const flashValue = flashBound !== null ? flashBound : derived !== null ? String(derived) : "";
   const range = imageBytes ? expectedRangeS(imageBytes) : null;
   const packageName = source === "store" ? (entry ? entry.name || entry.sha256.slice(0, 8) : "") : file ? file.name : "";
-  const ready = Boolean(imageBytes) && (source === "store" ? Boolean(entry && flash) : Boolean(file && stream));
+  const ready = Boolean(imageBytes) && (source === "store" ? Boolean(entry && flash) : Boolean(file && stream && uploadTargetOk));
   const canFlash = ready && !pending && flashValue !== "" && enterBound !== "" && Number(flashValue) > 0 && Number(enterBound) > 0;
 
   async function run(event) {
@@ -79,12 +105,52 @@ export default function FlashDialog({ board, commands, onClose, onDone }) {
     try {
       let r;
       if (source === "store") r = await writeJson(flash.path, { ...args, firmware: entry.sha256 });
-      else r = await writeFile(stream.path, { ...args, name: file.name }, file);
+      else r = await writeFile(stream.path, { ...args, name: file.name, project: uploadTarget }, file);
       setOutcome(r);
       if (onDone) onDone(r);
+      if (source === "file") setAttempt((n) => n + 1);          // the upload stays in the store: list it again
     } catch (e) {
       setOutcome({ status: 0, body: { message: "The request did not complete: " + String(e) } });
     }
+  }
+
+  async function createFolder() {
+    const name = folderName.trim();
+    if (!newFolder || !PROJECT_NAME.test(name)) return;
+    setFolderNote("");
+    try {
+      const r = await writeJson(newFolder.path, { project: name });
+      if (r.ok) {
+        setFolderName("");
+        setProject(name);                                       // open the folder just made
+        setAttempt((n) => n + 1);
+      } else setFolderNote((r.body && r.body.message) || `The folder was not created (HTTP ${r.status}).`);
+    } catch (e) {
+      setFolderNote("The request did not complete: " + String(e));
+    }
+  }
+
+  const folderOk = PROJECT_NAME.test(folderName.trim());
+
+  // A plain function that returns markup, not a component: a component defined here would be a new one on every
+  // render, and the text box would lose focus on each keystroke.
+  function folderControl() {
+    if (!newFolder) return null;
+    return (
+      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+        <Field label="New folder" hint={`${PROJECT_RULE_TEXT}.`}>
+          <div className="flex gap-2">
+            <input
+              className={inputClass} type="text" value={folderName} aria-label="New folder name" autoComplete="off" spellCheck="false"
+              onChange={(e) => { setFolderName(e.target.value); setFolderNote(""); }}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); createFolder(); } }}
+            />
+            <Button className="whitespace-nowrap" onClick={createFolder} disabled={!folderOk}>Create folder</Button>
+          </div>
+        </Field>
+        {folderNote && <p className="mt-2 text-sm text-red-700 dark:text-red-300" role="alert">{folderNote}</p>}
+      </div>
+    );
   }
 
   return (
@@ -110,7 +176,12 @@ export default function FlashDialog({ board, commands, onClose, onDone }) {
       {!flash && !stream ? (
         <p className="text-sm">Flashing is not available on this host (<span className="font-mono">programmer.flash</span> is absent; the Bench page says why).</p>
       ) : (
-        <form onSubmit={run} className="space-y-4">
+        <form
+          onSubmit={run}
+          // Enter in a text box must never start an erase: only the button does (implicit submission would)
+          onKeyDown={(e) => { if (e.key === "Enter" && e.target.tagName === "INPUT") e.preventDefault(); }}
+          className="space-y-4"
+        >
           <fieldset className="space-y-3" disabled={pending}>
             <legend className="mb-1 text-sm font-medium">Package</legend>
             <div className="flex flex-wrap gap-4 text-sm">
@@ -129,26 +200,65 @@ export default function FlashDialog({ board, commands, onClose, onDone }) {
             {source === "store" ? (
               store === null ? (
                 <p className="text-sm text-slate-600 dark:text-slate-400">Loading the store…</p>
-              ) : store.length === 0 ? (
-                <p className="text-sm text-slate-600 dark:text-slate-400">
-                  {storeNote || "The store is empty."}{stream && " Choose “A file from this computer” to upload one."}
-                </p>
+              ) : storeError ? (
+                <div className="space-y-2 text-sm" role="alert">
+                  <p>The package store could not be listed: <span className="font-mono">{storeError}</span>.</p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button onClick={() => setAttempt((n) => n + 1)}>Try again</Button>
+                    {stream && <span className="text-slate-600 dark:text-slate-400">Or choose “A file from this computer” to upload one.</span>}
+                  </div>
+                </div>
+              ) : items.length === 0 && projects.length === 0 ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    The store is empty.{stream && " Choose “A file from this computer” to upload one."}
+                  </p>
+                  {folderControl()}
+                </div>
               ) : (
-                <Field label="Stored package" hint="Newest first. Nothing is chosen for you.">
-                  <select className={inputClass} value={chosen} onChange={(e) => setChosen(e.target.value)} aria-label="Stored package">
-                    <option value={NONE}>Choose a package…</option>
-                    {store.map((s) => (
-                      <option key={s.sha256} value={s.sha256}>
-                        {(s.name || "unnamed")} · {bytesText(s.image_bytes || s.bytes)} · {s.sha256.slice(0, 8)} · {when(s.uploaded_at ? Date.parse(s.uploaded_at) / 1000 : null)}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
+                <div className="space-y-3">
+                  <Field label="Project folder" hint="One folder per project. Nothing is chosen for you.">
+                    <select className={inputClass} value={project} onChange={(e) => setProject(e.target.value)} aria-label="Project folder">
+                      <option value={NONE}>Choose a project…</option>
+                      {projects.map((p) => (
+                        <option key={p} value={p}>{p} ({items.filter((s) => (s.project || DEFAULT_PROJECT) === p).length})</option>
+                      ))}
+                    </select>
+                  </Field>
+                  {project !== NONE && (inProject.length === 0 ? (
+                    <p className="text-sm text-slate-600 dark:text-slate-400">The folder <span className="font-mono">{project}</span> is empty.</p>
+                  ) : (
+                    <Field label="Stored package" hint="Newest first. Nothing is chosen for you.">
+                      <select className={inputClass} value={entry ? chosen : NONE} onChange={(e) => setChosen(e.target.value)} aria-label="Stored package">
+                        <option value={NONE}>Choose a package…</option>
+                        {inProject.map((s) => (
+                          <option key={s.sha256} value={s.sha256}>
+                            {(s.name || "unnamed")} · {bytesText(s.image_bytes || s.bytes)} · {s.sha256.slice(0, 8)} · {when(s.uploaded_at ? Date.parse(s.uploaded_at) / 1000 : null)}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  ))}
+                  {folderControl()}
+                </div>
               )
             ) : (
-              <Field label="Package file (.zip)" hint="Uploaded to the service's store, then flashed, in one step. It stays in the store afterwards.">
-                <input className={inputClass} type="file" accept=".zip,application/zip" aria-label="Package file" onChange={(e) => setFile(e.target.files[0] || null)} />
-              </Field>
+              <div className="space-y-3">
+                <Field label="Package file (.zip)" hint="Uploaded to the service's store, then flashed, in one step. It stays in the store afterwards.">
+                  <input className={inputClass} type="file" accept=".zip,application/zip" aria-label="Package file" onChange={(e) => setFile(e.target.files[0] || null)} />
+                </Field>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Store it in project" hint="Each project is a folder in the store.">
+                    <select className={inputClass} value={uploadProject} onChange={(e) => setUploadProject(e.target.value)} aria-label="Store it in project">
+                      {[...new Set([DEFAULT_PROJECT, ...projects])].sort().map((p) => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Or a new project" hint={`A new folder. ${PROJECT_RULE_TEXT}.`}>
+                    <input className={inputClass} type="text" value={uploadNew} onChange={(e) => setUploadNew(e.target.value)} aria-label="Or a new project" autoComplete="off" spellCheck="false" />
+                  </Field>
+                </div>
+                {!uploadTargetOk && <p className="text-sm text-red-700 dark:text-red-300" role="alert">“{uploadTarget}” is not a project name: {PROJECT_RULE_TEXT}.</p>}
+              </div>
             )}
           </fieldset>
 

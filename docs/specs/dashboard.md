@@ -135,6 +135,33 @@ timer to hold it); both need a real flash, which waits for Peter. The service's 
 reads "...was written The board was sent..." with a missing full stop: that string is the programmer's, not the UI's,
 and is reported to its owner here, not changed.
 
+### The store in the dialog: project folders (added 2026-11-17, Peter: "the ability to browse and add a new folder")
+
+The store is a folder per project (`firmware.md`, "projects"), so the dialog browses it the same way.
+
+- **From the store is two choices, in order: a project folder, then a package in it.** Nothing is preselected,
+  neither the folder nor the package. Each folder shows how many packages it holds. A package chosen in one folder
+  is not carried into another: the choice is read as "the package, in the folder being browsed", so changing folder
+  needs no reset to write (a reset would be code that selects).
+- **"New folder" is in the dialog,** a text box and a button, shown only when the service lists
+  `firmware.project_new`. The name is checked against the service's rule first (the service is the authority and
+  checks again). A made folder opens, empty, and says so. The empty store also offers it.
+- **An upload names its project:** a selector of the folders (`unsorted` first), or a new name typed beside it,
+  which wins. A bad name is said, with the rule, and keeps the button disabled; nothing is sent for it.
+- **A listing that cannot be fetched shows why** (the request's own failure text, or the HTTP status and the
+  service's message) **and offers "Try again"**, which asks again and recovers without closing the dialog. A
+  refresh after a folder was made or an upload keeps the list on screen: it is not swapped for "Loading".
+- **Pressing Enter in any text box never starts a flash.** A form submits on Enter, and in this dialog the submit is
+  an erase. The form ignores Enter in a box, and the shared `Button` is `type="button"` unless a caller says
+  `submit`, because the browser's default inside a form is submit. **[found while building this: a button added to
+  the form without a type would have started a flash when pressed. Checked in the browser with a package chosen and
+  the button enabled, so a submit would have flashed.]**
+
+**Built and checked, 2026-11-17.** The browser check covers all of it, in the real browser on the fake bench:
+**288 checks, 0 failed**, three runs in a row. Three mutants were caught: the old `Button` default (pressing "Create
+folder" with a package chosen started a flash), no Enter guard (Enter in the product box started a flash), and the
+choice carried across folders.
+
 ## Files for the UI (added 2026-11-16, Peter: "get this completed")
 
 `ui/` (React 19, Vite 8, Tailwind 4, **exact versions pinned**, `package-lock.json` committed), the **built

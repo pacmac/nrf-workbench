@@ -24,6 +24,13 @@ export const FLASH_BOUND_FACTOR = 2;
 // 3x the worst measured handover (3 x 0.589 = 1.77 s), rounded up to a whole second.
 export const ENTER_BOUND_S = 2;
 
+// The service's project-name rule (docs/specs/firmware.md, "projects"): 1 to 64 characters from a-z 0-9 . _ - and
+// the first a letter or a digit. The service checks it too and is the authority; this only saves a round trip
+// for a name that is certain to be refused. 64 is the service's own bound, not a choice made here.
+export const PROJECT_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+export const PROJECT_RULE_TEXT = "1 to 64 characters: lower-case letters, digits, dot, underscore or hyphen, starting with a letter or a digit";
+export const DEFAULT_PROJECT = "unsorted";
+
 export function flashBoundS(imageBytes) {
   return Math.ceil((FLASH_BOUND_FACTOR * imageBytes) / THROUGHPUT_SLOWEST_BPS * 10) / 10;   // one decimal, rounded up
 }

@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.join(ROOT, "tests", "devices"))
 sys.path.insert(0, os.path.join(ROOT, "tests", "programmer"))
 
 import uvicorn  # noqa: E402
-from playwright.sync_api import sync_playwright  # noqa: E402
+from playwright.sync_api import expect, sync_playwright  # noqa: E402
 
 from nrf_workbench import service  # noqa: E402
 from nrf_workbench.core import config as cfgmod  # noqa: E402
@@ -159,13 +159,24 @@ def wait_or_show(dialog, locator, what):
 def flash_flows(page, bench, band, shot, tag):
     """Flash the fake board through the dialog three ways: an uploaded file, a stored package, and a refusal."""
     flash_button = lambda d: d.get_by_role("button", name=re.compile("Erase and flash"))   # noqa: E731
+    flash_posts = []
+    page.on("request", lambda r: flash_posts.append(r.url) if r.method == "POST" and "/api/programmer/flash" in r.url else None)
 
     # 1. a file from this computer (the store is empty, so the dialog says so)
     dialog = open_flash(page, band)
     wait_or_show(dialog, dialog.get_by_text("The store is empty"), "empty store")
     check("%s flash: an empty store is said, not shown as an empty list" % tag, True)
+    check("%s flash: an empty store still offers a new folder" % tag, dialog.get_by_label("New folder name").count() == 1)
     dialog.get_by_label("A file from this computer").check()
+    check("%s flash by upload: the project defaults to unsorted" % tag,
+          dialog.get_by_label("Store it in project").input_value() == "unsorted")
+    dialog.get_by_label("Or a new project").fill("Bad Name")
+    wait_or_show(dialog, dialog.get_by_text("is not a project name"), "a bad project name")
+    check("%s flash by upload: a bad project name is said before anything is sent" % tag, True)
     dialog.get_by_label("Package file").set_input_files(bench.package)
+    check("%s flash by upload: a bad project name keeps the button disabled even with a file" % tag,
+          flash_button(dialog).is_disabled())
+    dialog.get_by_label("Or a new project").fill("mt-alarm")
     size = os.path.getsize(bench.package)
     dialog.get_by_text("This erases").wait_for()
     check("%s flash: the confirmation names the board, the package and its size" % tag,
@@ -187,16 +198,59 @@ def flash_flows(page, bench, band, shot, tag):
     band.locator("ul").get_by_text(SERIAL).first.wait_for()
     check("%s flash by upload: the board is back in the live band" % tag, band.locator("ul").get_by_text("app", exact=True).count() >= 1)
 
-    # 2. from the store: the uploaded package is now listed; nothing is preselected
+    # 2. from the store: the folder the upload made is listed; nothing is preselected, not even a folder
     dialog = open_flash(page, band)
+    folder = dialog.get_by_label("Project folder")
+    folder.wait_for()
+    check("%s flash from the store: no folder is preselected" % tag, folder.input_value() == "")
+    check("%s flash from the store: the folder list names the new project and how many it holds" % tag,
+          "mt-alarm (1)" in folder.inner_text(), folder.inner_text())
+    check("%s flash from the store: no package list until a folder is chosen" % tag,
+          dialog.get_by_label("Stored package").count() == 0)
+    check("%s flash from the store: the button is disabled until a package is chosen" % tag, flash_button(dialog).is_disabled())
+    folder.select_option(value="mt-alarm")
     select = dialog.get_by_label("Stored package")
     select.wait_for()
     check("%s flash from the store: nothing is preselected" % tag, select.input_value() == "")
-    check("%s flash from the store: the button is disabled until one is chosen" % tag, flash_button(dialog).is_disabled())
     check("%s flash from the store: the entry shows its name and short id" % tag,
           "package.zip" in select.inner_text() or "unnamed" in select.inner_text(), select.inner_text())
     select.select_option(index=1)
     check("%s flash from the store: choosing one enables the button" % tag, not flash_button(dialog).is_disabled())
+
+    # a new folder from the dialog: it is created, opened and empty; the earlier choice is left behind
+    dialog.get_by_label("New folder name").fill("Bad Name")
+    check("%s new folder: a bad name keeps Create folder disabled" % tag,
+          dialog.get_by_role("button", name="Create folder").is_disabled())
+    dialog.get_by_label("New folder name").fill("alpha")
+    posts_before_create = len(flash_posts)
+    dialog.get_by_role("button", name="Create folder").click()
+    wait_or_show(dialog, dialog.get_by_text("is empty"), "a new folder")
+    check("%s new folder: pressing Create folder with a package chosen starts no flash" % tag,
+          len(flash_posts) == posts_before_create, flash_posts)
+    check("%s new folder: it is made and opened, empty" % tag, folder.input_value() == "alpha")
+    check("%s new folder: the package chosen in the other folder is not carried over" % tag,
+          flash_button(dialog).is_disabled() and dialog.get_by_label("Stored package").count() == 0)
+    folder.select_option(value="mt-alarm")
+    dialog.get_by_label("Stored package").select_option(index=1)
+
+    # Enter in a text box must never start an erase (the dialog's form would submit on it). The form is READY here:
+    # a package is chosen and the button is enabled, so a submit would flash.
+    before = len(flash_posts)
+    product = dialog.get_by_label(re.compile("The board must come back as"))
+    product.fill("x")
+    check("%s Enter test: the form is ready (the button is enabled)" % tag, not flash_button(dialog).is_disabled())
+    product.press("Enter")
+    page.evaluate("0")               # a round trip: any request the Enter started has been reported before this returns
+    check("%s Enter in the product box starts no flash" % tag, len(flash_posts) == before, flash_posts)
+    product.fill("")
+    box = dialog.get_by_label("New folder name")
+    box.fill("beta")
+    box.press("Enter")
+    expect(folder).to_have_value("beta", timeout=15000)       # a locator, re-resolved: the list may refresh under it
+    check("%s Enter in the new-folder box creates and opens the folder" % tag, folder.input_value() == "beta")
+    check("%s Enter in a text box starts no flash, however ready the form is" % tag, len(flash_posts) == before, flash_posts)
+    dialog.get_by_label("Project folder").select_option(value="mt-alarm")
+    dialog.get_by_label("Stored package").select_option(index=1)
     flash_button(dialog).click()
     dialog.get_by_role("status").filter(has_text="packets").first.wait_for()
     check("%s flash from the store: it flashed" % tag, "came back as" in dialog.inner_text())
@@ -209,6 +263,25 @@ def flash_flows(page, bench, band, shot, tag):
     check("%s flash refusal: it is not drawn as a success" % tag, "came back as" not in dialog.locator("[role=status]").last.inner_text()
           or dialog.get_by_text("suspect", exact=True).count() >= 1)
     shot("9b-flash-refused")
+    dialog.get_by_role("button", name="Close", exact=True).click()
+    dialog.wait_for(state="hidden")
+
+    # 4. the store cannot be listed (the request never gets an answer): the reason is shown and Try again recovers
+    def drop(route):
+        route.abort()
+
+    page.route("**/api/firmware/list", drop)
+    dialog = open_flash(page, band)
+    wait_or_show(dialog, dialog.get_by_role("alert").filter(has_text="could not be listed"), "a store that cannot be listed")
+    alert = dialog.get_by_role("alert").filter(has_text="could not be listed").inner_text()
+    check("%s store down: the message says why, not just that it failed" % tag, "Failed to fetch" in alert or "NetworkError" in alert or "failed" in alert.lower(), alert)
+    check("%s store down: Try again is offered" % tag, dialog.get_by_role("button", name="Try again").count() == 1)
+    check("%s store down: the button is disabled, nothing can be flashed" % tag, flash_button(dialog).is_disabled())
+    shot("9c-store-down")
+    page.unroute("**/api/firmware/list", drop)
+    dialog.get_by_role("button", name="Try again").click()
+    dialog.get_by_label("Project folder").wait_for()
+    check("%s store down: Try again lists the store once it answers" % tag, "mt-alarm (1)" in dialog.get_by_label("Project folder").inner_text())
     dialog.get_by_role("button", name="Close", exact=True).click()
     dialog.wait_for(state="hidden")
 

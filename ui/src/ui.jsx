@@ -40,7 +40,9 @@ export function Card({ title, aside, children, className }) {
   );
 }
 
-export function Button({ tone = "primary", className, ...props }) {
+// A button is `type="button"` unless a caller says "submit": the browser default inside a form is submit, and in
+// the flash dialog an unmarked button would start a flash.
+export function Button({ tone = "primary", type = "button", className, ...props }) {
   const styles = {
     primary: "bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400 dark:text-slate-950",
     danger: "bg-red-600 text-white hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-400 dark:text-slate-950",
@@ -48,6 +50,7 @@ export function Button({ tone = "primary", className, ...props }) {
   };
   return (
     <button
+      type={type}
       className={cx("min-h-10 rounded-lg px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50", styles[tone], className)}
       {...props}
     />
