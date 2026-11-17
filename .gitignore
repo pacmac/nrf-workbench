@@ -1,5 +1,7 @@
 # Local probe reports hold hostnames, serial numbers and USB paths; the repo is public.
 probes/
+# Screenshots Peter drops here show his router and network settings, passwords included; the repo is public.
+screenshots/
 __pycache__/
 *.pyc
 .venv/
