@@ -15,7 +15,7 @@ from ..devices import identity
 
 SLUG = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 IDS = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{4}$")
-# The rates termios names a constant for. 1200 is deliberately absent: a 1200-baud open IS the bootloader touch.
+# The standard rates the kernel names a constant for. 1200 is deliberately absent: a 1200-baud open IS the bootloader touch.
 BAUDS = (9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600)
 EOLS = ("\n", "\r", "\r\n")
 BACKENDS = ("usb-adapter", "pi-uart")

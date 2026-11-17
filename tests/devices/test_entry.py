@@ -365,17 +365,30 @@ class NeverTouchTwice(Base):
 
 class OnlyEntryTouches(unittest.TestCase):
     def test_no_other_module_opens_a_port_at_the_touch_baud_or_imports_a_serial_library(self):
-        # Fragments, so this file does not trip the host's port guard itself.
-        bad = re.compile("|".join(["serial" + r"\.Serial", "import " + "serial", "term" + "ios",
-                                   "TOUCH" + "_BAUD", r"\b1200\b"]))
+        # Fragments, so this file does not trip the host's port guard itself. Each pattern has the files allowed to
+        # contain it, and the allowances are NAMED here, not hidden in a loose pattern: the touch is entry.py's; the
+        # console's port module (docs/specs/console.md) is the one place a port is opened for reading and writing, and
+        # its links module has to name 1200 to refuse it. Nothing else may.
+        entry_py = os.path.join("devices", "entry.py")
+        port_py = os.path.join("console", "port.py")
+        links_py = os.path.join("console", "links.py")
+        rules = [("serial" + r"\.Serial", (entry_py, port_py)), ("import " + "serial", (entry_py, port_py)),
+                 ("term" + "ios", (entry_py, port_py)), ("TOUCH" + "_BAUD", (entry_py,)),
+                 (r"\b1200\b", (entry_py, links_py))]
+        base = os.path.join(ROOT, "nrf_workbench")
         offenders = []
-        for dirpath, _dirs, files in os.walk(os.path.join(ROOT, "nrf_workbench")):
+        for dirpath, _dirs, files in os.walk(base):
             for name in files:
-                if name.endswith(".py") and name != "entry.py":
-                    with open(os.path.join(dirpath, name)) as fh:
-                        if bad.search(fh.read()):
-                            offenders.append(os.path.join(dirpath, name))
-        self.assertEqual(offenders, [], "only entry.py is authorised to do this")
+                if not name.endswith(".py"):
+                    continue
+                path = os.path.join(dirpath, name)
+                rel = os.path.relpath(path, base)
+                with open(path) as fh:
+                    text = fh.read()
+                for pattern, allowed in rules:
+                    if rel not in allowed and re.search(pattern, text):
+                        offenders.append("%s: %s" % (rel, pattern))
+        self.assertEqual(offenders, [], "a file outside the named allowances opens a port or names the touch baud")
 
     def test_the_authorised_file_carries_its_authorisation_record(self):
         with open(os.path.join(ROOT, "nrf_workbench", "devices", "entry.py")) as fh:
