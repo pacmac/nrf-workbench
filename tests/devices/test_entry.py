@@ -372,9 +372,11 @@ class OnlyEntryTouches(unittest.TestCase):
         entry_py = os.path.join("devices", "entry.py")
         port_py = os.path.join("console", "port.py")
         links_py = os.path.join("console", "links.py")
+        # port.py and links.py name 1200 only to REFUSE it (a link's baud is never 1200, and the port module has no
+        # constant for it); entry.py is the touch itself.
         rules = [("serial" + r"\.Serial", (entry_py, port_py)), ("import " + "serial", (entry_py, port_py)),
                  ("term" + "ios", (entry_py, port_py)), ("TOUCH" + "_BAUD", (entry_py,)),
-                 (r"\b1200\b", (entry_py, links_py))]
+                 (r"\b1200\b", (entry_py, links_py, port_py))]
         base = os.path.join(ROOT, "nrf_workbench")
         offenders = []
         for dirpath, _dirs, files in os.walk(base):
