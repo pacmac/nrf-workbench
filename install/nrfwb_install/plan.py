@@ -2,6 +2,7 @@
 import json
 import os
 import pwd
+import re
 
 from . import MARKER
 
@@ -11,6 +12,17 @@ SYSTEM_UNIT_DIR = "/etc/systemd/system"   # where `systemctl link` puts the link
 
 def unit_path(prefix):
     return os.path.join(prefix, "systemd", UNIT_NAME)
+
+
+def sets_firmware(text):
+    """Whether a host.yaml appears to set paths.firmware. The installer is standard library only and has no
+    YAML parser, so this is a line match, and a miss only costs an unneeded note, never an edit."""
+    return re.search(r"^\s+firmware\s*:\s*\S", text, re.M) is not None
+
+
+def store_path(prefix):
+    """The package store: the core system's own folder for what the service writes (docs/specs/install.md)."""
+    return os.path.join(prefix, "data", "firmware")
 
 
 def unit_blocker(prefix):
@@ -157,7 +169,15 @@ def build(ctx):
     # 4. configuration, only what is missing
     cfg = os.path.join(prefix, "config")
     missing = [n for n in ("host.yaml", "units.yaml", "links.yaml") if not os.path.exists(os.path.join(cfg, n))]
-    steps.append({"id": "config", "title": "Create host configuration in %s (only files that are missing)" % cfg,
+    if not os.path.isdir(store_path(prefix)):
+        missing.append("data/firmware (the package store)")
+    try:
+        with open(os.path.join(cfg, "host.yaml"), "r") as fh:
+            if not sets_firmware(fh.read()):
+                missing.append("(host.yaml sets no paths.firmware: it is left as it is and the lines to add are printed)")
+    except OSError:
+        pass                                   # not there yet: it is created below with the store set
+    steps.append({"id": "config", "title": "Create host configuration in %s and the package store (only what is missing)" % cfg,
                   "lines": ["missing: " + ", ".join(missing)] if missing else [],
                   "skip": not missing, "why_skip": "all present; never overwritten", "needs_person": False})
 

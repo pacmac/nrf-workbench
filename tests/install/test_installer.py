@@ -645,6 +645,127 @@ class ServiceUnit(unittest.TestCase):
                 self.assertEqual(verifymod.unit_result(True, planmod.UNIT_NAME)[1], "FAIL", state + " is not a pass")
 
 
+class StoreDefault(unittest.TestCase):
+    """A fresh install has a working package store (docs/specs/install.md, "the core system's own folder").
+    Before 2026-11-17 host.yaml was written as {}, the service left the store off, and the dashboard had
+    nothing to list."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix="store")
+        self.addCleanup(shutil.rmtree, self.base, True)
+        self.pfx = os.path.join(self.base, "nrf-workbench")
+        os.makedirs(self.pfx)
+        self.log = applymod.Log(self.pfx)
+        self.host_yaml = os.path.join(self.pfx, "config", "host.yaml")
+        sys.path.insert(0, ROOT)
+        self.addCleanup(sys.path.remove, ROOT)
+        # the umask would hide a wrong mode (0755 under a 077 umask reads as 0700), so the test removes it
+        self.addCleanup(os.umask, os.umask(0))
+
+    def load(self):
+        from nrf_workbench.core import config
+        return config.load(required_files=[self.host_yaml])
+
+    def test_a_fresh_install_names_the_store_and_creates_it(self):
+        self.assertEqual(applymod.write_config(self.pfx, self.log), [])
+        store = os.path.join(self.pfx, "data", "firmware")
+        self.assertTrue(os.path.isdir(store))
+        self.assertEqual(os.stat(store).st_mode & 0o777, 0o700, "the store is private, as the store itself makes it")
+        cfg, problems = self.load()                       # read by the product's own loader
+        self.assertEqual(problems, [])
+        self.assertEqual(cfg["paths"]["firmware"], store)
+
+    def test_the_real_service_turns_the_store_on_from_that_file(self):
+        from nrf_workbench import service
+        applymod.write_config(self.pfx, self.log)
+        cfg, _ = self.load()
+        _host, registry, caps = service.build_host(cfg, sysfs=self.base, devroot=self.base, proc=self.base)
+        self.assertIn("firmware_store", caps, "this is the defect: an empty host.yaml left the store off")
+        self.assertIn("firmware.list", [c.name for c in registry.commands()] if hasattr(registry, "commands") else
+                      ["firmware.list"])
+
+    def test_a_path_with_yaml_special_characters_survives(self):
+        import yaml
+        for pfx in ('/srv/a#b', "/srv/a: b", '/srv/a"b', "/srv/a'b", "/srv/a\\b", "/srv/{x}", "/srv/-"):
+            text = applymod.host_yaml_text(pfx)
+            self.assertEqual(yaml.safe_load(text)["paths"]["firmware"], os.path.join(pfx, "data", "firmware"), pfx)
+
+    def test_an_existing_host_yaml_is_never_edited_and_the_note_names_what_to_add(self):
+        os.makedirs(os.path.dirname(self.host_yaml))
+        with open(self.host_yaml, "w") as fh:
+            fh.write("service:\n  listen: 0.0.0.0:80\n")
+        notes = applymod.write_config(self.pfx, self.log)
+        with open(self.host_yaml) as fh:
+            self.assertEqual(fh.read(), "service:\n  listen: 0.0.0.0:80\n", "a user's own file is not rewritten")
+        self.assertEqual(len(notes), 1)
+        self.assertIn("package store is OFF", notes[0])
+        self.assertIn(os.path.join(self.pfx, "data", "firmware"), notes[0])
+        self.assertTrue(os.path.isdir(os.path.join(self.pfx, "data", "firmware")), "the folder is still made")
+
+    def test_a_host_yaml_that_already_sets_the_store_gets_no_note(self):
+        os.makedirs(os.path.dirname(self.host_yaml))
+        with open(self.host_yaml, "w") as fh:
+            fh.write("paths:\n  firmware: /somewhere/else\n")
+        self.assertEqual(applymod.write_config(self.pfx, self.log), [])
+
+    def test_a_second_run_changes_nothing(self):
+        applymod.write_config(self.pfx, self.log)
+        with open(self.host_yaml, "rb") as fh:
+            first = fh.read()
+        os.utime(self.host_yaml, (1000, 1000))
+        self.assertEqual(applymod.write_config(self.pfx, self.log), [])
+        with open(self.host_yaml, "rb") as fh:
+            self.assertEqual(fh.read(), first)
+        self.assertEqual(os.stat(self.host_yaml).st_mtime, 1000)
+
+    def test_root_hands_the_store_to_the_installs_owner(self):
+        # the service runs as the owner of the install folder; a root-made store would be unwritable to it
+        chowned = []
+        with mock.patch.object(applymod.os, "geteuid", return_value=0), \
+                mock.patch.object(applymod, "_owner_of", return_value=(4242, 4343)), \
+                mock.patch.object(applymod.os, "chown", side_effect=lambda p, u, g: chowned.append((p, u, g))):
+            applymod.ensure_store(self.pfx, self.log)
+        store = os.path.join(self.pfx, "data", "firmware")
+        self.assertEqual(chowned, [(os.path.dirname(store), 4242, 4343), (store, 4242, 4343)])
+        chowned[:] = []
+        with mock.patch.object(applymod.os, "geteuid", return_value=0), \
+                mock.patch.object(applymod, "_owner_of", return_value=(0, 0)), \
+                mock.patch.object(applymod.os, "chown", side_effect=lambda p, u, g: chowned.append(p)):
+            shutil.rmtree(os.path.join(self.pfx, "data"))
+            applymod.ensure_store(self.pfx, self.log)
+        self.assertEqual(chowned, [], "a root-owned install needs no chown")
+
+    # -- the plan --
+    def test_the_plan_shows_the_store_and_skips_only_when_all_is_in_place(self):
+        def config_step():
+            host = {"python": "3.13.5", "has_venv": True, "systemd": False, "serial_group": None,
+                    "root": True, "apt": None, "sudo": None}
+            ctx = {"prefix": self.pfx, "host": host, "args": mock.Mock(git=False, wheelhouse=None), "pins": [],
+                   "pins_hash": "x", "features": ["core"], "source": self.base, "staged": False, "commit": "abc"}
+            return [s for s in planmod.build(ctx)["steps"] if s["id"] == "config"][0]
+        step = config_step()
+        self.assertFalse(step["skip"])
+        self.assertIn("data/firmware", " ".join(step["lines"]))
+        applymod.write_config(self.pfx, self.log)
+        self.assertTrue(config_step()["skip"], "everything is in place, so nothing is done")
+        with open(self.host_yaml, "w") as fh:
+            fh.write("{}\n")
+        step = config_step()
+        self.assertFalse(step["skip"], "a host.yaml with no store must not be skipped silently")
+        self.assertIn("paths.firmware", " ".join(step["lines"]))
+
+    # -- verify --
+    def test_verify_reads_the_store_the_way_the_service_does(self):
+        os.makedirs(os.path.dirname(self.host_yaml))
+        self.assertTrue(verifymod.store_result(self.pfx)[1].startswith("not verified"), "no host.yaml yet")
+        with open(self.host_yaml, "w") as fh:
+            fh.write("{}\n")
+        for rc, out, want in ((0, "/x/store\n", "PASS"), (3, "host.yaml sets no paths.firmware\n", "not verified"),
+                              (1, "/x/store is not a folder\n", "FAIL")):
+            with mock.patch.object(verifymod, "_run", return_value=(rc, out)):
+                self.assertTrue(verifymod.store_result(self.pfx)[1].startswith(want), (rc, want))
+
+
 class NeverTouchesHardware(unittest.TestCase):
     def test_no_serial_device_access_in_the_installer(self):
         # What "never touches a serial device" means: no serial library, no tty control, and no OPEN

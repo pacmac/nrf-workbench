@@ -11,11 +11,21 @@ import sys
 import time
 
 from . import MARKER
-from .plan import SYSTEM_UNIT_DIR, UNIT_NAME, link_state, service_owner, unit_path, unit_text, venv_python
+from .plan import (SYSTEM_UNIT_DIR, UNIT_NAME, link_state, service_owner, sets_firmware, store_path, unit_path,
+                   unit_text, venv_python)
+
+def host_yaml_text(prefix):
+    """The host configuration a fresh install starts with: it names the package store, so the service turns
+    the store on (docs/specs/install.md, "the core system's own folder"). The path is a double-quoted
+    JSON string, which is also a valid YAML scalar, so no character in it can break the file."""
+    return ("# nrf-workbench host configuration. Created by the installer, never overwritten.\n"
+            "# The package store: where uploaded firmware lives, one folder per project (docs/specs/firmware.md).\n"
+            "# Other settings: docs/specs/core.md.\n"
+            "paths:\n"
+            "  firmware: %s\n" % json.dumps(store_path(prefix)))
+
 
 CONFIG_FILES = {
-    "host.yaml": ("# nrf-workbench host configuration. Created by the installer, never overwritten.\n"
-                  "# Nothing is set by default; see docs/specs/core.md.\n{}\n"),
     "units.yaml": ("# Per-serial exceptions only (for example protected: true). A board not named here\n"
                    "# is flashable by default; this is not a roster.\nunits: {}\n"),
     "links.yaml": ("# Debug links. NONE is declared: nothing is wired to the board yet, and declaring a\n"
@@ -130,15 +140,45 @@ def build_venv(prefix, pins, wheelhouse, log, ui):
     log.stamp("built the virtual environment with %d pinned packages" % len(pins))
 
 
+def _owner_of(path):
+    st = os.stat(path)
+    return st.st_uid, st.st_gid
+
+
+def ensure_store(prefix, log):
+    """Create <prefix>/data/firmware (mode 0700, as the store itself creates it). The service runs as the
+    owner of the install folder (plan.service_owner), so a folder made by root inside a user's install is
+    handed to that user, or the service could not write to its own store."""
+    store = store_path(prefix)
+    created = not os.path.isdir(store)
+    os.makedirs(store, mode=0o700, exist_ok=True)
+    if created:
+        log.stamp("created " + store)
+        uid, gid = _owner_of(prefix)
+        if os.geteuid() == 0 and uid != 0:
+            for path in (os.path.dirname(store), store):
+                os.chown(path, uid, gid)
+
+
 def write_config(prefix, log):
+    """Create what is missing, never overwrite. Returns notes for the person: things left as they were that
+    they may want to change."""
     cfg = os.path.join(prefix, "config")
     os.makedirs(cfg, exist_ok=True)
-    for name, text in sorted(CONFIG_FILES.items()):
+    notes = []
+    files = dict(CONFIG_FILES, **{"host.yaml": host_yaml_text(prefix)})
+    for name, text in sorted(files.items()):
         path = os.path.join(cfg, name)
         if not os.path.exists(path):          # never overwritten
             with open(path, "w") as fh:
                 fh.write(text)
             log.stamp("created " + path)
+    ensure_store(prefix, log)
+    with open(os.path.join(cfg, "host.yaml"), "r") as fh:
+        if not sets_firmware(fh.read()):
+            notes.append("config/host.yaml sets no paths.firmware, so the package store is OFF. It was left as it is. "
+                         "To turn it on add:   paths:  /  firmware: %s" % json.dumps(store_path(prefix)))
+    return notes
 
 
 def write_unit(prefix, host, log):

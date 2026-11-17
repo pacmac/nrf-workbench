@@ -207,7 +207,8 @@ def main(argv=None):
             elif sid == "venv":
                 applymod.build_venv(prefix, pin_list, args.wheelhouse, log, ui)
             elif sid == "config":
-                applymod.write_config(prefix, log)
+                for note in applymod.write_config(prefix, log):
+                    ui.say("      note: " + note)
             elif sid == "unit":
                 written = applymod.write_unit(prefix, h, log)
                 ui.say("      unit file: " + written)

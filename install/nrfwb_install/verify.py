@@ -18,6 +18,37 @@ def _run(cmd, cwd=None):
         return 127, str(exc)
 
 
+_STORE_CHECK = (
+    "import os, sys\n"
+    "sys.path.insert(0, sys.argv[1])\n"
+    "from nrf_workbench.core import config\n"
+    "cfg, problems = config.load(required_files=[sys.argv[2]])\n"
+    "if problems:\n"
+    "    print('; '.join(problems)); sys.exit(1)\n"
+    "store = cfg['paths']['firmware']\n"
+    "if not store:\n"
+    "    print('host.yaml sets no paths.firmware'); sys.exit(3)\n"
+    "if not os.path.isdir(store):\n"
+    "    print('%s is not a folder' % store); sys.exit(1)\n"
+    "print(store)\n"
+)
+
+
+def store_result(prefix):
+    """The package store, read the way the service reads it: through the product's own configuration loader.
+    A host.yaml that sets no store is not a failure (a user may have turned it off), but it is not verified."""
+    label = "store: paths.firmware is set and its folder exists"
+    cfg = os.path.join(prefix, "config", "host.yaml")
+    if not os.path.exists(cfg):
+        return (label, "not verified: there is no config/host.yaml", "")
+    rc, out = _run([venv_python(prefix), "-I", "-c", _STORE_CHECK, prefix, cfg])
+    if rc == 0:
+        return (label, "PASS", out.strip())
+    if rc == 3:
+        return (label, "not verified: " + out.strip() + ", so the package store is off", "")
+    return (label, "FAIL", out.strip())
+
+
 def unit_state(unit_name):
     """systemd's own word for the unit: active, inactive, activating, failed ... ('unknown' if it cannot ask)."""
     rc, out = _run(["systemctl", "is-active", unit_name])
@@ -66,6 +97,7 @@ def run(prefix, features, manifest, linked=None, unit_name=None):
                 continue
             rc, out = _run([exe] + cmd[1:])
             results.append(("%s: %s" % (name, " ".join(cmd)), "PASS" if rc == 0 else "FAIL", out.strip()))
+    results.append(store_result(prefix))
     unit = unit_result(linked, unit_name)
     if unit:
         results.append(unit)
