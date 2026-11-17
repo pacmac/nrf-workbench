@@ -225,6 +225,14 @@ part of the product and nothing reads them.)
   `project` (from the folder it is in, so the folder is the one source of truth and the record does not
   repeat it), and the names of all projects, so the dashboard can show a folder with nothing in it.
 
+**Built and deployed, 2026-11-17** (commit `9453df0`). The store, the three new commands, the dashboard's folder
+browser and the installer's default store and seeded parking package are built and tested (846 tests, 288 browser
+checks). On the bench Pi the old flat store was backed up first (`data/firmware.bak-before-projects-20261117`),
+filed into `unsorted/` when the new code first opened it, and then moved into `testpartner/` (parking, pinscan) and
+`mt-alarm/` (mt-alarm v3); every image still hashes to its id. **Not exercised: a flash of the real board from the
+browser through a project folder.** The flash path is unchanged (the id and the stored file are what it uses), and
+a fake-bench flash from a project folder is checked, but nothing real was flashed.
+
 ## TOOL the commands
 
 All are registry rows, so the CLI, the HTTP API and the MCP tools all appear from them (`api.md`).
