@@ -135,6 +135,53 @@ timer to hold it); both need a real flash, which waits for Peter. The service's 
 reads "...was written The board was sent..." with a missing full stop: that string is the programmer's, not the UI's,
 and is reported to its owner here, not changed.
 
+### The Firmware page (added 2026-11-17, Peter: "this needs a project browser tab")
+
+Peter, 2026-11-17: "I can ONLY select a firmware from the flash modal, I cannot browse by project, I cannot add a
+new project, I cannot upload or delete a file / folder etc etc etc." The store has folders (`firmware.md`,
+"projects"); this page is where they are looked after. The flash dialog stays, for flashing; it is no longer the
+only way to see the store.
+
+- **Two panes, stacked on a phone.** Left: the projects, each with its package count, and a "New project" box. Right:
+  the chosen project. **Nothing is chosen for you**: with no project chosen the right pane says to choose one.
+- **A project's pane:** its packages, newest first; an **Upload** box (a file, and an optional name; the file's
+  name is used if none is given) that stores into this project; and **Delete project**, enabled only when the
+  project is empty, with the count and the reason shown when it is not (the service refuses a non-empty one as
+  well, `project_not_empty`).
+- **A package row** shows its name, short id (the full id in its tooltip), image size, packets, the SoftDevice it
+  needs, when it was uploaded and by whom, and three things to do: **Flash…**, **Move to** (a menu of the other
+  projects; a move is safe and reversible, so it asks nothing) and **Delete…**.
+- **Delete asks first, in a confirm dialog that names the package and its project and says it cannot be undone**
+  (the old image may be the only way back to a known state: `firmware.md`). The safe button, Cancel, has the focus.
+  A package a unit names as its way back is refused by the service (`in_use`) and the refusal is shown.
+  Deleting a project asks too.
+- **Flash… is the same flash dialog** opened with this package already chosen **by the person, who pressed it on this
+  package**: the board is named in the dialog and the erase still needs its own button. With no board attached the
+  buttons are disabled and say why; with several, a board is chosen first and none is chosen for you.
+- **Every write shows its whole Result** at the top of the page (class, code, message, data, evidence), as on the
+  Commands page, and the list refreshes without being swapped for "Loading". The page adds no rule of its own: every
+  refusal is the service's.
+- **Where Radix is used, and where it is not.** Two Radix primitives, pinned exactly, **only on this page**: the
+  **alert dialog** for the delete confirm (it traps focus, names itself to a screen reader as an alert, and needs a
+  deliberate answer) and the **dropdown menu** for the row's Move/Delete actions (menus are the hard part to get
+  right by hand). The native `<dialog>`, `<select>` and file input stay everywhere else: they work, they are
+  accessible, and the native select is better on a phone. Radix is unstyled, so our Tailwind classes and the rule
+  that every light colour has a dark partner are unchanged. **Measured cost: +30 kB gzip** (80 to 110 kB) for the two
+  packages, which Radix's own code and its helpers account for. If Radix stalls as a dependency, Base UI is the way
+  out: the use here is thin.
+
+**Built and checked, 2026-11-17.** In the real browser on the fake bench (light and dark, three widths, the page also
+in the navigation checks): projects with counts and nothing chosen for you; a project's packages; a bad project name
+refused before anything is sent, a good one made and opened; an upload into the chosen project under the name given;
+**uploading bytes the store already holds says which project has them and copies nothing**; Flash opens the dialog on
+the package pressed, with the erase still behind its own button; with two boards none is chosen and Flash waits; Move
+lists the other projects only; Delete asks first (Cancel and Escape delete nothing, the confirm does, and the focus
+starts on Cancel); a non-empty project cannot be deleted and says why, an empty one can, after asking: **343 checks,
+0 failed**. Six mutants were caught in the browser (Cancel deletes, delete a non-empty project, Flash with no board, a
+board picked for the person, delete without the confirm, an upload into the wrong project) and the delete-without-
+confirm one by a unit rule as well. **A defect the screenshots found:** the "More ▾" glyph rendered as an empty box on a
+machine without the font, so it is now a drawn chevron. **Not exercised: a flash of the real board from this page.**
+
 ### The in-progress indicator (added 2026-11-17, Peter: "an activity is actually in progress")
 
 A flash takes about 20 seconds and the board is erased from the first second, so the dashboard must say so to
@@ -263,6 +310,7 @@ the same rule as the commands. **[prior art: "absent, not broken"]**
 | **Bench band** (on every page, at the top) | everything attached, identified and grouped into rigs, with a readiness verdict per board, live; see the next section | `devices`, `guards` |
 | **Bench** | bench name, host (architecture, Pi or not, container), service status, the capability list with what is **missing and what it blocks** | `host.capabilities` |
 | **Devices** | one card per slot: state (`app`, `bootloader`, `two`, `unrecognised`, `absent`, `attached_no_node`, `handover`), identity (serial, ids, product), the node and **how it was resolved**, `node_joined`, who holds it, `protected` | `devices` |
+| **Firmware** | the package store as folders: the projects with how many packages each holds, the packages of the chosen project, and every store command from the page: new and delete project, upload, move, delete, and flash a package to an attached board | `firmware.*`, `programmer` |
 | **Flash** | pick a device and a package; the guard verdict as it happens; progress; the **whole** tool output; duration against the recorded healthy duration; every refusal with its code and evidence | `programmer`, `guards` |
 | **Console** | per link, a live log with a byte cursor, a send box (disabled with the reason if the link is receive-only), reply correlation, the boot counter, and the hints when a capture is silent | `console` |
 | **Activity** | every command from every caller (CLI, API, MCP, dashboard): who, what, class, code, time. Refusals are prominent. | the activity log |

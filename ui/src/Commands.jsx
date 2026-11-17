@@ -56,9 +56,9 @@ function ArgInput({ arg, value, onChange }) {
 }
 
 // The WHOLE Result is shown: class, code, message, then every byte of data and evidence.
-export function ResultView({ outcome }) {
+export function ResultView({ outcome, pendingText }) {
   if (!outcome) return null;
-  if (outcome.pending) return <p role="status" className="text-sm text-slate-600 dark:text-slate-400">Running… a flash takes about 20 seconds; the service answers when it is done.</p>;
+  if (outcome.pending) return <p role="status" className="text-sm text-slate-600 dark:text-slate-400">{pendingText || "Running… a flash takes about 20 seconds; the service answers when it is done."}</p>;
   const r = outcome.body;
   if (!r || typeof r !== "object" || !("class" in r)) {
     return (

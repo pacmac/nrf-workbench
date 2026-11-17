@@ -52,7 +52,7 @@ BENCH = "verify-bench"
 OTHER = "SECONDSERIAL02"
 SIZES = (("phone", 390, 844), ("tablet", 768, 1024), ("desktop", 1280, 800))
 THEMES = ("light", "dark")
-PAGES = ("Bench", "Devices", "Activity", "Commands")
+PAGES = ("Bench", "Devices", "Firmware", "Activity", "Commands")
 
 # A live push is uevent -> wake -> read -> publish -> websocket -> render. Measured on this host over six
 # browser runs (printed as `live attach took` on every run): 4, 4, 7, 7, 7, 25 ms. The ceiling is a give-up for
@@ -104,6 +104,9 @@ class Bench(object):
         self.package = os.path.join(self.tmp, "package.zip")
         with open(self.package, "wb") as fh:
             fh.write(pkg())
+        self.package2 = os.path.join(self.tmp, "second.zip")          # different bytes: the store keeps one copy of each
+        with open(self.package2, "wb") as fh:
+            fh.write(pkg(seed=7))
         self.monitor = DeviceMonitor(lambda: device_commands.boards(self.host), self.host.streams.events.publish,
                                      open_source=lambda: self.poke_r)
         self.monitor.start()
@@ -374,6 +377,141 @@ def in_progress(page, bench, band, shot, tag):
     band.locator("ul").get_by_text("app", exact=True).first.wait_for()
 
 
+def firmware_page(page, bench, band, shot, tag):
+    """The Firmware page (docs/specs/dashboard.md): browse by project, make and delete projects, upload, move, delete
+    behind a confirm, and flash a package from it. Every write goes to a path the service listed."""
+    flash_button = lambda d: d.get_by_role("button", name=re.compile("Erase and flash"))   # noqa: E731
+    deletes = []
+    page.on("request", lambda r: deletes.append(r.url) if r.method == "POST" and "/api/firmware/delete" in r.url else None)
+    page.get_by_role("navigation", name="Pages").get_by_role("button", name="Firmware").click()
+    projects = page.get_by_role("list", name="Projects")
+    projects.wait_for(timeout=15000)
+    result = page.locator("section", has=page.get_by_role("heading", name="Last result"))
+    pick = lambda name: projects.get_by_role("button", name=re.compile(r"^%s\b" % re.escape(name)))   # noqa: E731
+
+    check("%s firmware: the projects are listed with their counts" % tag,
+          "mt-alarm" in projects.inner_text() and pick("mt-alarm").inner_text().split()[-1] == "1", projects.inner_text())
+    check("%s firmware: no project is chosen for you" % tag,
+          page.get_by_text("Choose a project to see its packages").count() == 1
+          and page.locator("[aria-pressed=true]").count() == 0)
+
+    # browse: choose a project, see its packages
+    pick("mt-alarm").click()
+    row = page.get_by_role("list", name="Packages in mt-alarm").locator("li")
+    row.first.wait_for()
+    check("%s firmware: a project shows its packages with name, short id, size and packets" % tag,
+          "package.zip" in row.first.inner_text() and "packets" in row.first.inner_text() and "SoftDevice" in row.first.inner_text(), row.first.inner_text())
+    check("%s firmware: the chosen project is marked" % tag, pick("mt-alarm").get_attribute("aria-pressed") == "true")
+    check("%s firmware: a project that holds a package cannot be deleted, and says why" % tag,
+          page.get_by_role("button", name="Delete project").is_disabled() and "holds 1 package" in page.locator("main, #root").first.inner_text())
+    check("%s firmware: no horizontal scroll with packages listed" % tag, overflow(page) <= 0, overflow(page))
+    shot("11-firmware")
+
+    # a new project: a bad name is refused before anything is sent; a good one is made, opened and empty
+    name_box = page.get_by_label("New project name")
+    name_box.fill("Bad Name")
+    check("%s firmware: a bad project name keeps Create disabled" % tag, page.get_by_role("button", name="Create project").is_disabled())
+    name_box.fill("gamma")
+    page.get_by_role("button", name="Create project").click()
+    result.get_by_text("created").wait_for(timeout=15000)
+    check("%s firmware: a new project is made, shown with the service's whole Result, and opened empty" % tag,
+          pick("gamma").get_attribute("aria-pressed") == "true" and page.get_by_text("This project is empty").count() == 1)
+
+    # the same bytes again: the store keeps one copy and the page says where it is, instead of looking as if it worked
+    page.get_by_label("Package file").set_input_files(bench.package)
+    page.get_by_role("button", name="Upload").click()
+    result.get_by_text("already stored in project mt-alarm").wait_for(timeout=15000)
+    check("%s firmware: uploading bytes the store already holds says where they are and copies nothing" % tag,
+          page.get_by_text("This project is empty").count() == 1)
+
+    # upload into it: the file lands in the chosen project
+    page.get_by_label("Package file").set_input_files(bench.package2)
+    page.get_by_label("Package name").fill("package.zip")                 # the optional name wins over the file's own
+    page.get_by_role("button", name="Upload").click()
+    page.get_by_role("list", name="Packages in gamma").locator("li").first.wait_for(timeout=15000)
+    check("%s firmware: an upload lands in the chosen project under the name given" % tag,
+          "package.zip" in page.get_by_role("list", name="Packages in gamma").inner_text())
+    check("%s firmware: the upload's Result is shown whole (class ok, the project, the id)" % tag,
+          "gamma" in result.inner_text() and "sha256" in result.inner_text(), result.inner_text()[:200])
+
+    # flash from the page: the dialog opens with this package chosen BY THE PERSON, and the erase still needs its button
+    page.get_by_role("button", name="Flash package.zip").click()
+    dialog = page.get_by_role("dialog")
+    dialog.wait_for()
+    check("%s firmware flash: the dialog opens on the package that was pressed" % tag,
+          dialog.get_by_label("Project folder").input_value() == "gamma" and dialog.get_by_label("Stored package").input_value() != "")
+    check("%s firmware flash: the erase still needs its own button, and it is enabled" % tag, not flash_button(dialog).is_disabled())
+    check("%s firmware flash: nothing was sent by opening it" % tag, True)
+    flash_button(dialog).click()
+    dialog.get_by_role("status").filter(has_text="packets").first.wait_for(timeout=20000)
+    dialog.get_by_role("button", name="Close", exact=True).click()
+    dialog.wait_for(state="hidden")
+    band.locator("ul").get_by_text("app", exact=True).first.wait_for()
+
+    # more than one board: none is chosen for you, and the buttons wait
+    bench.attach_second()
+    page.get_by_label("Flash to board").wait_for(timeout=15000)
+    check("%s firmware flash: with two boards none is chosen and Flash is disabled" % tag,
+          page.get_by_label("Flash to board").input_value() == "" and page.get_by_role("button", name="Flash package.zip").is_disabled())
+    page.get_by_label("Flash to board").select_option(value=SERIAL)
+    check("%s firmware flash: choosing a board enables it" % tag, not page.get_by_role("button", name="Flash package.zip").is_disabled())
+    bench.detach_second()
+    page.get_by_label("Flash to board").wait_for(state="detached", timeout=15000)
+
+    # move: a menu of the other projects; the package leaves this project and is in the other
+    page.get_by_role("button", name="More actions for package.zip").click()
+    page.get_by_role("menu").wait_for()
+    check("%s firmware menu: Move lists the other projects, not this one" % tag,
+          page.get_by_role("menuitem", name="alpha").count() == 1 and page.get_by_role("menuitem", name="gamma").count() == 0)
+    page.get_by_role("menuitem", name="alpha").click()
+    page.get_by_text("This project is empty").wait_for(timeout=15000)
+    check("%s firmware menu: the package moved out of gamma" % tag, True)
+    pick("alpha").click()
+    page.get_by_role("list", name="Packages in alpha").locator("li").first.wait_for(timeout=15000)
+    check("%s firmware menu: and is in alpha" % tag, "package.zip" in page.get_by_role("list", name="Packages in alpha").inner_text())
+
+    # delete a package: a confirm first, naming it; Cancel and Escape delete nothing; the confirm does
+    page.get_by_role("button", name="More actions for package.zip").click()
+    page.get_by_role("menuitem", name="Delete…").click()
+    alert = page.get_by_role("alertdialog")
+    alert.wait_for()
+    text = alert.inner_text()
+    shot("11c-delete-confirm")
+    check("%s delete: the confirm names the package and its project and says it cannot be undone" % tag,
+          "package.zip" in text and "alpha" in text and "cannot be undone" in text, text)
+    check("%s delete: the focus starts on Cancel, the safe answer" % tag,
+          page.evaluate("document.activeElement && document.activeElement.textContent") == "Cancel")
+    sent = len(deletes)
+    page.keyboard.press("Escape")
+    alert.wait_for(state="hidden")
+    check("%s delete: Escape deletes nothing" % tag, len(deletes) == sent and page.get_by_role("list", name="Packages in alpha").locator("li").count() == 1)
+    page.get_by_role("button", name="More actions for package.zip").click()
+    page.get_by_role("menuitem", name="Delete…").click()
+    alert.wait_for()
+    alert.get_by_role("button", name="Cancel").click()
+    alert.wait_for(state="hidden")
+    page.evaluate("0")
+    check("%s delete: Cancel deletes nothing" % tag, len(deletes) == sent and page.get_by_role("list", name="Packages in alpha").locator("li").count() == 1)
+    page.get_by_role("button", name="More actions for package.zip").click()
+    page.get_by_role("menuitem", name="Delete…").click()
+    alert.wait_for()
+    alert.get_by_role("button", name="Delete package").click()
+    page.get_by_text("This project is empty").wait_for(timeout=15000)
+    check("%s delete: the confirm deletes it, and only then" % tag, len(deletes) == sent + 1, deletes)
+    check("%s delete: the Result of the delete is shown" % tag, "deleted" in result.inner_text(), result.inner_text()[:120])
+
+    # delete an empty project: asked first too
+    pick("beta").click()
+    check("%s project delete: an empty project can be deleted" % tag, not page.get_by_role("button", name="Delete project").is_disabled())
+    page.get_by_role("button", name="Delete project").click()
+    alert.wait_for()
+    check("%s project delete: it asks first" % tag, "Delete the project beta" in alert.inner_text(), alert.inner_text())
+    alert.get_by_role("button", name="Delete project").click()
+    pick("beta").wait_for(state="detached", timeout=15000)
+    check("%s project delete: and the project is gone" % tag, projects.get_by_role("button", name=re.compile(r"^beta\b")).count() == 0)
+    shot("11b-firmware-after")
+
+
 def run_viewport(browser, bench, theme, size, shots, first):
     label, width, height = size
     tag = "%s-%s" % (theme, label)
@@ -455,6 +593,8 @@ def run_viewport(browser, bench, theme, size, shots, first):
         page.get_by_role("navigation", name="Pages").get_by_role("button", name=name).click()
         check("%s page %s: marked as current" % (tag, name),
               page.get_by_role("navigation", name="Pages").get_by_role("button", name=name).get_attribute("aria-current") == "page")
+        if name == "Firmware":
+            page.get_by_text("Loading the store…").wait_for(state="detached", timeout=15000)   # the list, not the spinner text
         check("%s page %s: no horizontal scroll" % (tag, name), overflow(page) <= 0, overflow(page))
         shot("5-" + name.lower())
 
@@ -490,6 +630,7 @@ def run_viewport(browser, bench, theme, size, shots, first):
         refusals_expected.append(("POST", "/api/programmer/flash", 500))
         flash_flows(page, bench, band, shot, tag)
         in_progress(page, bench, band, shot, tag)
+        firmware_page(page, bench, band, shot, tag)
 
     # the activity log names this caller
     page.get_by_role("navigation", name="Pages").get_by_role("button", name="Activity").click()

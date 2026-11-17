@@ -9,11 +9,12 @@ import Band from "./Band.jsx";
 import Working from "./Working.jsx";
 import Bench from "./Bench.jsx";
 import Devices from "./Devices.jsx";
+import Firmware from "./Firmware.jsx";
 import Activity from "./Activity.jsx";
 import Commands from "./Commands.jsx";
 import FlashDialog from "./FlashDialog.jsx";
 
-const PAGES = [["bench", "Bench"], ["devices", "Devices"], ["activity", "Activity"], ["commands", "Commands"]];
+const PAGES = [["bench", "Bench"], ["devices", "Devices"], ["firmware", "Firmware"], ["activity", "Activity"], ["commands", "Commands"]];
 
 // How many activity rows the browser keeps in memory. Same derivation as the draw limit: the server's retention
 // is the real bound, this only stops a tab that stays open for weeks from growing without limit. 5 x the
@@ -48,6 +49,8 @@ export default function App() {
   const [running, setRunning] = useState([]);                    // started and not yet ended, from the activity feed
   const [info, setInfo] = useState({ commands: null, capabilities: null, streams: null, status: null });
   const [flashing, setFlashing] = useState(null);
+  const [flashInitial, setFlashInitial] = useState(null);        // a package chosen on the Firmware page, or none
+  const openFlash = useCallback((board, initial = null) => { setFlashInitial(initial); setFlashing(board); }, []);
   const feedRef = useRef(null);
 
   const refreshSession = useCallback(async () => {
@@ -171,15 +174,16 @@ export default function App() {
           unavailable={unavailable}
           ticker={ticker}
           onReconnect={() => feedRef.current && feedRef.current.reconnect()}
-          onFlash={setFlashing}
+          onFlash={openFlash}
         />
         {page === "bench" && <Bench name={name} session={session} info={info} feed={feed} />}
-        {page === "devices" && <Devices boards={boards} boardsAt={boardsAt} onFlash={setFlashing} />}
+        {page === "devices" && <Devices boards={boards} boardsAt={boardsAt} onFlash={openFlash} />}
+        {page === "firmware" && <Firmware commands={info.commands} boards={boards} onFlash={openFlash} onDone={onCommandDone} />}
         {page === "activity" && <Activity activity={activity} />}
         {page === "commands" && <Commands commands={info.commands} onDone={onCommandDone} />}
       </div>
 
-      {flashing && <FlashDialog board={flashing} commands={info.commands || []} onDone={onCommandDone} onClose={() => setFlashing(null)} />}
+      {flashing && <FlashDialog board={flashing} commands={info.commands || []} initial={flashInitial} onDone={onCommandDone} onClose={() => setFlashing(null)} />}
     </div>
   );
 }

@@ -14,6 +14,7 @@ crafted bad source FAILS it (a rule that never fires proves nothing).
     placeholder and uses only relative asset URLs.
 Run:  python3 tests/dashboard/test_ui_rules.py
 """
+import json
 import os
 import re
 import sys
@@ -189,11 +190,72 @@ class FlashDerivation(unittest.TestCase):
         with open(os.path.join(SRC, "FlashDialog.jsx")) as fh:
             dialog = fh.read()
         self.assertIn("const NONE = \"\";", dialog)
-        self.assertIn("useState(NONE)", dialog)
+        # the only way a package is chosen before the person touches the dialog is `initial`, which the Firmware page
+        # passes when the person pressed Flash on that package; with none, nothing is chosen
+        self.assertIn("useState(initial ? initial.id : NONE)", dialog)
+        self.assertIn("useState(initial ? initial.project : NONE)", dialog)
         self.assertIn("useState(\"\")", dialog)                      # the product check starts empty
         self.assertNotIn("useState(board.product", dialog)
         self.assertNotIn("setChosen(", dialog.split("onChange={(e) => setChosen(e.target.value)}")[0],
                          "the package is set only by the person's choice")
+
+
+class FlashInitial(unittest.TestCase):
+    """Only a person pressing Flash on a package on the Firmware page may hand the flash dialog a package."""
+
+    def read(self, name):
+        with open(os.path.join(SRC, name)) as fh:
+            return fh.read()
+
+    def test_only_the_firmware_page_passes_an_initial_package(self):
+        for name in sorted(os.listdir(SRC)):
+            if not name.endswith(".jsx") or name in ("Firmware.jsx", "App.jsx", "FlashDialog.jsx"):
+                continue
+            text = self.read(name)
+            self.assertNotRegex(text, r"initial=\{", "%s must not hand the dialog a package" % name)
+            for call in re.findall(r"onFlash\(([^)]*)\)", text):
+                self.assertNotIn(",", call, "%s calls onFlash with more than the board: %s" % (name, call))
+        self.assertIn("onFlash(flashBoard, { project, id: s.sha256 })", self.read("Firmware.jsx"))
+        app = self.read("App.jsx")
+        self.assertEqual(app.count("initial={flashInitial}"), 1)
+        self.assertIn("setFlashInitial(initial)", app)
+
+    def test_the_firmware_page_flashes_only_to_a_board_that_is_one_or_chosen(self):
+        page = self.read("Firmware.jsx")
+        self.assertIn("boards && boards.length === 1 ? boards[0] : (boards || []).find((b) => b.serial === boardSerial) || null", page)
+        self.assertIn("disabled={!flashBoard || pending}", page)
+        self.assertNotIn("setBoardSerial(boards", page, "a board is never chosen for the person")
+
+
+class RadixOnlyWhereSpecified(unittest.TestCase):
+    """Radix is on the Firmware page only, pinned exactly, and just the two primitives the spec names."""
+
+    def test_the_radix_imports_are_the_two_and_only_in_the_firmware_page(self):
+        found = {}
+        for name in sorted(os.listdir(SRC)):
+            if name.endswith((".jsx", ".js")):
+                with open(os.path.join(SRC, name)) as fh:
+                    for line in fh:
+                        if "@radix-ui/" in line and line.lstrip().startswith("import"):
+                            found.setdefault(name, []).append(line.split("from")[1].strip().strip(";").strip('"'))
+        self.assertEqual(found, {"Firmware.jsx": ["@radix-ui/react-alert-dialog", "@radix-ui/react-dropdown-menu"]})
+
+    def test_the_radix_packages_are_pinned_exactly(self):
+        with open(os.path.join(ROOT, "ui", "package.json")) as fh:
+            deps = json.load(fh)["dependencies"]
+        radix = dict((k, v) for k, v in deps.items() if k.startswith("@radix-ui/"))
+        self.assertEqual(sorted(radix), ["@radix-ui/react-alert-dialog", "@radix-ui/react-dropdown-menu"])
+        for name, version in radix.items():
+            self.assertRegex(version, r"^\d+\.\d+\.\d+$", "%s is not an exact version" % name)
+
+    def test_every_delete_goes_through_the_confirm(self):
+        page = open(os.path.join(SRC, "Firmware.jsx")).read()
+        # a delete command is only ever sent from an `ask` run by the confirm's action, never from a click directly
+        self.assertEqual(page.count("writeJson(del.path"), 1)
+        self.assertEqual(page.count("removeProject"), 2)          # the definition and the one `ask` that runs it
+        self.assertIn("run: () => write(writeJson(del.path", page)
+        self.assertIn("onClick={() => ask.run()}", page)
+        self.assertNotIn("onSelect={() => write(writeJson(del.path", page)
 
 
 class BadSource(unittest.TestCase):

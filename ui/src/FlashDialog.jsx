@@ -26,7 +26,9 @@ export function verdictLine(result, expected) {
   return parts.length ? parts.join(" · ") : null;
 }
 
-export default function FlashDialog({ board, commands, onClose, onDone }) {
+// `initial` ({project, id}) is a package the PERSON chose on the Firmware page by pressing Flash on it; opened from
+// the band or the Devices page there is none and nothing is chosen. The erase still needs its own button.
+export default function FlashDialog({ board, commands, initial, onClose, onDone }) {
   const ref = useRef(null);
   const flash = commands.find((c) => c.name === "programmer.flash") || null;
   const stream = commands.find((c) => c.name === "programmer.flash_stream") || null;
@@ -37,8 +39,8 @@ export default function FlashDialog({ board, commands, onClose, onDone }) {
   const [storeError, setStoreError] = useState("");
   const [attempt, setAttempt] = useState(0);                     // "Try again" runs the listing once more
   const [source, setSource] = useState(list && flash ? "store" : "file");
-  const [project, setProject] = useState(NONE);                  // the folder being browsed; nothing is preselected
-  const [chosen, setChosen] = useState(NONE);                    // a stored id; nothing is preselected
+  const [project, setProject] = useState(initial ? initial.project : NONE);   // the folder being browsed
+  const [chosen, setChosen] = useState(initial ? initial.id : NONE);           // a stored id; only the person's choice
   const [folderName, setFolderName] = useState("");
   const [folderNote, setFolderNote] = useState("");
   const [uploadProject, setUploadProject] = useState(DEFAULT_PROJECT);
