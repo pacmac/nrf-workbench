@@ -23,12 +23,16 @@ DEFAULTS = {
         "token_file": None,
         "bench_name": None,             # shown in the dashboard's title; unset means this machine's host name
     },
-    "paths": {"lock": None, "profiles": None, "firmware": None, "units": None},
+    # `links` is links.yaml (the declared debug links) and `console` a folder for the console's own data (the macros):
+    # with either unset there is no console (docs/specs/console.md, "slice 1").
+    "paths": {"lock": None, "profiles": None, "firmware": None, "units": None, "links": None, "console": None},
     # Each retained stream needs BOTH bounds and has NO default: an unbounded log is retained for ever by
-    # oversight (core.md, "the event bus"). With neither set, the stream is absent and says why.
+    # oversight (core.md, "the event bus"). With neither set, the stream is absent and says why. The console's
+    # `retain` counts LINES.
     "streams": {
         "events": {"retain": None, "max_age_days": None},
         "activity": {"retain": None, "max_age_days": None},
+        "console": {"retain": None, "max_age_days": None},
     },
 }
 
@@ -43,6 +47,8 @@ ENV = {
     "NRFWB_PROFILES": ("paths", "profiles"),
     "NRFWB_FIRMWARE_DIR": ("paths", "firmware"),
     "NRFWB_UNITS": ("paths", "units"),
+    "NRFWB_LINKS": ("paths", "links"),
+    "NRFWB_CONSOLE_DIR": ("paths", "console"),
 }
 
 ACCESS_MODES = ("token", "open-read")

@@ -176,6 +176,70 @@ adapter. The log is append-only with a byte cursor. **[prior art]** This is why 
 `needs_service` while the others also work as a one-shot with no service: a one-shot opens the
 adapter itself, exclusively, and is refused with `port_held` if the service owns it.
 
+## TOOL slice 1: what is built first (agreed 2026-11-17)
+
+Peter, 2026-11-17: "we need a serial console, the serial console needs a command line input so that it can
+interract with the device ... select a connected dongle or GPIO pins ... shortcut commands or macros ... history
+... up and down arrow ... just like a console." The dashboard page is a separate task; this is the backend it sits on.
+The rest of this spec stays draft. **Built in slice 1:** the `usb-adapter` backend, `console.links`,
+`console.since`, `console.send`, `console.reopen`, the macros, and a live feed. **Not in slice 1, and said so:**
+`console.capture` (a stream), `reopen_after` and sleep handling, the `pi-uart` backend, the boot-counter parse, RTT
+and NUS.
+
+- **The pins option waits.** "A dongle or GPIO pins" is `usb-adapter` or `pi-uart`. The Pi's header UART is **off on
+  this Pi** and the kernel console would claim it (`probes.md`), and which pins to wire is Peter's choice. So the
+  page offers whatever links are declared; the first is the dongle. A `pi-uart` link is declared the same way and
+  appears in the same list the day its backend lands; nothing in the page or the commands changes.
+- **Configuration, no defaults** (`install.md`): `paths.links` is `links.yaml`; `paths.console` is a folder for the
+  macros; `streams.console` has `retain` (a count of LINES) and `max_age_days`, both required like every retained
+  stream. **With any of the three unset the console is absent and `GET /api/streams` says which**, so a host that
+  never declared a link shows no console at all.
+- **A link is validated when loaded, and an invalid one is listed with its problems and never opened.** The name is a
+  slug (`a-z 0-9 . _ -`, starts with a letter or digit, at most 64, unique). `backend` is `usb-adapter` (a `pi-uart`
+  link is listed as "backend not built"). `adapter.ids` and `adapter.serial` are required: **the adapter is found by
+  USB ids and serial through sysfs and joined to its node by device number, never by a `/dev` name** (the same
+  `identity` code the boards use). A link whose adapter ids match **any board profile's ids is refused**
+  (`not_a_declared_link`): the console never opens a DUT's own port. `baud` must be a standard rate and not 1200
+  (`baud_refused`). `dtr_rts_reach_dut: true` is refused (`dtr_rts_unsafe`); a deliberately wired reset line belongs to
+  the family driver, which is not built, so slice 1 has no exception. `eol` is `\n`, `\r` or `\r\n` (default `\n`).
+- **Reading is safe on any valid link and sending is not.** A receive-only wire gives the whole log (GAP 3). A send is
+  refused unless `host_tx_to_dut` is true (`link_rx_only`) **and** `voltage.verified` is true (`voltage_unverified`),
+  and the voltages are shown. The refusals are made by the service, not by the page.
+- **One broker, one thread, owns every adapter.** It blocks in `select` on the kernel's uevent socket, a wake pipe
+  and every open port, with **no timeout** (the device monitor's rule): an adapter that appears is opened and one that
+  vanishes is closed on the kernel's word, not on a timer, and the state change is published. A host with no uevents
+  says so and re-checks on each command instead.
+- **The port is opened with plain `termios`, not a library that asserts modem lines.** The fd is opened
+  `O_NOCTTY | O_NONBLOCK`, made exclusive (`TIOCEXCL`), raw, 8N1, `CLOCAL | CREAD`, **`HUPCL` cleared so closing does
+  not drop DTR**, and DTR and RTS are never set by this code. (pyserial's constructor sets both on open: the spec's
+  "never assert on purpose" rule is why it is not used here.) Another process holding the adapter gives `port_held`.
+- **A line is an event.** Bytes are split on `\n` (a trailing `\r` is dropped), decoded as UTF-8 with replacement, and
+  published as `console.line` with the link, the **byte offset where the line starts**, its length and its text; a line
+  starting with the link's `reply_marker` is flagged. A line longer than 1 024 bytes is cut and marked `partial`: **1 024
+  is a memory budget, not a measurement** (20 000 retained lines at that size is 20 MB, far under the Pi's RAM), and no
+  firmware's real line length has been measured here. State changes are published as `console.link`.
+- **A byte cursor, as the spec said.** `console.since(link, cursor)` returns the retained lines at or after that byte
+  offset, the next cursor (the offset of the first byte not yet delivered, so a half-received line is delivered whole
+  later), and `lost`, how many bytes fell out of retention since the cursor. It needs the service (the log is its
+  memory).
+- **`console.send` sends one line.** The text may not contain a newline, a carriage return or a NUL (`usage`): one
+  call is one command, and a block is a macro. The link's `eol` is appended. **With no `bound_s` it returns as soon as
+  the bytes are written**, which is what an interactive terminal wants (the reply arrives on the feed); **with
+  `bound_s` and a declared `reply_marker` it returns on the reply line, and `no_reply` when the bound passes**. There is
+  no default bound: it is the caller's, derived from the firmware.
+- **Macros are the bench's, not the browser's.** A macro is a name and some lines, kept in `<paths.console>/macros.json`
+  (written atomically), so the CLI, the MCP and every browser see the same ones. `console.macro_run` sends the lines
+  in order **through the same send path, so every guard applies to every line**, and stops at the first refusal. A
+  macro's text is at most 4 096 bytes (four times the line cap: a macro is a few commands) and its name a slug.
+- **History is the activity log.** Every send is a write command and so is already recorded with its link and text, from
+  every caller; the page's up and down arrows walk the sends for the selected link. **A consequence, stated:** whatever
+  is typed into a console is in the activity log in clear text, as every command argument is, and a typed secret is
+  not redacted unless its argument is named like one.
+- **Only `nrf_workbench/console/` opens a serial port for reading and writing**, enforced by a gate test (seen RED
+  first). **Two older, named exceptions are allowed and listed in the test, not hidden:** `devices/entry.py` opens the
+  board's own port at 1200 baud for the bootloader touch (that is the touch), and `programmer/flash_file.py` hands a
+  port to the uploader tool. The spec's earlier "only module" wording did not account for them.
+
 ## TOOL sleep and silence
 
 - The DUT may tear its UART down for a whole sleep, so a reader opened before a sleep sees nothing
