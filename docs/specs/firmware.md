@@ -136,8 +136,8 @@ talks to the board, and the flasher never reads from a socket.
   (the installer asks, with a default under the install's own data directory) and **nothing assumes a
   path** such as `/usr/share/pac` **[stated: that is Peter's preferred folder on his hosts, never a
   product default]**.
-- **An entry is two files: `<sha256>.zip` (the image, exactly the bytes received) and
-  `<sha256>.json` (the record).** The record holds: `sha256`, `bytes`, `name` (a label, free text),
+- **An entry is two files inside a project folder (see "projects"): `<sha256>.zip` (the image, exactly
+  the bytes received) and `<sha256>.json` (the record).** The record holds: `sha256`, `bytes`, `name` (a label, free text),
   `uploaded_at`, who uploaded it (the token's label, not the token), and what the package check found
   (`image_bytes`, `softdevice_req`, `packets`). Only `put` creates an entry; a file copied into the
   directory by hand has no record and is **not listed and never flashed**.
@@ -146,9 +146,12 @@ talks to the board, and the flasher never reads from a socket.
   prefix of at least 8 hex characters; an ambiguous or unknown one is refused (`firmware_unknown`).
   **[derived: content addressing means an id cannot point at different bytes later, which a name or a
   counter could.]**
-- **No client-supplied string is ever used in a filesystem path.** The `name` is data in the record
-  and nothing more; the stored file name is the hash. Path traversal is impossible by construction,
-  not by filtering. **[derived]**
+- **The only strings that ever become part of a path are a hash and a project name that passed the
+  project-name rule** (see "projects"). The `name` is data in the record and nothing more; the stored
+  file name is the hash. **[derived. Until 2026-11-17 this said "no client-supplied string is ever used
+  in a path", true while the store was one flat folder. Project folders make the project name the one
+  exception, and it is closed by a rule whose alphabet has no separator and cannot start with a dot,
+  not by filtering.]**
 - **The store is never cleaned automatically.** An old image may be the only way back to a known
   state (the bench RAK's original firmware exists only as a package, because flash cannot be read back
   over USB **[verified: programmer.md]**). When the filesystem cannot hold an upload, `put` refuses
@@ -158,6 +161,62 @@ talks to the board, and the flasher never reads from a socket.
 - **A package that is a unit's declared return path cannot be deleted** (`in_use`, naming the unit),
   because `devices.md` refuses entry to the bootloader without one.
 
+## TOOL projects: the folders inside the store
+
+Peter, 2026-11-17: the store was one flat folder of hash-named files, and a fresh install had no store
+at all. His words: "the core system needs its own folder structure", "at least a 2 level folder with
+the ability to browse and add a new folder", "project based, with one folder for each project". He
+asked for real folders, and that is what this is. (His own `fw/` test folders on the bench Pi are not
+part of the product and nothing reads them.)
+
+```
+<install folder>/data/firmware/        the store; the path is paths.firmware in host.yaml
+  <project>/                           one folder per project, e.g. mt-alarm, testpartner
+    <sha256>.zip                       the package, exactly as uploaded
+    <sha256>.json                      its record
+  .incoming-*                          a temporary, only while an upload is arriving
+```
+
+- **Two levels and no more: a project, then its packages.** A package is never nested deeper, and a
+  project holds no project.
+- **The project name rule: 1 to 64 characters from `a-z 0-9 . _ -`, and the first must be a letter or
+  a digit.** It is checked with a full match before the name touches a path. `.`, `..`, `a/b`, an
+  empty name, upper case and a leading dot are all refused (`bad_project`). The rule is what makes a
+  name safe to use as a folder, so there is no second line of defence to rely on: the alphabet has no
+  separator and cannot begin with a dot. **[derived: the earlier design avoided client strings in paths
+  altogether; this is the smallest rule that lets one in.]** A folder that is a symbolic link, or
+  whose name breaks the rule, is not a project and is never read, so a link cannot point the store
+  outside itself.
+- **The default project is `unsorted`.** A `put` that names no project goes there, so a caller that
+  knew nothing about projects (the CLI of last week, a script) keeps working. It is an ordinary
+  project: nothing treats it specially.
+- **A package lives in exactly one project.** The id is still the hash and still unique across the
+  whole store, so `programmer.flash` and every id prefix work as before. Uploading bytes that are
+  already stored, into any project, succeeds with `new: false` and says **which project already holds
+  them**; it does not make a second copy. Filing it elsewhere is `firmware.move`. **[derived: a second
+  copy would make one id mean two files, which is exactly what content addressing is for.]**
+- **A project exists as a folder, so an empty one can exist.** Any write that names a project creates
+  it if it is missing (an upload is an explicit act). `firmware.project_new` makes an empty one, and
+  `firmware.project_delete` removes one **only if it is empty** (`project_not_empty`, naming how many
+  packages it holds), because a mistyped name must be removable and a package must never be lost to
+  it.
+- **`firmware.move` takes three steps in this order: hard-link the image into the new project, move the
+  record there, remove the old image.** At every point either the old entry is whole or the new one is.
+  A crash after the first step leaves a second, unlisted image (harmless and still unlisted); after the
+  second, an old image with no record, also unlisted. There is never a listed entry with no image.
+  **[derived: the delete rule, "a crash leaves an unlisted image, never a listed entry with no image",
+  applied to a move. Renaming the image first would break it.]** The folders are on one filesystem, so
+  a hard link is always available.
+- **Existing flat entries are filed on first open.** When the store opens and finds `<sha256>.json`
+  files directly in its folder (an install from before this change), it moves each pair into
+  `unsorted/` by the same three steps, reports how many it moved, and finds none the second time.
+- **A package is referred to by its id only.** An earlier draft of this section offered
+  `project/name`; it is dropped, because the dashboard, the CLI and the flash all use the hash and a
+  name may repeat, so a name reference would need an ambiguity rule for no use.
+- **The listing includes the empty projects.** `firmware.list` returns the packages, each with its
+  `project` (from the folder it is in, so the folder is the one source of truth and the record does not
+  repeat it), and the names of all projects, so the dashboard can show a folder with nothing in it.
+
 ## TOOL the commands
 
 All are registry rows, so the CLI, the HTTP API and the MCP tools all appear from them (`api.md`).
@@ -165,17 +224,23 @@ Every one that changes anything is a `write`, so a token is needed even in `open
 
 | command | effect | arguments | result data |
 |---|---|---|---|
-| `firmware.put` | write | the file bytes, `name` (optional), `sha256` (optional) | `id`, `sha256`, `bytes`, `name`, `package` |
-| `firmware.list` | read | none | each record, newest first |
-| `firmware.show` | read | `id` | the record, and which units name it as a return path |
+| `firmware.put` | write | the file bytes, `name` (optional), `sha256` (optional), `project` (optional, default `unsorted`) | `id`, `sha256`, `bytes`, `name`, `project`, `package` |
+| `firmware.list` | read | none | each record with its `project`, newest first, and `projects`: every project name, empty ones too |
+| `firmware.show` | read | `id` | the record with its `project`, and which units name it as a return path |
 | `firmware.delete` | write | `id` | the id removed |
+| `firmware.move` | write | `id`, `project` | the id, the project it left and the one it is in |
+| `firmware.project_new` | write | `project` | the project, and whether it was new |
+| `firmware.project_delete` | write | `project` | the project removed; refused if it holds a package |
 | `programmer.flash` | write | `serial`, `firmware` (an id), the two bounds, `expect_product` (optional) | the flash Result, with `firmware.id` in it |
-| `programmer.flash_stream` | write | the file bytes, `serial`, the two bounds, `expect_product`, `name` | the flash Result, plus the new id |
+| `programmer.flash_stream` | write | the file bytes, `serial`, the two bounds, `expect_product`, `name`, `project` (optional) | the flash Result, plus the new id |
 
 ### `firmware.put` — upload
 
+- **The `project` is checked against the project-name rule before the body is read**, so a bad name
+  costs no upload (`bad_project`). The project folder is created only once the whole file has arrived
+  and passed, like everything else a `put` makes visible.
 - **The body of the request is the file**, not JSON and not multipart: `POST /api/firmware`, the
-  raw bytes, `name` and `sha256` as query parameters. This is the one deliberate departure from
+  raw bytes, `name`, `sha256` and `project` as query parameters. This is the one deliberate departure from
   "a `write` takes a JSON body" in `api.md`, and the row declares it (`body: raw`), so it is still
   generated and still in the command list. **[derived: a binary in JSON must be encoded, which costs a
   third more and needs the whole thing in memory.]**

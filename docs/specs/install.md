@@ -354,8 +354,29 @@ chosen, not defaulted.
   non-empty home directory such as `/root` is refused** (it would mix with the user's own files);
   a folder under it is the practical form of "just /root".
 - **Everything lives under the prefix:** the code, the venv (`<prefix>/venv`), the host
-  configuration (`<prefix>/config/`), the log (`<prefix>/install.log`) and the record
+  configuration (`<prefix>/config/`), the data the service writes while running (`<prefix>/data/`),
+  the unit (`<prefix>/systemd/`), the log (`<prefix>/install.log`) and the record
   (`<prefix>/.installed`), so one folder can be moved, backed up or deleted. All are gitignored.
+- **`<prefix>/data/` is the core system's own folder and the installer creates its structure
+  (Peter, 2026-11-17: "the core system needs its own folder structure").** Today it holds one thing,
+  the package store `data/firmware/`, whose project folders are described in `firmware.md`
+  ("projects"). The installer creates `data/firmware` (mode 0700, as the store itself does) **and
+  writes it into `config/host.yaml` as `paths.firmware`**, so a fresh install has a working store.
+  Before this, `host.yaml` was written empty, the service left the store off, and the dashboard had
+  nothing to list. **[verified 2026-11-17: `capabilities()` registers `firmware_store` only when
+  `paths.firmware` is set.]** The path written is absolute, so moving the install folder means
+  changing that one line.
+- **An existing `host.yaml` is never edited to add it.** On an upgrade that finds a `host.yaml` with
+  no `paths.firmware`, the installer creates the folder anyway, changes nothing in the file, and
+  prints the two lines to add, so a user's own configuration is never rewritten under them.
+- **The parking package is seeded into the store** so a fresh install has something to flash. The
+  repo carries the built package (`testpartner/parking/dist/`) with the source commit it was built
+  from and its SHA-256, and a step after the venv is built puts it into the project `testpartner`
+  through the product's own CLI in local mode (so it is validated like any upload and is idempotent:
+  a second install says "already stored"). It is added only if the store is on. **No other project's
+  firmware is bundled**: `mt-alarm` is another repository's product, and its owner uploads it into the
+  `mt-alarm` project.
+- **Seeding never touches hardware** and never flashes anything.
 - **A system integration that needs a path elsewhere** (a systemd unit) keeps its file in the
   prefix and is linked into place (`systemctl link`), so removing the prefix removes the install.
 - **Host configuration is created only if missing and never overwritten:** `config/host.yaml`,
