@@ -3,7 +3,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useEffect, useState } from "react";
 import { readJson, writeFile, writeJson } from "./api.js";
 import { DEFAULT_PROJECT, PROJECT_NAME, PROJECT_RULE_TEXT, bytesText, when } from "./format.js";
-import { Button, Card, Chip, Field, inputClass } from "./ui.jsx";
+import { Button, Card, Chip, Field, SlugNote, inputClass } from "./ui.jsx";
 import { ResultView } from "./Commands.jsx";
 
 // The package store as folders (docs/specs/dashboard.md, "The Firmware page"). Every action is a command the
@@ -163,8 +163,9 @@ export default function Firmware({ commands, boards, onFlash, onDone }) {
             {projNew && (
               <form onSubmit={createProject} className="space-y-2 border-t border-slate-200 pt-3 dark:border-slate-800">
                 <Field label="New project" hint={`${PROJECT_RULE_TEXT}.`}>
-                  <input className={inputClass} type="text" value={newName} onChange={(e) => setNewName(e.target.value)} aria-label="New project name" autoComplete="off" spellCheck="false" />
+                  <input className={inputClass} type="text" value={newName} onChange={(e) => setNewName(e.target.value.toLowerCase())} aria-label="New project name" autoComplete="off" spellCheck="false" />
                 </Field>
+                <SlugNote value={newName} />
                 <Button type="submit" disabled={!newOk || pending}>Create project</Button>
               </form>
             )}

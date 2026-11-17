@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { slugProblem } from "./format.js";
 
 export const cx = (...parts) => parts.filter(Boolean).join(" ");
 
@@ -77,6 +78,12 @@ export function Field({ label, hint, children }) {
       {hint && <span className="mt-1 block text-xs text-slate-600 dark:text-slate-400">{hint}</span>}
     </label>
   );
+}
+
+// Under a name field: says what is wrong with the name, next to the field, as soon as there is something wrong.
+export function SlugNote({ value }) {
+  const problem = slugProblem((value || "").trim());
+  return problem ? <p role="alert" className="mt-1 text-xs text-red-700 dark:text-red-300">{problem}</p> : null;
 }
 
 export const inputClass =

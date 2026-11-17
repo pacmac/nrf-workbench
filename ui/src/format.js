@@ -45,7 +45,19 @@ export function workingText(run) {
 // the first a letter or a digit. The service checks it too and is the authority; this only saves a round trip
 // for a name that is certain to be refused. 64 is the service's own bound, not a choice made here.
 export const PROJECT_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
-export const PROJECT_RULE_TEXT = "1 to 64 characters: lower-case letters, digits, dot, underscore or hyphen, starting with a letter or a digit";
+// What is wrong with a name, in the words a person needs, or "" if nothing is. Names are lower-cased as they are typed
+// (the page does it, the service still checks), so a capital letter never reaches here; the rest is said, not silently greyed out.
+export function slugProblem(text) {
+  if (!text) return "";
+  if (text.length > 64) return "That is more than 64 characters.";
+  if (!/^[a-z0-9]/.test(text)) return "It has to start with a letter or a digit.";
+  const bad = text.match(/[^a-z0-9._-]/);
+  if (!bad) return "";
+  return bad[0] === " "
+    ? "Spaces aren't allowed. Use a hyphen or an underscore instead, like my-name."
+    : `“${bad[0]}” isn't allowed. Use letters, digits, dot, underscore or hyphen.`;
+}
+export const PROJECT_RULE_TEXT ="1 to 64 characters: lower-case letters, digits, dot, underscore or hyphen, starting with a letter or a digit";
 export const DEFAULT_PROJECT = "unsorted";
 
 export function flashBoundS(imageBytes) {

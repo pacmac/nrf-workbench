@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { readJson, writeJson } from "./api.js";
 import { PROJECT_NAME, PROJECT_RULE_TEXT, clock } from "./format.js";
 import { cannotSend, conversation, historyOf, sendsOf, walk } from "./consoleLog.js";
-import { Button, Card, Chip, ClassBadge, Field, Spinner, inputClass } from "./ui.jsx";
+import { Button, Card, Chip, ClassBadge, Field, SlugNote, Spinner, inputClass } from "./ui.jsx";
 
 // The serial console (docs/specs/dashboard.md, "The Console page"). Every action is a command the service listed,
 // sent to the path it listed, and the page adds no rule of its own: when the input is off the reason is the
@@ -278,14 +278,19 @@ function Macros({ commands, link, onDone }) {
       )}
       {ran && <div className="mb-4"><MacroResults outcome={ran} /></div>}
       <form onSubmit={save} className="space-y-2">
-        <Field label="Macro name" hint={PROJECT_RULE_TEXT}>
-          <input className={inputClass + " font-mono"} value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" spellCheck={false} />
+        <Field label="Macro name" hint={`${PROJECT_RULE_TEXT}. Capital letters are made lower case for you.`}>
+          <input className={inputClass + " font-mono"} value={name} onChange={(e) => setName(e.target.value.toLowerCase())} autoComplete="off" spellCheck={false} />
         </Field>
+        <SlugNote value={name} />
         <Field label="Lines to send" hint="One command per line. Each is sent in order through the same guards as a typed line, and the run stops at the first refusal.">
           <textarea className={inputClass + " font-mono"} rows={4} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />
         </Field>
         <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" disabled={!set || !nameOk || !text.trim() || Boolean(outcome && outcome.pending)}>Save macro</Button>
+          {/* a greyed-out button says why, next to it */}
+          {(!nameOk || !text.trim()) && !outcome && (
+            <span className="text-sm text-slate-600 dark:text-slate-400">{!name.trim() ? "Give the macro a name." : !nameOk ? "Fix the name above." : "Add at least one line to send."}</span>
+          )}
           <Answer outcome={outcome} />
         </div>
       </form>

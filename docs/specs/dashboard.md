@@ -268,6 +268,11 @@ service's**, and the page shows the service's answer whole.
   too), newest first, collapsing consecutive repeats. Down past the newest returns the line being typed, which is kept
   while walking. Escape clears the input. Nothing is stored in the browser (the UI rules forbid it), so the history
   survives a reload and is the same in every browser.
+- **A name is a slug, and the page never leaves you guessing about it (2026-11-17, Peter: "I entered macro name: Ping …
+  and was unable to save it").** Names (macros, firmware projects and folders, GPIO names, services and actions) are
+  **lower-cased as you type**, so `Ping` becomes `ping` and saves; anything still wrong (a space, a symbol, not starting with a
+  letter or digit, too long) is **said next to the field in plain words** and a greyed-out Save says why beside it. The
+  service still checks the name and is the authority.
 - **Macros** (`console.macro_*`): a list of name and lines, each with Run, Edit and Delete; a form with a name and a
   text area of lines. Run sends the macro on the selected link through the same guards, and the page shows **every line's
   result**, stopping where the service stopped. Delete asks inline ("Delete? Yes / No"), not a dialog.

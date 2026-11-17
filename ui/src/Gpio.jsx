@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { readJson, writeJson } from "./api.js";
 import { PROJECT_NAME, PROJECT_RULE_TEXT } from "./format.js";
-import { Button, Card, Chip, Field, inputClass } from "./ui.jsx";
+import { Button, Card, Chip, Field, SlugNote, inputClass } from "./ui.jsx";
 import { ResultView } from "./Commands.jsx";
 
 // The GPIO pin map (docs/specs/dashboard.md, "The GPIO page"). It records which header pin is assigned to which
@@ -200,16 +200,23 @@ export default function Gpio({ commands, onDone }) {
           <p className="text-sm text-slate-600 dark:text-slate-400">Choose a GPIO above to assign it, or an assigned one to edit it.</p>
         ) : (
           <form onSubmit={save} className="space-y-3">
-            <Field label="Name" hint={PROJECT_RULE_TEXT}>
-              <input className={inputClass + " font-mono"} value={values.name} onChange={(e) => set("name")(e.target.value)} autoComplete="off" spellCheck={false} />
+            <Field label="Name" hint={`${PROJECT_RULE_TEXT}. Capital letters are made lower case for you.`}>
+              <input className={inputClass + " font-mono"} value={values.name} onChange={(e) => set("name")(e.target.value.toLowerCase())} autoComplete="off" spellCheck={false} />
             </Field>
+            <SlugNote value={values.name} />
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Service" hint="Who uses it, a short name (programmer, power, manual …).">
-                <input className={inputClass + " font-mono"} value={values.service} onChange={(e) => set("service")(e.target.value)} autoComplete="off" spellCheck={false} />
-              </Field>
-              <Field label="Action" hint="What it is for (reset, boot, power-cycle, led …).">
-                <input className={inputClass + " font-mono"} value={values.action} onChange={(e) => set("action")(e.target.value)} autoComplete="off" spellCheck={false} />
-              </Field>
+              <div>
+                <Field label="Service" hint="Who uses it, a short name (programmer, power, manual …).">
+                  <input className={inputClass + " font-mono"} value={values.service} onChange={(e) => set("service")(e.target.value.toLowerCase())} autoComplete="off" spellCheck={false} />
+                </Field>
+                <SlugNote value={values.service} />
+              </div>
+              <div>
+                <Field label="Action" hint="What it is for (reset, boot, power-cycle, led …).">
+                  <input className={inputClass + " font-mono"} value={values.action} onChange={(e) => set("action")(e.target.value.toLowerCase())} autoComplete="off" spellCheck={false} />
+                </Field>
+                <SlugNote value={values.action} />
+              </div>
             </div>
             <Field label="Purpose" hint="One sentence, at most 200 characters.">
               <input className={inputClass} value={values.purpose} maxLength={200} onChange={(e) => set("purpose")(e.target.value)} autoComplete="off" />

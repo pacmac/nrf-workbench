@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { readJson, writeFile, writeJson } from "./api.js";
 import { DEFAULT_PROJECT, ENTER_BOUND_S, PROJECT_NAME, PROJECT_RULE_TEXT, bytesText, clock, expectedRangeS, flashBoundS, rangeText, seconds, THROUGHPUT_FASTEST_BPS, THROUGHPUT_SLOWEST_BPS, when } from "./format.js";
-import { Button, Chip, Field, Spinner, inputClass } from "./ui.jsx";
+import { Button, Chip, Field, SlugNote, Spinner, inputClass } from "./ui.jsx";
 import { ResultView } from "./Commands.jsx";
 
 // "Flash…" on a board. A person knows three things: which board, which package, and whether they are sure. So
@@ -144,12 +144,13 @@ export default function FlashDialog({ board, commands, initial, onClose, onDone 
           <div className="flex gap-2">
             <input
               className={inputClass} type="text" value={folderName} aria-label="New folder name" autoComplete="off" spellCheck="false"
-              onChange={(e) => { setFolderName(e.target.value); setFolderNote(""); }}
+              onChange={(e) => { setFolderName(e.target.value.toLowerCase()); setFolderNote(""); }}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); createFolder(); } }}
             />
             <Button className="whitespace-nowrap" onClick={createFolder} disabled={!folderOk}>Create folder</Button>
           </div>
         </Field>
+        <SlugNote value={folderName} />
         {folderNote && <p className="mt-2 text-sm text-red-700 dark:text-red-300" role="alert">{folderNote}</p>}
       </div>
     );
@@ -256,7 +257,7 @@ export default function FlashDialog({ board, commands, initial, onClose, onDone 
                     </select>
                   </Field>
                   <Field label="Or a new project" hint={`A new folder. ${PROJECT_RULE_TEXT}.`}>
-                    <input className={inputClass} type="text" value={uploadNew} onChange={(e) => setUploadNew(e.target.value)} aria-label="Or a new project" autoComplete="off" spellCheck="false" />
+                    <input className={inputClass} type="text" value={uploadNew} onChange={(e) => setUploadNew(e.target.value.toLowerCase())} aria-label="Or a new project" autoComplete="off" spellCheck="false" />
                   </Field>
                 </div>
                 {!uploadTargetOk && <p className="text-sm text-red-700 dark:text-red-300" role="alert">“{uploadTarget}” is not a project name: {PROJECT_RULE_TEXT}.</p>}

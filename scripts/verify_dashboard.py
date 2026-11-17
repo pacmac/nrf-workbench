@@ -686,6 +686,18 @@ def console_page(page, bench, shot, tag):
     check("%s console: Jump to latest returns to the end" % tag, log.evaluate(at_end))
     jump.wait_for(state="detached")
 
+    # macros: the name Peter typed ("Ping") must save, and a bad name must say what is wrong and why Save is off
+    page.get_by_label("Macro name").fill("Ping")
+    page.get_by_label("Lines to send").fill("ping")
+    check("%s macros: a capital letter is made lower case as it is typed" % tag, page.get_by_label("Macro name").input_value() == "ping")
+    check("%s macros: Save is on for the name Ping with the line ping" % tag, page.get_by_role("button", name="Save macro").is_enabled())
+    page.get_by_label("Macro name").fill("my macro")
+    check("%s macros: a space is explained next to the field" % tag, "Spaces aren't allowed" in page.get_by_role("alert").filter(has_text="Spaces").inner_text())
+    check("%s macros: a greyed-out Save says why" % tag,
+          page.get_by_role("button", name="Save macro").is_disabled() and page.get_by_text("Fix the name above.").count() == 1)
+    page.get_by_label("Macro name").fill("")
+    check("%s macros: an empty name says to give it one" % tag, page.get_by_text("Give the macro a name.").count() == 1)
+    page.get_by_label("Lines to send").fill("")
     # macros: save, run through the guards, edit, delete
     page.get_by_label("Macro name").fill("boot")
     page.get_by_label("Lines to send").fill("reset\nstatus")
