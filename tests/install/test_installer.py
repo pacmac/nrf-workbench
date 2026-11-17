@@ -691,8 +691,11 @@ class StoreDefault(unittest.TestCase):
         self.assertEqual(os.stat(console).st_mode & 0o777, 0o700)
         cfg, problems = self.load()
         self.assertEqual(problems, [])
-        self.assertEqual((cfg["paths"]["links"], cfg["paths"]["console"]),
-                         (os.path.join(self.pfx, "config", "links.yaml"), console))
+        self.assertEqual((cfg["paths"]["wiring"], cfg["paths"]["console"], cfg["paths"]["links"]),
+                         (os.path.join(self.pfx, "data", "wiring"), console, None),
+                         "the wiring store replaces links.yaml, which a fresh install no longer names or creates")
+        self.assertFalse(os.path.exists(os.path.join(self.pfx, "config", "links.yaml")))
+        self.assertEqual(os.stat(os.path.join(self.pfx, "data", "wiring")).st_mode & 0o777, 0o700)
         self.assertEqual(cfg["paths"]["gpio"], os.path.join(self.pfx, "data", "gpio"))
         self.assertEqual(os.stat(os.path.join(self.pfx, "data", "gpio")).st_mode & 0o777, 0o700)
         streams = service.build_streams(cfg)
@@ -747,8 +750,9 @@ class StoreDefault(unittest.TestCase):
         store = os.path.join(self.pfx, "data", "firmware")
         console = os.path.join(self.pfx, "data", "console")
         gpio = os.path.join(self.pfx, "data", "gpio")
+        wiring = os.path.join(self.pfx, "data", "wiring")
         self.assertEqual(chowned, [(os.path.dirname(store), 4242, 4343), (store, 4242, 4343), (console, 4242, 4343),
-                                   (gpio, 4242, 4343)], "data is handed over once, and each service folder with it")
+                                   (gpio, 4242, 4343), (wiring, 4242, 4343)], "data is handed over once, and each service folder with it")
         chowned[:] = []
         with mock.patch.object(applymod.os, "geteuid", return_value=0), \
                 mock.patch.object(applymod, "_owner_of", return_value=(0, 0)), \

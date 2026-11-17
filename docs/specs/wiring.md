@@ -46,10 +46,38 @@ preview exists: **it touches nothing on the bench**, and the page says so.
 9. **Every action is one command** (`wiring.connect`, `wiring.change`, `wiring.disconnect`), so the CLI and MCP are the
    same operations and the UI holds no rule of its own: the service says what is available and refuses what is unsafe.
 
+## Backend slice 1: the debug log (built 2026-11-17, after "continue with what you were doing")
+
+Why this one first: it is the one that was blocking the `device` session, and it replaces the hand-edited `links.yaml`.
+The other intents are refused by name (`intent_not_built`) until their slice lands; the page shows them as not built yet.
+
+- **A connection is stored on the bench** in `<paths.wiring>/connections.json` (atomic, `0700`, the shared JSON store of the
+  console macros and the pin map), keyed by its **name**, a slug. The name is **the console link's name**, so the console's
+  API does not change (`rak-uart0` stays `rak-uart0`). With no name given it is `debug-<first four of the device serial>`.
+- **Fields of a debug-log connection** (all stated, none defaulted except the name): `device` (the nRF's USB serial),
+  `adapter` (the serial of a detected USB adapter), `baud`, `send` (may the bench send to the device) and, when `send` is
+  true, `voltage_measured`. Anything not given is a usage error. The stored record also holds the adapter's USB ids, read
+  from the detection at connect time, so the console finds it again by ids and serial and never by a `/dev` name.
+- **Adapters are detected, not typed.** `wiring.show` lists every USB device with a serial-port node that is **not a
+  board**, each with its ids, serial, product name, node, and which connection holds it. An adapter with no serial number
+  is listed and cannot be connected (it cannot be told from another one), and says so.
+- **Refusals, by name, made by the service:** `adapter_absent` (not detected), `adapter_taken` (another connection holds it;
+  the holder is named), `name_taken`, `not_a_declared_link` (the adapter's ids belong to a board profile: the console never
+  opens a board's own port), `baud_refused` (not a standard rate, or 1200), `intent_not_built`. A send needs `voltage_measured`:
+  a connection with `send` true and the voltage not measured is **stored and receive-only**, said in its description.
+- **The console reads its links from the connections** when `paths.wiring` is set, and `links.yaml` is then not read (the
+  start-up line says so). A change takes effect **at once, without restarting the service**: the broker replaces its links
+  on its own thread, closes the port of a removed or changed link and opens a new one. **A removed link's byte offsets are
+  not reused:** a link of the same name created later continues from the old offset, so a cursor never points at two
+  different lines. (A service restart still empties the log; it lives in memory.)
+- **Commands:** `wiring.show`, `wiring.connect`, `wiring.change` (baud, send, voltage only; moving to another adapter or
+  device is a disconnect and a connect), `wiring.disconnect`. Writes record the caller in the activity log like any command.
+- **`wiring` is a capability that needs only `paths.wiring`**; it is not tied to a Pi, because a USB adapter works on any host.
+
 ## Not yet built
 
-The `wiring.*` commands, the store, the claims, the live detection and the migration from `links.yaml` and the flat pin
-map. The preview's sample data is in `ui/src/wiring/model.js` and is the contract the commands must satisfy.
+Control lines, buses, SWD and analog connections; the migration of the flat GPIO pin map into control connections; the
+header map fed by real claims. The preview's sample data in `ui/src/wiring/model.js` is the contract they must satisfy.
 
 ## Files this spec allows
 

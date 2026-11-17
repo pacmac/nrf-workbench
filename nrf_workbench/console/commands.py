@@ -6,7 +6,8 @@ page that disables its Send button is a courtesy, never the guard.
 
 `host` additionally carries (set by service.build):
   host.console        the Broker, or None where no service runs (the CLI's local mode)
-  host.console_links  [Link] loaded from links.yaml, and host.console_problems, the file's own problems
+  host.console_links  [Link] from the wiring store (or links.yaml where no wiring folder is set) as the service started,
+                      and host.console_problems, the file's own problems. The RUNNING links are the broker's.
 """
 from ..core.registry import Arg, Command, UsageError
 from ..core.result import Result
@@ -89,7 +90,7 @@ def _send_line(host, link, text, bound_s):
         return Result.refused("port_held", st["reason"], {"link": link})
     if st["state"] in (ABSENT, ERROR):
         return Result.refused("link_absent", st["reason"] or "the adapter is not open", {"link": link, "state": st["state"]})
-    ok, code, message = next(l for l in host.console_links if l.name == link).can_send()
+    ok, code, message = host.console.link(link).can_send()              # the broker's own links: they change without a restart
     if not ok:
         return Result.refused(code, message, {"link": link, "voltage": st["voltage"]})
     try:

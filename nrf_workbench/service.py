@@ -38,6 +38,8 @@ from .devices import commands as device_commands
 from .devices import profile as profilemod
 from .devices.monitor import DeviceMonitor
 from .gpio import commands as gpio_commands
+from .wiring import commands as wiring_commands
+from .wiring import detect as wiring_detect
 from .programmer import commands as programmer_commands
 from .programmer import flash_file
 
@@ -111,9 +113,13 @@ def capabilities(host):
         caps.add("uploader")
     # The console needs its links file, a folder for its macros and a bounded log: with any of the three unset it is
     # absent, and GET /api/streams says which (no default is assumed for any of them).
-    if (host.config["paths"]["links"] and host.config["paths"]["console"]
+    # Its links come from the wiring store when `paths.wiring` is set, else from links.yaml (docs/specs/wiring.md).
+    if ((host.config["paths"]["links"] or host.config["paths"]["wiring"]) and host.config["paths"]["console"]
             and cfgmod.stream_bounds(host.config, "console") is not None):
         caps.add("console")
+    # The wiring commands need only their folder: a USB adapter works on any host.
+    if host.config["paths"]["wiring"]:
+        caps.add("wiring")
     # The pin map needs its folder AND a Raspberry Pi: a gpiochip is not evidence of a Pi header (core.md; the Proxmox
     # host has one and is not a Pi), so the device tree's own model decides. Elsewhere the commands are absent.
     if host.config["paths"]["gpio"] and is_raspberry_pi(host.proc):
@@ -130,13 +136,7 @@ def is_raspberry_pi(proc="/proc"):
         return False
 
 
-def board_ids(profiles):
-    """Every USB id any board profile lists: a link whose adapter has one of these is refused, never opened."""
-    ids = set()
-    for prof in profiles:
-        for mode in prof["modes"].values():
-            ids.update(mode.get("ids") or [])
-    return sorted(ids)
+board_ids = wiring_detect.board_ids      # every USB id a board profile lists: a link on one of them is refused, never opened
 
 
 def build_host(cfg, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
@@ -149,9 +149,19 @@ def build_host(cfg, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
     device_commands.register(registry, host)
     console_commands.register(registry, host)
     gpio_commands.register(registry, host)
+    wiring_commands.register(registry, host)
     caps = capabilities(host)
     if "console" in caps:
-        host.console_links, host.console_problems = console_links.load(cfg["paths"]["links"], board_ids(profiles))
+        if cfg["paths"]["wiring"]:
+            # The connections are the declaration. links.yaml is not read, and the start-up line says so.
+            try:
+                host.console_links = wiring_commands.links_for(host, wiring_commands.WiringStore(cfg["paths"]["wiring"]).list())
+            except wiring_commands.StoreError as exc:
+                host.console_links, host.console_problems = [], [str(exc)]
+            if cfg["paths"]["links"]:
+                host.console_problems.append("links.yaml is not read: the wiring store holds the connections (docs/specs/wiring.md)")
+        else:
+            host.console_links, host.console_problems = console_links.load(cfg["paths"]["links"], board_ids(profiles))
     return host, registry, caps
 
 
@@ -313,6 +323,7 @@ def _parser():
     p.add_argument("--units", help="a units file: per-serial settings such as protected")
     p.add_argument("--links", help="links.yaml: the declared debug links (the console needs this, --console-dir and a bounded log)")
     p.add_argument("--console-dir", dest="console_dir", help="a folder for the console's own data: the macros")
+    p.add_argument("--wiring-dir", dest="wiring_dir", help="a folder for the wiring store: which adapter is wired to which device (the console reads its links from it)")
     p.add_argument("--gpio-dir", dest="gpio_dir", help="a folder for the GPIO pin map (the gpio commands exist only on a Raspberry Pi)")
     for stream, what in (("events", "the live device feed"), ("activity", "the activity log"), ("console", "the console log, in lines")):
         p.add_argument("--%s-retain" % stream, dest="%s_retain" % stream, type=int,
@@ -331,7 +342,7 @@ def main(argv=None, run=None, env=None, make_monitor=DeviceMonitor):
                                ("firmware_dir", "paths", "firmware"),
                                ("lock", "paths", "lock"), ("profiles", "paths", "profiles"),
                                ("units", "paths", "units"), ("links", "paths", "links"),
-                               ("console_dir", "paths", "console"), ("gpio_dir", "paths", "gpio")):
+                               ("console_dir", "paths", "console"), ("gpio_dir", "paths", "gpio"), ("wiring_dir", "paths", "wiring")):
         if getattr(args, flag):
             overrides[section][key] = getattr(args, flag)
     for stream in ("events", "activity", "console"):

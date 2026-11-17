@@ -19,7 +19,7 @@ IDS = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{4}$")
 BAUDS = (9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600)
 EOLS = ("\n", "\r", "\r\n")
 BACKENDS = ("usb-adapter", "pi-uart")
-KNOWN = frozenset(["name", "slot", "backend", "adapter", "port", "baud", "dut_tx_to_host", "host_tx_to_dut", "voltage",
+KNOWN = frozenset(["name", "slot", "device", "backend", "adapter", "port", "baud", "dut_tx_to_host", "host_tx_to_dut", "voltage",
                    "dtr_rts_reach_dut", "reply_marker", "eol"])
 
 
@@ -39,6 +39,7 @@ class Link(object):
         raw = raw if isinstance(raw, dict) else {}
         self.name = raw.get("name") if isinstance(raw.get("name"), str) else None
         self.slot = raw.get("slot")
+        self.device = raw.get("device") if isinstance(raw.get("device"), str) else None       # the nRF this is wired to (wiring.md)
         self.backend = raw.get("backend")
         adapter = raw.get("adapter") if isinstance(raw.get("adapter"), dict) else {}
         self.ids = [i for i in (adapter.get("ids") or []) if isinstance(i, str)]
@@ -68,7 +69,7 @@ class Link(object):
         return True, "ok", ""
 
     def to_dict(self):
-        return {"name": self.name, "slot": self.slot, "backend": self.backend, "adapter": {"ids": self.ids, "serial": self.serial},
+        return {"name": self.name, "slot": self.slot, "device": self.device, "backend": self.backend, "adapter": {"ids": self.ids, "serial": self.serial},
                 "baud": self.baud, "dut_tx_to_host": self.dut_tx_to_host, "host_tx_to_dut": self.host_tx_to_dut,
                 "rx_only": self.host_tx_to_dut is not True, "voltage": self.voltage, "reply_marker": self.reply_marker,
                 "eol": self.eol, "problems": [p.to_dict() for p in self.problems]}
@@ -123,6 +124,12 @@ def _validate(raw, seen, board_ids):
     if raw.get("eol", "\n") not in EOLS:
         problems.append(Problem("invalid", "eol must be a newline, a carriage return or both"))
     return problems
+
+
+def build(raw, seen=(), board_ids=()):
+    """A Link from a plain dict, validated exactly as one loaded from links.yaml (the wiring store builds its links here, so
+    the two sources can never disagree about what a usable link is)."""
+    return Link(raw, _validate(raw, set(seen), board_ids))
 
 
 def load(path, board_ids=()):

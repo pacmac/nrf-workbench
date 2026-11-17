@@ -25,9 +25,10 @@ DEFAULTS = {
     },
     # `links` is links.yaml (the declared debug links) and `console` a folder for the console's own data (the macros):
     # with either unset there is no console (docs/specs/console.md, "slice 1").
-    # `gpio` is a folder for the pin map (docs/specs/gpio.md): with it unset there are no gpio commands.
+    # `gpio` is a folder for the pin map (docs/specs/gpio.md): with it unset there are no gpio commands. `wiring` is a
+    # folder for the wiring store (docs/specs/wiring.md): with it set the console reads its links from the connections.
     "paths": {"lock": None, "profiles": None, "firmware": None, "units": None, "links": None, "console": None,
-              "gpio": None},
+              "gpio": None, "wiring": None},
     # Each retained stream needs BOTH bounds and has NO default: an unbounded log is retained for ever by
     # oversight (core.md, "the event bus"). With neither set, the stream is absent and says why. The console's
     # `retain` counts LINES.
@@ -52,6 +53,7 @@ ENV = {
     "NRFWB_LINKS": ("paths", "links"),
     "NRFWB_CONSOLE_DIR": ("paths", "console"),
     "NRFWB_GPIO_DIR": ("paths", "gpio"),
+    "NRFWB_WIRING_DIR": ("paths", "wiring"),
 }
 
 ACCESS_MODES = ("token", "open-read", "open")

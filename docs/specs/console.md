@@ -190,6 +190,9 @@ and NUS.
   this Pi** and the kernel console would claim it (`probes.md`), and which pins to wire is Peter's choice. So the
   page offers whatever links are declared; the first is the dongle. A `pi-uart` link is declared the same way and
   appears in the same list the day its backend lands; nothing in the page or the commands changes.
+- **Where the links come from (2026-11-17, `wiring.md`):** with `paths.wiring` set the links ARE the stored debug-log
+  connections, each tied to a device, and `links.yaml` is not read; the sentence below still describes a link and its
+  validation, which the connections reuse unchanged. Without `paths.wiring`, `links.yaml` works as before.
 - **Configuration, no defaults** (`install.md`): `paths.links` is `links.yaml`; `paths.console` is a folder for the
   macros; `streams.console` has `retain` (a count of LINES) and `max_age_days`, both required like every retained
   stream. **With any of the three unset the console is absent and `GET /api/streams` says which**, so a host that

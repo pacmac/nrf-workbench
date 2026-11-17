@@ -30,9 +30,10 @@ def store_path(prefix):
     return os.path.join(prefix, "data", "firmware")
 
 
-def links_path(prefix):
-    """The declared debug links, which the installer creates empty (docs/specs/console.md)."""
-    return os.path.join(prefix, "config", "links.yaml")
+def wiring_path(prefix):
+    """The wiring store's folder: which adapter or pin is wired to which device (docs/specs/wiring.md). It replaces the
+    hand-edited config/links.yaml, which a fresh install no longer creates."""
+    return os.path.join(prefix, "data", "wiring")
 
 
 def console_path(prefix):
@@ -193,13 +194,15 @@ def build(ctx):
 
     # 4. configuration, only what is missing
     cfg = os.path.join(prefix, "config")
-    missing = [n for n in ("host.yaml", "units.yaml", "links.yaml") if not os.path.exists(os.path.join(cfg, n))]
+    missing = [n for n in ("host.yaml", "units.yaml") if not os.path.exists(os.path.join(cfg, n))]
     if not os.path.isdir(store_path(prefix)):
         missing.append("data/firmware (the package store)")
     if not os.path.isdir(console_path(prefix)):
         missing.append("data/console (the console's macros)")
     if not os.path.isdir(gpio_path(prefix)):
         missing.append("data/gpio (the GPIO pin map)")
+    if not os.path.isdir(wiring_path(prefix)):
+        missing.append("data/wiring (which adapter is wired to which device)")
     store_on = True                            # a host.yaml that does not exist yet is created with the store set
     try:
         with open(os.path.join(cfg, "host.yaml"), "r") as fh:

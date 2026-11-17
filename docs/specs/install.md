@@ -389,9 +389,10 @@ chosen, not defaulted.
   nothing to list. **[verified 2026-11-17: `capabilities()` registers `firmware_store` only when
   `paths.firmware` is set.]** The path written is absolute, so moving the install folder means
   changing that one line.
-- **A fresh `host.yaml` also turns the console and every live log on (2026-11-17).** It writes `paths.links`
-  (`config/links.yaml`, created with `links: []`: nothing is wired yet, and declaring a link would claim a wire that
-  is not there), `paths.console` (`data/console`, mode 0700, which the installer creates and hands to the install's
+- **A fresh `host.yaml` also turns the console and every live log on (2026-11-17).** It writes `paths.wiring`
+  (`data/wiring`, mode 0700: the connections, which the console reads its debug links from, `wiring.md`; **a fresh
+  install no longer names or creates `config/links.yaml`**, because nothing reads it once the wiring folder is set, and
+  nothing is wired yet), `paths.console` (`data/console`, mode 0700, which the installer creates and hands to the install's
   owner like `data/firmware`) and the three stream bounds, because a stream with no bound is silently OFF
   (`core.md`). Each bound states its budget in the file: events 1 000 entries / 7 days (an event is under 1 KB, so
   about 1 MB), activity 5 000 / 30 days (an entry is under 2 KB, so about 10 MB), console 20 000 lines / 7 days (a
@@ -414,8 +415,7 @@ chosen, not defaulted.
 - **A system integration that needs a path elsewhere** (a systemd unit) keeps its file in the
   prefix and is linked into place (`systemctl link`), so removing the prefix removes the install.
 - **Host configuration is created only if missing and never overwritten:** `config/host.yaml`,
-  `config/units.yaml` (no unit is protected), `config/links.yaml` (**no debug link declared**,
-  because none is wired), and a token file written with mode 0600 only when the service is asked
+  `config/units.yaml` (no unit is protected), and a token file written with mode 0600 only when the service is asked
   to leave loopback. The installer prints nothing secret.
 
 ## TOOL system packages

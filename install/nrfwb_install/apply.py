@@ -12,8 +12,8 @@ import time
 
 from . import MARKER
 from . import listen as listenmod
-from .plan import (SEEDS, SYSTEM_UNIT_DIR, UNIT_NAME, console_path, gpio_path, link_state, links_path, service_owner,
-                   sets_firmware, store_path, unit_path, unit_text, venv_python)
+from .plan import (SEEDS, SYSTEM_UNIT_DIR, UNIT_NAME, console_path, gpio_path, link_state, service_owner,
+                   sets_firmware, store_path, unit_path, unit_text, venv_python, wiring_path)
 
 def token_path(prefix):
     return os.path.join(prefix, "config", "token")
@@ -42,11 +42,11 @@ def host_yaml_text(prefix, listen=None):
     JSON string, which is also a valid YAML scalar, so no character in it can break the file."""
     return ("# nrf-workbench host configuration. Created by the installer, never overwritten.\n" + service_section(prefix, listen) +
             "# The package store: where uploaded firmware lives, one folder per project (docs/specs/firmware.md).\n"
-            "# The console: the declared debug links (config/links.yaml, none declared yet) and the folder for its\n"
-            "# macros (docs/specs/console.md). Other settings: docs/specs/core.md.\n"
+            "# Wiring: which adapter or pin is wired to which device (docs/specs/wiring.md). The console reads its debug\n"
+            "# links from it, and keeps its macros in its own folder (docs/specs/console.md). Other settings: docs/specs/core.md.\n"
             "paths:\n"
             "  firmware: %s\n"
-            "  links: %s\n"
+            "  wiring: %s\n"
             "  console: %s\n"
             "  gpio: %s\n"
             "# How much each live log keeps. A log with no bound is off, so these are set, each with its budget:\n"
@@ -57,15 +57,13 @@ def host_yaml_text(prefix, listen=None):
             "  events: {retain: 1000, max_age_days: 7}\n"
             "  activity: {retain: 5000, max_age_days: 30}\n"
             "  console: {retain: 20000, max_age_days: 7}\n"
-            % (json.dumps(store_path(prefix)), json.dumps(links_path(prefix)), json.dumps(console_path(prefix)),
+            % (json.dumps(store_path(prefix)), json.dumps(wiring_path(prefix)), json.dumps(console_path(prefix)),
                json.dumps(gpio_path(prefix))))
 
 
 CONFIG_FILES = {
     "units.yaml": ("# Per-serial exceptions only (for example protected: true). A board not named here\n"
                    "# is flashable by default; this is not a roster.\nunits: {}\n"),
-    "links.yaml": ("# Debug links. NONE is declared: nothing is wired to the board yet, and declaring a\n"
-                   "# link would claim a wire that is not there. See docs/specs/console.md.\nlinks: []\n"),
 }
 # Top-level names never copied over an existing install: the user's, or generated.
 KEEP = frozenset([".git", "venv", "venv.old", "config", "probes", ".venv-try", "__pycache__", "install.log", MARKER])
@@ -182,11 +180,11 @@ def _owner_of(path):
 
 
 def ensure_store(prefix, log):
-    """Create <prefix>/data/firmware, data/console and data/gpio (mode 0700, as the service itself creates them).
+    """Create <prefix>/data/firmware, data/console, data/gpio and data/wiring (mode 0700, as the service itself creates them).
     The service runs as the owner of the install folder (plan.service_owner), so a folder made by root inside a
     user's install is handed to that user, or the service could not write to its own folders."""
     handed = []                                    # each folder is handed over once, however many stores it holds
-    for store in (store_path(prefix), console_path(prefix), gpio_path(prefix)):
+    for store in (store_path(prefix), console_path(prefix), gpio_path(prefix), wiring_path(prefix)):
         created = not os.path.isdir(store)
         os.makedirs(store, mode=0o700, exist_ok=True)
         if created:

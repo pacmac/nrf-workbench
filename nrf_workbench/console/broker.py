@@ -30,14 +30,20 @@ CALL_CEILING_S = 5.0
 ABSENT, OPEN, HELD, ERROR, UNUSABLE = "absent", "open", "held", "error", "unusable"
 
 
+def _wire(link):
+    """What makes two links the SAME open port: a change in any of these closes the port and reopens it. The device it is
+    associated with, and whether the bench may send, are only labels and permissions, so they do not."""
+    return (tuple(link.ids), link.serial, link.baud, link.eol, link.usable)
+
+
 class LinkState(object):
-    def __init__(self, link):
+    def __init__(self, link, committed=0):
         self.link = link
         self.state, self.reason, self.node = UNUSABLE, "", None
         self.port = None
         self.buf = bytearray()
         self.read_total = 0               # bytes read from the adapter since it was opened by this broker
-        self.committed = 0                # the offset just after the last line published
+        self.committed = committed        # the offset just after the last line published (a re-made link continues from its last)
         self.lines = 0
         self.last_byte_wall = None
         self.replies = 0                  # reply lines seen, so a sender can wait for the next one
@@ -58,6 +64,7 @@ class Broker(object):
         `bus` is a core.events.Bus; `open_uevents()` returns the kernel's uevent socket (OSError if none)."""
         self._states = dict((l.name, LinkState(l)) for l in links if l.name)
         self._unnamed = [l for l in links if not l.name]
+        self._carry = {}                               # name -> the last offset of a link that was removed, so a new one continues
         self._resolve, self._open_port, self._bus, self._open_uevents, self._now = resolve, open_port, bus, open_uevents, now
         # `_lock` guards the link states and the port set, and NOTHING is called out while it is held: a state change is
         # queued in `_outbox` and published after the lock is released (`_flush`). A subscriber takes locks of its own and
@@ -236,6 +243,36 @@ class Broker(object):
                 st.buf = bytearray()
                 self._set(st, OPEN, "", found["node"])
         self._flush()
+
+    def set_links(self, links):
+        """Replace the declared links, at once and without a restart (docs/specs/wiring.md). On the broker's thread: the port
+        of a link that is gone, or whose wire changed (ids, serial, baud, line ending), is closed and the link is made again;
+        a link whose only change is its label or its permission to send keeps its open port, its counters and its lines.
+        A removed link's byte offset is remembered, so a link of the same name made later continues from it and a cursor
+        never points at two different lines."""
+        def work():
+            with self._lock:
+                new = dict((l.name, l) for l in links if l.name)
+                for name in list(self._states):
+                    st = self._states[name]
+                    if name not in new or _wire(new[name]) != _wire(st.link):
+                        self._close(st, ABSENT, "the link was removed or changed")
+                        self._carry[name] = max(self._carry.get(name, 0), st.committed)
+                        del self._states[name]
+                for name, link in new.items():
+                    if name in self._states:
+                        self._states[name].link = link
+                    else:
+                        self._states[name] = LinkState(link, self._carry.get(name, 0))
+                self._unnamed = [l for l in links if not l.name]
+            self._refresh()
+        return self._call(work)
+
+    def link(self, name):
+        """The Link named `name`, or None."""
+        with self._lock:
+            st = self._states.get(name)
+            return st.link if st is not None else None
 
     def reopen(self, name):
         """Close and reopen one link's adapter. (state dict, or None for an unknown link)"""
