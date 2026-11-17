@@ -5,7 +5,7 @@ capabilities this host has, lets each area register its commands, applies the li
 port, and runs uvicorn. Run it:  python -m nrf_workbench.service [--listen ADDR:PORT] ...
 
 Safety, in the order it is applied before anything listens:
-  * a non-loopback address with no token refuses to start (token_missing), whatever the access mode;
+  * a non-loopback address with no token refuses to start (token_missing), unless access is `open` (a trusted LAN);
   * a port below the unprivileged limit, without root, refuses (port_privileged), the limit read from /proc;
   * a port another process holds refuses (port_in_use) and names the holder, read from /proc.
 The token is never printed, logged or echoed; only whether one is required.
@@ -196,7 +196,9 @@ def build(cfg, token=None, sysfs="/sys", devroot="/dev", proc="/proc", hooks=Non
     sessions = SessionStore(MAX_SESSIONS, SESSION_MAX_AGE_S)
     host.sessions = sessions
     auth = Auth(token, cfg["service"]["access"], sessions)
-    login = dashboard_server.Login(token is not None, auth.token_matches, sessions, cfg["service"]["access"])
+    # In `open` mode nobody logs in, whether or not a token file is also configured: the page shows no login.
+    login = dashboard_server.Login(token is not None and cfg["service"]["access"] != "open", auth.token_matches, sessions,
+                                   cfg["service"]["access"])
     pages = dashboard_server.routes(bench_name(cfg), static_dir, auth.authorise, login)
     app = build_app(registry, host, auth, caps, host.streams, pages)
     return app, host, registry, caps
@@ -302,7 +304,7 @@ def _parser():
                                 description="Run the nrf-workbench service (HTTP API).")
     p.add_argument("--config", help="a configuration file that must exist (YAML)")
     p.add_argument("--listen", help="addr:port; with none set the service listens on 127.0.0.1:8080 only")
-    p.add_argument("--access", choices=cfgmod.ACCESS_MODES, help="token (default) or open-read")
+    p.add_argument("--access", choices=cfgmod.ACCESS_MODES, help="token (default), open-read, or open (no token at all: a trusted LAN)")
     p.add_argument("--token-file", dest="token_file", help="a file holding the token (readable only by its owner)")
     p.add_argument("--bench-name", dest="bench_name", help="what the dashboard calls this bench (default: this machine's host name)")
     p.add_argument("--firmware-dir", dest="firmware_dir", help="the firmware store directory")
@@ -353,7 +355,7 @@ def main(argv=None, run=None, env=None, make_monitor=DeviceMonitor):
     if note:
         print("warning: %s" % note, file=sys.stderr)
     host_addr, port = cfgmod.parse_listen(cfg["service"]["listen"])
-    for check in (lambda: cfgmod.check_listen(cfg["service"]["listen"], token), lambda: check_port(host_addr, port)):
+    for check in (lambda: cfgmod.check_listen(cfg["service"]["listen"], token, cfg["service"]["access"]), lambda: check_port(host_addr, port)):
         refusal = check()                       # in order: the cheap, no-I/O rule first
         if refusal is not None:
             print("refused to start (%s): %s" % (refusal.code, refusal.message), file=sys.stderr)
@@ -367,6 +369,7 @@ def main(argv=None, run=None, env=None, make_monitor=DeviceMonitor):
     loopback = cfgmod.is_loopback(host_addr)
     print("nrf-workbench listening on %s:%d (%s%s)" % (
         host_addr, port, "loopback only" if loopback else "NETWORK, UNENCRYPTED http",
+        "; OPEN: no token is asked of anyone (a browser from another site is still refused)" if cfg["service"]["access"] == "open" else
         "; token required" if token and cfg["service"]["access"] == "token" else
         "; reads open, writes need the token" if token else "; no token"), flush=True)
     print("dashboard: bench %r, UI %s" % (bench_name(cfg), "built" if os.path.isfile(os.path.join(STATIC_DIR, "index.html"))

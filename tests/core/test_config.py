@@ -117,8 +117,8 @@ class Validation(Base):
         self.assertIn("service.listen", text)
         self.assertIn("service.access", text)
 
-    def test_the_two_access_modes_are_fine(self):
-        for mode in ("token", "open-read"):
+    def test_the_three_access_modes_are_fine(self):
+        for mode in ("token", "open-read", "open"):
             _, problems = config.load(env={}, overrides={"service": {"access": mode}})
             self.assertEqual(problems, [], mode)
 
@@ -199,6 +199,13 @@ class Listen(unittest.TestCase):
             for token in (None, ""):
                 r = config.check_listen(listen, token)
                 self.assertEqual((r.cls, r.code), ("refused", "token_missing"), (listen, token))
+
+    def test_open_access_may_start_on_the_network_with_no_token_and_nothing_else_may(self):
+        for listen in ("0.0.0.0:80", "10.0.0.5:8080", "[::]:80", "myhost.example:8080"):
+            self.assertIsNone(config.check_listen(listen, None, "open"), listen)
+            for access in ("token", "open-read"):
+                self.assertEqual(config.check_listen(listen, None, access).code, "token_missing", (listen, access))
+        self.assertEqual(config.check_listen("0.0.0.0:80", None).code, "token_missing", "the default is still the strict one")
 
     def test_leaving_loopback_with_a_token_may_start(self):
         self.assertIsNone(config.check_listen("0.0.0.0:80", "s3cret"))

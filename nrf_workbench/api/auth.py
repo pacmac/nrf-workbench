@@ -1,10 +1,11 @@
 """Who may call what (docs/specs/api.md, "who may reach it"; docs/specs/dashboard.md, "how it writes").
 
-The service flashes firmware and power-cycles hardware, so it is not open by default. Two modes, and
-**there is no mode with an unauthenticated write**:
+The service flashes firmware and power-cycles hardware, so it is not open by default. Three modes:
 
   token      every request needs the token (the default for any address that leaves this machine);
-  open-read  a request that only reads is open; every write needs the token.
+  open-read  a request that only reads is open; every write needs the token;
+  open       no token at all, on any address: the operator's statement that this network is trusted. Only a
+             browser request from another site is refused (see `authorise`).
 
 With NO token configured the service is loopback-only (core.config.check_listen refuses anything
 else), and every request is allowed, as a local tool is. The token is sent as a bearer header and is
@@ -21,7 +22,7 @@ import hmac
 
 from ..core.sessions import same_origin as origin_allowed
 
-ACCESS_MODES = ("token", "open-read")
+ACCESS_MODES = ("token", "open-read", "open")
 COOKIE_NAME = "nrfwb_session"
 CSRF_HEADER = "x-csrf-token"
 
@@ -50,6 +51,12 @@ class Auth(object):
 
     def authorise(self, headers, effect):
         """(allowed, caller). `caller` is a label for the activity record, never the token."""
+        if self.access == "open":
+            # No token is asked of anybody, on any address: the operator said this network is trusted. The ONE check
+            # kept is the browser's: a request that carries an Origin must name this host, or any web page the
+            # operator happens to visit could drive the bench (flash, reset) through their browser. A script, the CLI
+            # and the MCP send no Origin and pass. (Residual risk, in api.md: anything else on the LAN may call it.)
+            return (True, "open") if origin_allowed(headers) else (False, None)
         if self.token is None:
             return True, "local"
         if self.access == "open-read" and effect == "read":

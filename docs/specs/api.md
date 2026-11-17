@@ -261,12 +261,24 @@ choices?" It is **a user choice**. One service, one port: the dashboard at `/`, 
 The service can flash firmware and power-cycle hardware, so it is not open by default.
 
 - **A non-loopback listen address (which port 80 on a LAN is) requires a configured token, and the
-  service refuses to start without one**, whatever the access mode.
-- **`service.access` has two modes, and there is no mode with unauthenticated writes:**
+  service refuses to start without one**, in the `token` and `open-read` modes. In `open` mode it does not
+  (below).
+- **`service.access` has three modes (the third added 2026-11-17, Peter: "disable the token based access
+  (make it a config option) we are on the LAN and there are no plans to expose this to the internet"):**
   - `token` (the default for any non-loopback address): every request needs the token;
   - `open-read` (opt-in): the dashboard pages and read-only data are open to the LAN; every `write`
     command and every stream that can send needs the token. The Bench page says plainly that read
-    access is open.
+    access is open;
+  - `open` (opt-in): **no token is asked of anybody, at any address**, writes included, and the dashboard
+    shows no login. It is the operator's statement that the network is trusted, and it is a config value,
+    never a default. **The one check kept is the browser's:** a request that carries an `Origin` other than
+    this host is refused (`403`), because with no token and no cookie that header is the only thing
+    standing between the bench and any web page the operator visits, which could otherwise flash or reset
+    it through their own browser. The CLI, the MCP and scripts send no `Origin` and are not affected.
+    **Residual risk, stated:** any machine on the network can call every command, including a flash; a
+    page that makes the browser's `Host` name a hostile DNS name (rebinding) passes the same-origin check,
+    which is why `open` is for a LAN and not for anything reachable from outside. Undo: set
+    `service.access: token` (the token file is still there, or `--access token`).
 - **Clients (the CLI over HTTP, the API, the MCP) send the token as a bearer header**, compared in
   constant time, never logged. Websocket upgrades carry it too.
 - **A browser cannot send a bearer header on a page load, and putting the token in
@@ -399,9 +411,12 @@ The `MEASURE` step in the `guards` task is what fills them in. **[derive rule]**
 - **A taken port** returns `port_in_use` naming the holder, not a traceback.
 - **A port below 1024 as a non-root user without the capability** refuses with the reason; as root,
   and with the capability under systemd, it binds. (The limit is read from `/proc`, not assumed.)
-- **Non-loopback with no token refuses to start**, in both access modes.
+- **Non-loopback with no token refuses to start**, in `token` and `open-read`; `open` starts without one.
 - **`open-read`:** a page and a read are served without a token; a `write` and a sending stream are
-  refused without one; there is no mode in which a write is unauthenticated.
+  refused without one.
+- **`open`:** a write with no credential is accepted and its caller is recorded as `open`; the same write
+  from a browser whose `Origin` is another site is refused; the dashboard shows no login; a token file
+  that is also configured is ignored.
 - **The browser path:** the login sets an `HttpOnly`, `SameSite=Strict` cookie; a write without the
   per-session header is refused; a websocket with a foreign `Origin` is refused.
 - **The Bench page says "unencrypted"** whenever the service listens beyond loopback without TLS.

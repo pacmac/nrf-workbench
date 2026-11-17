@@ -276,6 +276,50 @@ class NoToken(Base):
         self.assertEqual(self.login(headers={"origin": "http://evil.example"}).status_code, 403)
 
 
+class Open(Base):
+    """`open` through the real built app: no login, no token, writes work, and another site's browser is refused."""
+    token = None
+    overrides = {"service": {"access": "open", "listen": "0.0.0.0:80"}}
+
+    def test_the_page_asks_for_no_login_and_the_session_says_so(self):
+        info = self.client.get("/api/session").json()
+        self.assertEqual((info["login_required"], info["authenticated"], info["caller"], info["access"]),
+                         (False, True, "open", "open"))
+
+    def test_a_write_with_no_credential_reaches_the_command(self):
+        r = self.client.post("/api/firmware/delete", content=json.dumps({"id": "deadbeef"}))
+        self.assertEqual(r.status_code, 404, "the command ran and refused by name; it was not an auth failure")
+
+    def test_the_same_write_from_another_sites_browser_is_refused(self):
+        r = self.client.post("/api/firmware/delete", content=json.dumps({"id": "deadbeef"}),
+                             headers={"origin": "http://evil.example"})
+        self.assertEqual(r.status_code, 401)
+        self.assertEqual(self.client.get("/api/devices/list", headers={"origin": "http://evil.example"}).status_code, 401)
+
+    def test_this_pages_own_origin_may_write(self):
+        r = self.client.post("/api/firmware/delete", content=json.dumps({"id": "deadbeef"}),
+                             headers={"origin": "http://testserver"})
+        self.assertEqual(r.status_code, 404)
+
+    def test_a_configured_token_is_ignored_in_open_mode(self):
+        class WithToken(Open):
+            token = TOKEN
+        t = WithToken("test_the_page_asks_for_no_login_and_the_session_says_so")
+        t.setUp()
+        self.addCleanup(t.doCleanups)
+        self.assertEqual(t.client.get("/api/session").json()["login_required"], False)
+        self.assertEqual(t.client.post("/api/firmware/delete", content=json.dumps({"id": "x"})).status_code, 404)
+
+    def test_the_websocket_needs_nothing_either_but_a_foreign_origin_is_refused(self):
+        with self.client.websocket_connect("/ws/events") as ws:
+            ws.send_json({"want": {"activity": {"cursor": 0}}})
+            self.assertEqual(ws.receive_json()["type"], "events")
+        from starlette.websockets import WebSocketDisconnect
+        with self.assertRaises(WebSocketDisconnect):
+            with self.client.websocket_connect("/ws/events", headers={"origin": "http://evil.example"}) as ws:
+                ws.receive_json()
+
+
 class OpenRead(Base):
     overrides = {"service": {"access": "open-read"}}
 

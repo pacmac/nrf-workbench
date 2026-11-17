@@ -81,6 +81,36 @@ class NoToken(unittest.TestCase):
         self.assertIsNone(Auth("", "token").token)
 
 
+class Open(unittest.TestCase):
+    """`open`: no token asked of anybody, on any address. Only a browser from another site is refused."""
+
+    def test_every_effect_is_allowed_with_no_credential_and_labelled_open(self):
+        for token in (None, TOKEN):                         # a configured token is ignored, not required
+            a = Auth(token, "open")
+            for effect in ("read", "write", "stream"):
+                self.assertEqual(a.authorise({}, effect), (True, "open"), (token, effect))
+
+    def test_a_wrong_token_does_not_matter(self):
+        self.assertEqual(Auth(TOKEN, "open").authorise(bearer("Bearer wrong"), "write"), (True, "open"))
+
+    def test_a_request_from_another_site_is_refused_for_every_effect(self):
+        a = Auth(None, "open")
+        for effect in ("read", "write", "stream"):
+            self.assertEqual(a.authorise({"origin": "http://evil.example", "host": "bench.home"}, effect), (False, None), effect)
+            self.assertEqual(a.authorise({"origin": "null", "host": "bench.home"}, effect), (False, None), effect)
+            self.assertEqual(a.authorise({"origin": "http://evil.example"}, effect), (False, None), "no Host to compare")
+
+    def test_this_sites_own_page_and_a_script_with_no_origin_pass(self):
+        a = Auth(None, "open")
+        self.assertEqual(a.authorise({"origin": "http://bench.home", "host": "bench.home"}, "write"), (True, "open"))
+        self.assertEqual(a.authorise({"origin": "http://BENCH.home:80", "host": "bench.home:80"}, "write"), (True, "open"))
+        self.assertEqual(a.authorise({"host": "bench.home"}, "write"), (True, "open"))
+
+    def test_the_other_modes_are_not_loosened(self):
+        self.assertEqual(Auth(TOKEN, "token").authorise({}, "write"), (False, None))
+        self.assertEqual(Auth(TOKEN, "open-read").authorise({}, "write"), (False, None))
+
+
 class CookieSessions(unittest.TestCase):
     """A browser holds a session cookie, not the token. The cookie alone is not enough to write."""
 

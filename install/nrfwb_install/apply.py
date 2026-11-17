@@ -29,10 +29,10 @@ def service_section(prefix, listen):
     host, _port = listenmod.parse(listen["listen"])
     out = ["# Where the dashboard and API listen, chosen at install time (docs/specs/install.md).\n",
            "service:\n", "  listen: %s\n" % json.dumps(listen["listen"])]
-    if not listenmod.is_loopback(host):
+    if not listenmod.is_loopback(host) and listen.get("access") != "open":
         out.append("  token_file: %s\n" % json.dumps(token_path(prefix)))
-    if listen.get("access") == "open-read":
-        out.append("  access: open-read\n")
+    if listen.get("access") in ("open-read", "open"):
+        out.append("  access: %s\n" % listen["access"])
     return "".join(out)
 
 
@@ -235,7 +235,8 @@ def write_config(prefix, log, listen=None):
             with open(path, "w") as fh:
                 fh.write(text)
             log.stamp("created " + path)
-    if made_host_yaml and listen and listen.get("listen") and not listenmod.is_loopback(listenmod.parse(listen["listen"])[0]):
+    if (made_host_yaml and listen and listen.get("listen") and listen.get("access") != "open"
+            and not listenmod.is_loopback(listenmod.parse(listen["listen"])[0])):
         # the token the new host.yaml names. Created exclusively, owner-only; the value is never printed or logged.
         what = listenmod.create_token(token_path(prefix))
         log.stamp("%s %s (mode 0600; the value is not logged)" % (what, token_path(prefix)))

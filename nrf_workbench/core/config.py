@@ -19,7 +19,7 @@ from .result import Result
 DEFAULTS = {
     "service": {
         "listen": "127.0.0.1:8080",     # loopback on an unprivileged port; leaving it needs a token (api.md)
-        "access": "token",              # token | open-read
+        "access": "token",              # token | open-read | open (no token at all: a trusted LAN, api.md)
         "token_file": None,
         "bench_name": None,             # shown in the dashboard's title; unset means this machine's host name
     },
@@ -54,7 +54,7 @@ ENV = {
     "NRFWB_GPIO_DIR": ("paths", "gpio"),
 }
 
-ACCESS_MODES = ("token", "open-read")
+ACCESS_MODES = ("token", "open-read", "open")
 
 
 class ConfigError(Exception):
@@ -201,11 +201,12 @@ def read_token(path):
     return (token or None), note
 
 
-def check_listen(listen, token):
-    """None if the service may start on `listen`, else the refusal. A non-loopback address with no
-    token refuses (`token_missing`), whatever the access mode: there is no unauthenticated write."""
+def check_listen(listen, token, access="token"):
+    """None if the service may start on `listen`, else the refusal. A non-loopback address with no token
+    refuses (`token_missing`) in the `token` and `open-read` modes. The `open` mode is the operator's explicit
+    statement that this network is trusted (api.md, "open"): it needs no token at any address."""
     host, _port = parse_listen(listen)
-    if not is_loopback(host) and not token:
+    if access != "open" and not is_loopback(host) and not token:
         return Result.refused("token_missing",
                               "the service would listen beyond this machine with no token; it flashes and "
                               "power-cycles hardware, so it will not start", {"address": host})

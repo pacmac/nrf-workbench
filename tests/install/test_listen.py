@@ -274,6 +274,13 @@ class HostYaml(Dirs):
         self.assertEqual(cfg["service"]["access"], "open-read")
         self.assertNotIn("open-read", applymod.host_yaml_text(self.pfx, {"listen": "0.0.0.0:80", "access": "token"}))
 
+    def test_open_access_is_recorded_with_no_token_file_and_the_service_accepts_the_file(self):
+        text = applymod.host_yaml_text(self.pfx, {"listen": "0.0.0.0:80", "access": "open"})
+        self.assertNotIn("token_file", text)
+        cfg = self.load(text)
+        self.assertEqual((cfg["service"]["access"], cfg["service"]["listen"], cfg["service"]["token_file"]), ("open", "0.0.0.0:80", None))
+        self.assertIsNone(cfgmod.check_listen(cfg["service"]["listen"], None, cfg["service"]["access"]))
+
     def test_no_choice_writes_no_service_block_and_the_rest_is_unchanged(self):
         text = applymod.host_yaml_text(self.pfx)
         self.assertNotIn("service:", text)
@@ -297,6 +304,11 @@ class WriteConfig(Dirs):
             value = fh.read().strip()
         self.assertTrue(any(token in n for n in notes), notes)
         self.assertFalse(any(value in n for n in notes) or any(value in l for l in log.lines), "the value must not be printed or logged")
+
+    def test_open_access_on_the_network_creates_no_token(self):
+        notes = applymod.write_config(self.pfx, Log(), {"listen": "0.0.0.0:80", "access": "open"})
+        self.assertFalse(os.path.exists(applymod.token_path(self.pfx)))
+        self.assertFalse(any("token" in n for n in notes), notes)
 
     def test_a_loopback_choice_creates_no_token(self):
         applymod.write_config(self.pfx, Log(), {"listen": "127.0.0.1:8080", "access": None})
@@ -380,6 +392,12 @@ class Choice(Dirs):
         self.assertEqual(choice["listen"], "0.0.0.0:80")
         self.assertIn("service.listen: 0.0.0.0:80", choice["summary"])
         self.assertIn(applymod.token_path(self.pfx), choice["summary"])
+
+    def test_open_access_summary_says_no_token_is_asked_and_names_no_token_file(self):
+        choice, _ = self.choose(listen="0.0.0.0:80", access="open")
+        self.assertIn("access: open", choice["summary"])
+        self.assertIn("NO token", choice["summary"])
+        self.assertNotIn(applymod.token_path(self.pfx), choice["summary"])
 
     def test_a_loopback_flag_mentions_no_token(self):
         choice, _ = self.choose(listen="127.0.0.1:9000")

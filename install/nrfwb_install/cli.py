@@ -37,8 +37,9 @@ def make_parser():
     p.add_argument("--wheelhouse", help="install packages from this folder with no network")
     p.add_argument("--listen", help="where the dashboard and API listen, ADDRESS:PORT (default: ask on a terminal; with none, "
                                     "127.0.0.1:8080, this machine only). A non-loopback address creates the token file.")
-    p.add_argument("--access", choices=("token", "open-read"),
-                   help="recorded with --listen: token (default) or open-read (reads need no token; writes always do)")
+    p.add_argument("--access", choices=("token", "open-read", "open"),
+                   help="recorded with --listen: token (default), open-read (reads need no token; writes do) or open (NO "
+                        "token at all, for a trusted LAN; no token file is made)")
     p.add_argument("--add-user", dest="add_user", help="add this user to the group that owns serial devices")
     p.add_argument("--uninstall", action="store_true", help="remove the venv and the record; keeps config and logs")
     p.add_argument("--no-verify", dest="no_verify", action="store_true", help="skip the verify step")
@@ -101,7 +102,9 @@ def _same_address(a, b):
 def _summary(choice, state, owner_root, limit):
     host, port = listenmod.parse(choice["listen"])
     where = "service.listen: %s  (%s)" % (choice["listen"], listenmod.state_text(port, state, owner_root, limit))
-    if not listenmod.is_loopback(host):
+    if choice.get("access") == "open":
+        where += "; access: open (NO token is asked of anyone; a browser from another site is still refused)"
+    elif not listenmod.is_loopback(host):
         where += "; token file %s (mode 0600, created if absent, never printed)" % applymod.token_path(choice["prefix"])
     if choice.get("access") == "open-read":
         where += "; access: open-read"

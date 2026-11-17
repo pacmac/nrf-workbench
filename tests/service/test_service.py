@@ -560,6 +560,19 @@ class Main(Base):
         self.assertIn("token required", out)
         self.assertNotIn(TOKEN, out + err)
 
+    def test_open_access_starts_on_the_network_with_no_token_and_says_so_loudly(self):
+        rc, calls, out, err = self.run_main(["--listen", "0.0.0.0:%d" % free_port(), "--access", "open"])
+        self.assertEqual((rc, len(calls)), (0, 1), err)
+        self.assertIn("NETWORK, UNENCRYPTED http", out)
+        self.assertIn("OPEN: no token is asked of anyone", out)
+        self.assertNotIn("token required", out)
+
+    def test_open_access_does_not_loosen_the_other_modes(self):
+        for access in ("token", "open-read"):
+            rc, calls, out, err = self.run_main(["--listen", "0.0.0.0:%d" % free_port(), "--access", access])
+            self.assertEqual((rc, calls), (1, []), access)
+            self.assertIn("token_missing", err)
+
     def test_open_read_says_what_is_open(self):
         tok = self.write("token", TOKEN + "\n")
         rc, calls, out, err = self.run_main(["--listen", "0.0.0.0:%d" % free_port(), "--token-file", tok,

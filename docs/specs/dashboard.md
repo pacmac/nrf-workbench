@@ -479,7 +479,8 @@ same holds here.
   (`service.listen`), never a default and never in the UI code. The dashboard makes no assumption
   about its own address: it uses relative URLs, so it works on any port and behind any path.
 - **It is honest about exposure.** Beyond loopback without TLS, the Bench page shows
-  "unencrypted". In `open-read` mode it shows "read access is open on this network". The login and
+  "unencrypted". In `open-read` mode it shows "read access is open on this network"; in `open` mode there is
+  no login at all and the page says nothing about a token. The login and
   these notices are the only places a token or the access mode is mentioned.
 
 ## TOOL retention: every retained stream has a bound

@@ -216,8 +216,8 @@ self-contained folder holds the whole install; no folder is assumed), a user fil
 command-line flags. YAML. Two kinds of content:
 
 - **host settings:** lock path, profile directory, and the service's `listen` (address and port,
-  with no assumed value; the unset default is loopback on 8080) and `access` (`token` or
-  `open-read`), see `api.md`
+  with no assumed value; the unset default is loopback on 8080) and `access` (`token`, `open-read` or
+  `open`), see `api.md`
 - **`units.yaml`:** exceptions per serial only, chiefly `protected` (`devices.md`). A board not
   named is flashable by default; this is not a roster.
 
