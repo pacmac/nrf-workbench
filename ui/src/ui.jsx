@@ -26,6 +26,18 @@ export function ClassBadge({ cls }) {
   return <Chip tone={CLASS_TONE[cls] || "slate"}>{cls}</Chip>;
 }
 
+// A CSS animation, not a timer (the page has none: docs/specs/dashboard.md, "no polling"). It takes the colour of
+// the text around it, so it needs no light and dark pair, and for a visitor who asks for reduced motion it stays a
+// still ring instead of turning.
+export function Spinner({ className }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cx("inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none motion-reduce:border-t-current", className)}
+    />
+  );
+}
+
 export function Card({ title, aside, children, className }) {
   return (
     <section className={cx("rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900", className)}>

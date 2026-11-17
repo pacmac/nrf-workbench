@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { readJson, writeFile, writeJson } from "./api.js";
 import { DEFAULT_PROJECT, ENTER_BOUND_S, PROJECT_NAME, PROJECT_RULE_TEXT, bytesText, clock, expectedRangeS, flashBoundS, rangeText, seconds, THROUGHPUT_FASTEST_BPS, THROUGHPUT_SLOWEST_BPS, when } from "./format.js";
-import { Button, Chip, Field, inputClass } from "./ui.jsx";
+import { Button, Chip, Field, Spinner, inputClass } from "./ui.jsx";
 import { ResultView } from "./Commands.jsx";
 
 // "Flash…" on a board. A person knows three things: which board, which package, and whether they are sure. So
@@ -296,8 +296,9 @@ export default function FlashDialog({ board, commands, onClose, onDone }) {
           <div className="flex flex-wrap items-center gap-3">
             <Button type="submit" tone="danger" disabled={!canFlash}>{pending ? "Flashing…" : `Erase and flash ${board.serial}`}</Button>
             {pending && startedAt && (
-              <span role="status" className="text-sm text-slate-600 dark:text-slate-400">
-                Started {clock(startedAt)}. The service answers when the board is back; the list behind this dialog follows the board live. Keep this open.
+              <span role="status" className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                <Spinner />
+                <span>Started {clock(startedAt)}. The service answers when the board is back; the list behind this dialog follows the board live. Keep this open.</span>
               </span>
             )}
           </div>

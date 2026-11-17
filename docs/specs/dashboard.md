@@ -157,6 +157,15 @@ everyone looking at it, whoever started the flash (the CLI, the MCP, another ses
 - **A command that never ends stays shown.** The bar does not time out: a flash that has hung is the thing the
   person most needs to see, and the service's own bound is what ends it.
 
+**Built and checked, 2026-11-17.** The service announces the start of every write command (`core.md`; 10 mutants
+caught). In the real browser, on the fake bench with the uploader held so the flash stays "running": a flash started
+by another caller (a bearer token, as the CLI or MCP would) shows in the bar with its serial, who and when, a
+spinner and the tab title; a second page opened mid-flash shows it at once; a visitor who asks for reduced motion gets
+a still marker; the bar and title clear when the flash ends; and a flash started from the dialog spins in the dialog,
+shows in the bar as the dashboard's, and cannot be closed while it runs: **303 checks, 0 failed**, three runs in a
+row. Four page-side mutants were caught (ignore the start, never clear, never change the title, ignore reduced
+motion). **Not exercised: a real flash of the real board**, which takes about 20 seconds and needs Peter.
+
 ### The store in the dialog: project folders (added 2026-11-17, Peter: "the ability to browse and add a new folder")
 
 The store is a folder per project (`firmware.md`, "projects"), so the dialog browses it the same way.

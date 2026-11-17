@@ -6,6 +6,7 @@ import { applyTheme, currentTheme, nextTheme } from "./theme.js";
 import { Button, cx } from "./ui.jsx";
 import Login from "./Login.jsx";
 import Band from "./Band.jsx";
+import Working from "./Working.jsx";
 import Bench from "./Bench.jsx";
 import Devices from "./Devices.jsx";
 import Activity from "./Activity.jsx";
@@ -44,6 +45,7 @@ export default function App() {
   const [unavailable, setUnavailable] = useState("");
   const [ticker, setTicker] = useState([]);
   const [activity, setActivity] = useState({ rows: [], lost: 0, reset: false });
+  const [running, setRunning] = useState([]);                    // started and not yet ended, from the activity feed
   const [info, setInfo] = useState({ commands: null, capabilities: null, streams: null, status: null });
   const [flashing, setFlashing] = useState(null);
   const feedRef = useRef(null);
@@ -73,10 +75,25 @@ export default function App() {
         setTicker((old) => [...p.events.map((e) => ({ key: `${p.epoch}-${e.cursor}`, wall: e.wall, text: tickerText(e) })).reverse(), ...old].slice(0, TICKER_LINES));
       }
     } else if (feedName === "activity") {
+      // The feed carries two kinds: a command that STARTED and the result that ENDS it, joined by `run`. The
+      // page lists the results; what is running is the starts that have no result yet. A new epoch (a service
+      // restart) replays from the start, so it clears what was running.
+      const results = p.events.filter((e) => e.type === "command.result");
       setActivity((old) => {
         const base = p.reset ? [] : old.rows;
-        const rows = base.concat(p.events).slice(-KEEP_ROWS);
+        const rows = base.concat(results).slice(-KEEP_ROWS);
         return { rows, lost: p.reset ? 0 : (old.lost || 0) + (p.lost || 0), reset: p.reset || old.reset };
+      });
+      setRunning((old) => {
+        let now = p.reset ? [] : old;
+        for (const e of p.events) {
+          if (e.type === "command.started") {
+            now = now.concat({ run: e.payload.run, caller: e.payload.caller, command: e.payload.command, args: e.payload.args, wall: e.wall });
+          } else if (e.type === "command.result" && e.payload.run != null) {
+            now = now.filter((r) => r.run !== e.payload.run);
+          }
+        }
+        return now;
       });
     }
   }, []);
@@ -90,6 +107,14 @@ export default function App() {
   }, []);
 
   const authenticated = Boolean(session && session.authenticated);
+
+  // The title says it too: the person watching is often in another tab. The service sets the bench name in the
+  // title before any script runs, so the first value seen here is the base.
+  const baseTitle = useRef(null);
+  useEffect(() => {
+    if (baseTitle.current === null) baseTitle.current = document.title;
+    document.title = running.length > 0 ? `Working · ${baseTitle.current}` : baseTitle.current;
+  }, [running]);
 
   useEffect(() => {
     if (!authenticated) return undefined;
@@ -132,12 +157,13 @@ export default function App() {
         <div className="ml-auto flex items-center gap-2">
           <Button tone="quiet" onClick={() => setTheme(nextTheme(theme))} title="Light, dark, or follow the system">Theme: {theme}</Button>
           {session.login_required && (
-            <Button tone="quiet" onClick={async () => { await logout(); setExpired(false); setBoards(null); setActivity({ rows: [], lost: 0, reset: false }); refreshSession(); }}>Log out</Button>
+            <Button tone="quiet" onClick={async () => { await logout(); setExpired(false); setBoards(null); setActivity({ rows: [], lost: 0, reset: false }); setRunning([]); refreshSession(); }}>Log out</Button>
           )}
         </div>
       </header>
 
       <div className="space-y-4">
+        <Working running={running} feedLive={feed.state === "live"} />
         <Band
           feed={feed}
           boards={boards}

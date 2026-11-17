@@ -17,6 +17,7 @@ for a person to LOOK at: a rendered element is not a verified one.
 Exit 0 only if every check passed.
 """
 import argparse
+import json
 import math
 import os
 import re
@@ -26,6 +27,7 @@ import tempfile
 import threading
 import time
 import urllib.parse
+import urllib.request
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, ROOT)
@@ -57,6 +59,10 @@ PAGES = ("Bench", "Devices", "Activity", "Commands")
 # the FAILURE case, never a wait: 3 x the worst measured (25 ms) = 75 ms, rounded up to 100 ms.
 LIVE_CEILING_MS = 100
 
+# How long the fake uploader waits for a check to let it finish before giving up. The held checks (the bar appears,
+# a second page opens, the spinner is read) take well under a second each; this is the failure case's way out.
+GATE_CEILING_S = 20
+
 # The only responses a correct run may see with a status of 400 or more, in order: the wrong token at login,
 # and the refused firmware.delete the run issues on purpose.
 EXPECTED_REFUSALS = [("POST", "/login", 401), ("POST", "/api/firmware/delete", 404)]
@@ -84,8 +90,10 @@ class Bench(object):
         # The host lock and the touch ledger default to ONE shared path on the machine; this bench gets its own, so a
         # run never inherits (or leaves) a "touch pending" for a fake board.
         self.lock_path = os.path.join(self.tmp, "lock")
+        self.gate = threading.Event()                # cleared by a check that wants the "flash" to stay running
+        self.gate.set()
         hooks = {"tool": "/fake/adafruit-nrfutil", "watcher": FakeWatcher(),
-                 "touch": Touch(on_touch=self._to_bootloader), "runner": Runner(on_run=self._to_app),
+                 "touch": Touch(on_touch=self._to_bootloader), "runner": Runner(on_run=self._uploader_done),
                  "ledger": TouchLedger(self.lock_path + ".touches.json")}
         cfg, _ = cfgmod.load(env={}, overrides={
             "paths": {"firmware": os.path.join(self.tmp, "fw")}, "service": {"bench_name": BENCH},
@@ -113,6 +121,13 @@ class Bench(object):
         self.tree.unplug("1-3")
         self.tree.bootloader_board()
         self.poke_w.send(b"x")
+
+    def _uploader_done(self):
+        # The fake uploader returns when the gate is open. A check that clears the gate holds the flash "running" so
+        # the page can be looked at in the middle of it; the timeout is a give-up for a FAILING check, never a wait:
+        # every held check below takes well under a second.
+        self.gate.wait(timeout=GATE_CEILING_S)
+        self._to_app()
 
     def _to_app(self):
         self.tree.unplug("1-3")
@@ -286,6 +301,79 @@ def flash_flows(page, bench, band, shot, tag):
     dialog.wait_for(state="hidden")
 
 
+def api(bench, method, path, body=None):
+    """A caller that is not this page: a bearer token, as the CLI and the MCP use."""
+    request = urllib.request.Request(bench.url + path, data=body, method=method, headers={
+        "Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read())
+
+
+def in_progress(page, bench, band, shot, tag):
+    """What is running is shown to everyone, whoever started it (docs/specs/dashboard.md, "The in-progress
+    indicator"): a flash started by ANOTHER caller, a page opened in the middle of it, and one started from the dialog."""
+    flash_button = lambda d: d.get_by_role("button", name=re.compile("Erase and flash"))   # noqa: E731
+    bar = page.get_by_label("Activity in progress")
+    base_title = page.title()
+    check("%s in progress: the bar is empty while nothing runs" % tag, bar.locator("li").count() == 0)
+
+    # 1. another caller starts a flash; this page did not press anything
+    ident = api(bench, "GET", "api/firmware/list")["data"]["items"][0]["sha256"]
+    body = json.dumps({"serial": SERIAL, "firmware": ident, "enter_bound_s": 2, "flash_bound_s": 60}).encode()
+    bench.gate.clear()
+    out = []
+    worker = threading.Thread(target=lambda: out.append(api(bench, "POST", "api/programmer/flash", body)), daemon=True)
+    worker.start()
+    bar.get_by_text("Flashing " + SERIAL).wait_for(timeout=15000)
+    text = bar.inner_text()
+    check("%s in progress: a flash started by another caller shows in the header" % tag, "Flashing %s" % SERIAL in text, text)
+    check("%s in progress: it says who started it" % tag, "by token" in text, text)
+    check("%s in progress: it says when it started" % tag, re.search(r"started \d{1,2}:\d{2}", text) is not None, text)
+    check("%s in progress: it carries a spinner" % tag, bar.locator(".animate-spin").count() == 1)
+    check("%s in progress: the tab title says so" % tag, page.title() == "Working · " + base_title, page.title())
+    shot("10-in-progress")
+
+    # 2. a page opened in the middle of it: the retained start replays and it is shown at once
+    second = page.context.new_page()
+    second.goto(bench.url)
+    second_bar = second.get_by_label("Activity in progress")
+    second_bar.get_by_text("Flashing " + SERIAL).wait_for(timeout=15000)
+    check("%s in progress: a page opened mid-flash shows it too" % tag, True)
+    second.emulate_media(reduced_motion="reduce")
+    still = second.evaluate("e => getComputedStyle(e).animationName", second_bar.locator(".animate-spin").element_handle())
+    check("%s in progress: a visitor who asks for reduced motion gets a still marker" % tag, still == "none", still)
+    second.close()
+
+    # 3. it ends: the bar clears, the title returns, and the flash itself was a success
+    bench.gate.set()
+    expect(bar.locator("li")).to_have_count(0, timeout=15000)
+    worker.join(timeout=GATE_CEILING_S)
+    check("%s in progress: the bar clears when the flash ends" % tag, True)
+    check("%s in progress: the tab title returns" % tag, page.title() == base_title, page.title())
+    check("%s in progress: the flash the other caller started succeeded" % tag, out and out[0].get("class") == "ok", out)
+    band.locator("ul").get_by_text("app", exact=True).first.wait_for()
+
+    # 4. started from this page's own dialog: the dialog spins, and the header shows it as the dashboard's
+    dialog = open_flash(page, band)
+    dialog.get_by_label("Project folder").select_option(value="mt-alarm")
+    dialog.get_by_label("Stored package").select_option(index=1)
+    bench.gate.clear()
+    flash_button(dialog).click()
+    dialog.locator(".animate-spin").first.wait_for(timeout=15000)
+    check("%s in progress: the dialog shows a spinner while its own flash runs" % tag, True)
+    bar.get_by_text("Flashing " + SERIAL).wait_for(timeout=15000)
+    check("%s in progress: the header shows the dialog's flash as the dashboard's" % tag, "by dashboard" in bar.inner_text(), bar.inner_text())
+    check("%s in progress: the dialog cannot be closed while it runs" % tag,
+          dialog.get_by_role("button", name="Close", exact=True).is_disabled())
+    bench.gate.set()
+    dialog.get_by_role("status").filter(has_text="packets").first.wait_for(timeout=15000)
+    expect(bar.locator("li")).to_have_count(0, timeout=15000)
+    check("%s in progress: the bar clears after the dialog's flash too" % tag, True)
+    dialog.get_by_role("button", name="Close", exact=True).click()
+    dialog.wait_for(state="hidden")
+    band.locator("ul").get_by_text("app", exact=True).first.wait_for()
+
+
 def run_viewport(browser, bench, theme, size, shots, first):
     label, width, height = size
     tag = "%s-%s" % (theme, label)
@@ -401,6 +489,7 @@ def run_viewport(browser, bench, theme, size, shots, first):
     if first:
         refusals_expected.append(("POST", "/api/programmer/flash", 500))
         flash_flows(page, bench, band, shot, tag)
+        in_progress(page, bench, band, shot, tag)
 
     # the activity log names this caller
     page.get_by_role("navigation", name="Pages").get_by_role("button", name="Activity").click()
