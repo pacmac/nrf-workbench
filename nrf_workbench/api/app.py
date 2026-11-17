@@ -105,29 +105,46 @@ def build_app(registry, host, auth, capabilities, streams=None, extra_routes=())
                     activity.record_usage(caller, command.name, {}, str(exc), time.monotonic() - started)
                 return _error(400, "usage", str(exc))
             ctx = Context(host, caller, body)
+            run = None
             try:
                 typed = registry.validate(command, args, from_text)
                 recorded = dict((name, typed[name]) for name in args)    # what the caller SENT, typed: not query text
+                if activity is not None and command.effect == "write":
+                    run = activity.begin(caller, command.name, recorded)  # announced only once it will really run
             except UsageError:
                 recorded = args                                          # the call below raises the same error
             call = functools.partial(registry.call, command.name, args, ctx, capabilities, from_text)
+            ended = False
             try:
-                result = await anyio.to_thread.run_sync(call)
-            except UsageError as exc:
+                try:
+                    result = await anyio.to_thread.run_sync(call)
+                except UsageError as exc:
+                    ended = True
+                    if activity is not None:
+                        activity.record_usage(caller, command.name, args, str(exc), time.monotonic() - started, run=run)
+                    return _error(400, "usage", str(exc), arg=exc.arg)
+                except UnknownCommand:
+                    ended = True
+                    if run is not None:
+                        activity.record_usage(caller, command.name, args, "no such command here",
+                                              time.monotonic() - started, run=run)
+                    return _error(404, "not_found", "no such command here")
+                except Exception as exc:                # a handler bug: say so, leak no traceback
+                    ended = True
+                    log.exception("command %s raised", command.name)
+                    if activity is not None:
+                        activity.record_error(caller, command.name, recorded,
+                                              "the command raised %s" % type(exc).__name__,
+                                              time.monotonic() - started, run=run)
+                    return _error(500, "internal", "the command raised an unexpected error (%s)" % type(exc).__name__)
+                ended = True
                 if activity is not None:
-                    activity.record_usage(caller, command.name, args, str(exc), time.monotonic() - started)
-                return _error(400, "usage", str(exc), arg=exc.arg)
-            except UnknownCommand:
-                return _error(404, "not_found", "no such command here")
-            except Exception as exc:                    # a handler bug: say so, leak no traceback
-                log.exception("command %s raised", command.name)
-                if activity is not None:
-                    activity.record_error(caller, command.name, recorded, "the command raised %s" % type(exc).__name__,
-                                          time.monotonic() - started)
-                return _error(500, "internal", "the command raised an unexpected error (%s)" % type(exc).__name__)
-            if activity is not None:
-                activity.record(caller, command.name, recorded, result, time.monotonic() - started)
-            return JSONResponse(result.to_dict(), status_code=status.http_status(result) or 500)
+                    activity.record(caller, command.name, recorded, result, time.monotonic() - started, run=run)
+                return JSONResponse(result.to_dict(), status_code=status.http_status(result) or 500)
+            finally:
+                if run is not None and not ended:       # a cancelled request: never leave a start with no end
+                    activity.record_error(caller, command.name, recorded, "the request ended before the command reported",
+                                          time.monotonic() - started, run=run)
 
         return endpoint
 

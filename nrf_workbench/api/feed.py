@@ -30,7 +30,9 @@ def feeds_of(streams):
     if streams is not None and streams.events is not None:
         feeds["devices"] = (streams.events, ("devices.changed", "devices.live_unavailable", "devices.read_failed"))
     if streams is not None and streams.activity is not None:
-        feeds["activity"] = (streams.activity.bus, (streams.activity.TYPE,))
+        # both types: the live feed shows what is running now (the start) as well as what happened (the result);
+        # the history endpoint, ActivityLog.since, stays results-only
+        feeds["activity"] = (streams.activity.bus, (streams.activity.STARTED, streams.activity.TYPE))
     return feeds
 
 

@@ -438,6 +438,138 @@ class ActivityRecording(Base):
         self.assertEqual(page["events"][0]["payload"]["command"], "demo.echo")
 
 
+class Gone(BaseException):
+    """What a cancelled request raises through the endpoint: not an Exception, so no `except Exception` sees it."""
+
+
+class InProgress(Base):
+    """A write command announces its start and ends it on EVERY path out (docs/specs/core.md), so a start with no
+    result always means the command is really still running."""
+
+    def setUp(self):
+        Base.setUp(self)
+        self.seen_during = []
+
+        def watch(ctx):
+            # the start must already be public while the handler is still running
+            self.seen_during.append([(e.type, e.payload) for e in self.st.activity.bus.since(0).events])
+            return Result.success()
+
+        def refuse(ctx):
+            return Result.refused("lock_held", "another instance holds the lock")
+
+        def crash(ctx):
+            raise RuntimeError("secret detail")
+
+        def gone(ctx):
+            raise Gone()
+
+        def bad(ctx):
+            from nrf_workbench.core.registry import UsageError
+            raise UsageError("the handler did not like it", "x")
+
+        r = make_registry()
+        for name, fn in (("watch", watch), ("wrefuse", refuse), ("wcrash", crash), ("wgone", gone), ("wbad", bad)):
+            r.add(Command("demo." + name, name, fn, effect="write"), module="t")
+        r.add(Command("demo.wtyped", "typed", lambda ctx, n, api_key=None: Result.success(), effect="write",
+                      args=(Arg("n", "int"), Arg("api_key", required=False))), module="t")
+        self.client = TestClient(build_app(r, None, Auth(None, "token"), set(), self.st))
+        self.addCleanup(self.client.close)
+
+    def everything(self):
+        return [(e.type, e.payload) for e in self.st.activity.bus.since(0).events]
+
+    def pairs(self):
+        """{run: (start payload, result payload or None)} from the stream."""
+        out = {}
+        for kind, p in self.everything():
+            if kind == "command.started":
+                out[p["run"]] = [p, None]
+            elif "run" in p:
+                out[p["run"]][1] = p
+        return out
+
+    def test_the_start_is_public_before_the_handler_runs_and_the_result_carries_the_same_run(self):
+        self.client.post("/api/demo/watch")
+        (during,) = self.seen_during
+        self.assertEqual([k for k, _p in during], ["command.started"], "the handler saw no start of its own command")
+        ((start, result),) = self.pairs().values()
+        self.assertEqual((start["command"], start["caller"], result["class"]), ("demo.watch", "local", "ok"))
+        self.assertEqual(start["run"], result["run"])
+
+    def test_a_read_is_never_announced(self):
+        self.client.get("/api/demo/echo", params={"text": "hi"})
+        self.assertEqual([k for k, _p in self.everything()], ["command.result"])
+        self.assertNotIn("run", self.everything()[0][1])
+
+    def test_every_way_a_write_can_end_ends_its_start(self):
+        self.client.post("/api/demo/watch")                                      # a result
+        self.client.post("/api/demo/wrefuse")                                    # a refusal
+        with self.assertLogs("nrf_workbench.api", level="ERROR"):
+            self.client.post("/api/demo/wcrash")                                 # a handler that raised
+        self.client.post("/api/demo/wbad")                                       # a usage error from the handler
+        with self.assertRaises(Gone):
+            self.client.post("/api/demo/wgone")                                  # a request that was cancelled
+        pairs = self.pairs()
+        self.assertEqual(len(pairs), 5)
+        classes = sorted(result["class"] for _start, result in pairs.values())
+        self.assertEqual(classes, ["error", "error", "ok", "refused", "usage"])
+        for start, result in pairs.values():
+            self.assertIsNotNone(result, "%s was started and never ended" % start["command"])
+        cancelled = [r for s, r in pairs.values() if s["command"] == "demo.wgone"][0]
+        self.assertIn("ended before the command reported", cancelled["message"])
+
+    def test_a_bad_argument_to_a_write_is_not_announced_it_never_ran(self):
+        r = self.client.post("/api/demo/wtyped", json={"n": "seven"})          # right place, wrong type
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("n", r.json()["message"])
+        self.assertEqual([k for k, _p in self.everything()], ["command.result"])
+        self.assertEqual(self.everything()[0][1]["class"], "usage")
+        self.assertNotIn("run", self.everything()[0][1])
+
+    def test_the_start_shows_the_typed_arguments_with_secrets_redacted(self):
+        self.assertEqual(self.client.post("/api/demo/wtyped", json={"n": 7, "api_key": "SECRET-VALUE"}).status_code, 200)
+        ((start, _result),) = self.pairs().values()
+        self.assertEqual(start["args"], {"n": 7, "api_key": "***"})
+        self.assertNotIn("SECRET-VALUE", json.dumps(self.everything()))
+
+    def test_two_writes_are_two_runs(self):
+        self.client.post("/api/demo/watch")
+        self.client.post("/api/demo/watch")
+        self.assertEqual(len(self.pairs()), 2)
+
+    def test_an_unauthorised_write_is_not_announced(self):
+        client = TestClient(app_for(self.st, TOKEN))
+        self.addCleanup(client.close)
+        self.assertEqual(client.post("/api/demo/write").status_code, 401)
+        self.assertEqual(self.everything(), [])
+
+    def test_the_history_endpoint_has_results_only_and_the_live_feed_has_both(self):
+        self.client.post("/api/demo/watch")
+        history = self.client.get("/api/activity").json()
+        self.assertEqual([e["type"] for e in history["events"]], ["command.result"])
+        with self.connect() as ws:
+            want(ws, activity={"cursor": 0})
+            page = ws.receive_json()["page"]
+        self.assertEqual([e["type"] for e in page["events"]], ["command.started", "command.result"])
+
+    def test_a_connection_made_while_a_command_is_running_is_told_it_is_running(self):
+        # the page opened mid-flash: the retained start replays and no result follows it yet
+        self.st.activity.begin("mcp", "programmer.flash", {"serial": "S"})
+        with self.connect() as ws:
+            want(ws, activity={"cursor": 0})
+            page = ws.receive_json()["page"]
+        self.assertEqual([e["type"] for e in page["events"]], ["command.started"])
+        self.assertEqual(page["events"][0]["payload"]["caller"], "mcp")
+
+    def test_with_no_activity_log_a_write_still_works(self):
+        r = make_registry()
+        r.add(Command("demo.w", "w", lambda ctx: Result.success(), effect="write"), module="t")
+        client = TestClient(build_app(r, None, Auth(None, "token"), set(), streams(activity=None)))
+        self.addCleanup(client.close)
+        self.assertEqual(client.post("/api/demo/w").status_code, 200)
+
+
 class ActivityApi(Base):
     def test_the_activity_endpoint_pages_by_cursor_and_epoch(self):
         for i in range(4):

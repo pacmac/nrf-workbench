@@ -19,6 +19,65 @@ from nrf_workbench.core.events import BoundError, Bus  # noqa: E402
 from nrf_workbench.core.result import SUSPECT, Result  # noqa: E402
 
 
+class Started(unittest.TestCase):
+    """A command announces its start, and the result that ends it carries the same run (docs/specs/core.md)."""
+
+    def setUp(self):
+        self.log = ActivityLog(100, 3600)
+
+    def everything(self):
+        return [(e.type, e.payload) for e in self.log.bus.since(0).events]
+
+    def test_begin_publishes_a_start_with_who_what_and_redacted_arguments_and_returns_the_run(self):
+        run = self.log.begin("mcp", "programmer.flash", {"serial": "S", "api_key": "SECRET-VALUE"})
+        ((kind, payload),) = self.everything()
+        self.assertEqual(kind, "command.started")
+        self.assertEqual(payload, {"run": run, "caller": "mcp", "command": "programmer.flash",
+                                   "args": {"serial": "S", "api_key": REDACTED}})
+        self.assertNotIn("SECRET-VALUE", json.dumps(self.everything()))
+
+    def test_every_start_gets_its_own_run(self):
+        runs = [self.log.begin("c", "x.y", {}) for _ in range(5)]
+        self.assertEqual(len(set(runs)), 5)
+
+    def test_the_result_that_ends_a_command_carries_its_run_whatever_way_it_ended(self):
+        a, b, c = (self.log.begin("c", "x.y", {}) for _ in range(3))
+        self.log.record("c", "x.y", {}, Result.success(), 1.0, run=a)
+        self.log.record_usage("c", "x.y", {}, "bad", 1.0, run=b)
+        self.log.record_error("c", "x.y", {}, "boom", 1.0, run=c)
+        ended = [p["run"] for kind, p in self.everything() if kind == "command.result"]
+        self.assertEqual(ended, [a, b, c])
+
+    def test_a_result_with_no_run_has_none_so_a_read_is_not_taken_for_a_running_command(self):
+        self.log.record("c", "devices.list", {}, Result.success(), 0.1)
+        ((kind, payload),) = self.everything()
+        self.assertEqual(kind, "command.result")
+        self.assertNotIn("run", payload)
+
+    def test_the_history_returns_results_only_but_the_stream_has_both(self):
+        run = self.log.begin("c", "x.y", {})
+        self.log.record("c", "x.y", {}, Result.success(), 1.0, run=run)
+        self.assertEqual([e.type for e in self.log.since(0).events], ["command.result"])
+        self.assertEqual([k for k, _p in self.everything()], ["command.started", "command.result"])
+
+    def test_two_threads_never_get_the_same_run(self):
+        import threading
+        runs, lock = [], threading.Lock()
+
+        def go():
+            for _ in range(200):
+                r = self.log.begin("c", "x.y", {})
+                with lock:
+                    runs.append(r)
+
+        threads = [threading.Thread(target=go) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(len(runs), len(set(runs)), "two commands were given the same run")
+
+
 class Recording(unittest.TestCase):
     def setUp(self):
         self.log = ActivityLog(100, 3600)

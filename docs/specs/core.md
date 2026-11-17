@@ -260,6 +260,17 @@ local mode is a separate process with no service and is not in the service's act
   `dashboard`, plus the token's label if one was used), the command, its arguments (any secret
   redacted), the `class` and `code`, and the duration. A refusal is recorded exactly like a
   success. This is the record of what an AI did to hardware.
+- **A write command also announces its START** (Peter, 2026-11-17: "we need ... something showing that an
+  activity is actually in progress"). Before the handler runs, the service publishes `command.started`
+  (`run`, `caller`, `command`, the redacted arguments) into the activity stream, and the `command.result`
+  that ends it carries the same `run`. A consumer that has seen a `started` and no `result` with that `run`
+  knows the command is running, even if it connected after the start (the retained events replay in order).
+  **Only `write` commands are announced:** a read finishes in milliseconds and announcing each page load's
+  reads would double the stream for nothing. **Every path out of a started command ends it:** a result, a bad
+  argument (`usage`), a handler that raised (`error`), a command that vanished (`usage`), so a started event
+  without a result means the command really is still running, never that a code path forgot. `since()`, the
+  history behind `GET /api/activity`, still returns results only; the live `activity` feed carries both types.
+  A service restart starts a new epoch and a new stream, so nothing is "running" across a restart.
 - **Every retained stream declares its bound, with no default:** `retain` (a count) and
   `max_age_days`, both required, each with its derivation written beside it. An unbounded log is
   retained for ever by oversight. A stream without a bound refuses to start (`no_bound`).

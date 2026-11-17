@@ -135,6 +135,28 @@ timer to hold it); both need a real flash, which waits for Peter. The service's 
 reads "...was written The board was sent..." with a missing full stop: that string is the programmer's, not the UI's,
 and is reported to its owner here, not changed.
 
+### The in-progress indicator (added 2026-11-17, Peter: "an activity is actually in progress")
+
+A flash takes about 20 seconds and the board is erased from the first second, so the dashboard must say so to
+everyone looking at it, whoever started the flash (the CLI, the MCP, another session, this page).
+
+- **A bar at the top of every page, above the bench band, whenever a write command has started and not finished.**
+  It names what is happening ("Flashing D953162EF5806B4B", "Uploading a package"), who started it (`caller`) and
+  when it started, and carries a spinner. It is one row per running command, so two at once are both shown. It is a
+  `role="status"` region, so a screen reader hears it appear and clear.
+- **It comes from the live feed, not from the button that was pressed.** The activity feed carries
+  `command.started` and the matching `command.result` (`core.md`). The page keeps the started commands that have
+  no result yet; a page opened in the middle of a flash replays the retained events and shows it at once. A new
+  feed epoch (a service restart) clears it: nothing is running across a restart.
+- **The tab title says it too** ("Working · <bench>"), because the person watching is often in another tab.
+- **The spinner is a CSS animation, switched off for a visitor who asks for reduced motion** (a static marker
+  stays). **There is no elapsed-time counter:** the page has no timers (see "no polling"), so a ticking clock is not
+  available, and the start time is the honest figure. A counter that stopped when the page lost its feed would be
+  worse than none.
+- **The flash dialog shows a spinner too** while its own request is open, in addition to the bar.
+- **A command that never ends stays shown.** The bar does not time out: a flash that has hung is the thing the
+  person most needs to see, and the service's own bound is what ends it.
+
 ### The store in the dialog: project folders (added 2026-11-17, Peter: "the ability to browse and add a new folder")
 
 The store is a folder per project (`firmware.md`, "projects"), so the dialog browses it the same way.

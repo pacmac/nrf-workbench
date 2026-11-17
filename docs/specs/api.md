@@ -296,7 +296,9 @@ Added with `dashboard.md`. All of it is generated from or carried by the core ev
   resume from; the server sends only those, and a `gap` event says how many were lost if the cursor
   is older than what is retained. No polling anywhere.
 - **`GET /api/activity`: the activity log**, with a cursor, for a page that wants history. It is
-  the record of every `command.result` from every caller.
+  the record of every `command.result` from every caller. **The live `activity` feed on `/ws/events` also
+  carries `command.started`** (`core.md`), so a client can show what is running now; the history endpoint
+  does not, because a finished command's start is only noise there.
 - **Readiness is `programmer.status`, re-evaluated whenever `devices.changed` fires** and published
   as `readiness.changed`, so the dashboard's "can I flash this now?" is the dry-run of the same
   guards a flash runs.
