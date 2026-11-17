@@ -11,8 +11,8 @@ import sys
 import time
 
 from . import MARKER
-from .plan import (SYSTEM_UNIT_DIR, UNIT_NAME, link_state, service_owner, sets_firmware, store_path, unit_path,
-                   unit_text, venv_python)
+from .plan import (SEEDS, SYSTEM_UNIT_DIR, UNIT_NAME, link_state, service_owner, sets_firmware, store_path,
+                   unit_path, unit_text, venv_python)
 
 def host_yaml_text(prefix):
     """The host configuration a fresh install starts with: it names the package store, so the service turns
@@ -158,6 +158,27 @@ def ensure_store(prefix, log):
         if os.geteuid() == 0 and uid != 0:
             for path in (os.path.dirname(store), store):
                 os.chown(path, uid, gid)
+
+
+def seed_store(prefix, log, ui, run=run_logged):
+    """Put the packages the repo carries into the store, with the product's own CLI in local mode, so each is
+    validated like any upload and a second install says "already stored". Never touches hardware. A package that
+    could not be added is reported, not fatal: the product works without it."""
+    cfg = os.path.join(prefix, "config", "host.yaml")
+    for project, name, rel in SEEDS:
+        path = os.path.join(prefix, rel)
+        if not os.path.isfile(path):
+            ui.say("      %s is not in this install, so it was not added" % rel)
+            continue
+        cmd = [venv_python(prefix), "-m", "nrf_workbench", "--config", cfg, "firmware", "put",
+               "--file", path, "--project", project, "--name", name]
+        rc, _out = run(cmd, log, ui, cwd=prefix)
+        if rc != 0:
+            ui.warn("      %s was NOT added to the package store (exit %d, output above); the install is otherwise fine"
+                    % (name, rc))
+            log.stamp("seed %s failed (exit %d)" % (name, rc))
+        else:
+            log.stamp("seeded %s into project %s" % (name, project))
 
 
 def write_config(prefix, log):

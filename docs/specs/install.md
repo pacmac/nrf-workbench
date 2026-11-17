@@ -370,8 +370,9 @@ chosen, not defaulted.
   no `paths.firmware`, the installer creates the folder anyway, changes nothing in the file, and
   prints the two lines to add, so a user's own configuration is never rewritten under them.
 - **The parking package is seeded into the store** so a fresh install has something to flash. The
-  repo carries the built package (`testpartner/parking/dist/`) with the source commit it was built
-  from and its SHA-256, and a step after the venv is built puts it into the project `testpartner`
+  repo carries the built package (`testpartner/parking/prebuilt/`, not `dist/`: a common global
+  gitignore hides any folder of that name and the file would silently miss the commit) with the source
+  commit it was built from and its SHA-256, and a step after the venv is built puts it into the project `testpartner`
   through the product's own CLI in local mode (so it is validated like any upload and is idempotent:
   a second install says "already stored"). It is added only if the store is on. **No other project's
   firmware is bundled**: `mt-alarm` is another repository's product, and its owner uploads it into the

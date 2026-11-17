@@ -209,6 +209,8 @@ def main(argv=None):
             elif sid == "config":
                 for note in applymod.write_config(prefix, log):
                     ui.say("      note: " + note)
+            elif sid == "seed":
+                applymod.seed_store(prefix, log, ui)
             elif sid == "unit":
                 written = applymod.write_unit(prefix, h, log)
                 ui.say("      unit file: " + written)

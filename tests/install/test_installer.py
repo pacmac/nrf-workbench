@@ -766,6 +766,112 @@ class StoreDefault(unittest.TestCase):
                 self.assertTrue(verifymod.store_result(self.pfx)[1].startswith(want), (rc, want))
 
 
+PARKING_SHA256 = "656d9084ea617dfaecfa4de652831d59db2c3df9e38cd6b33755125a6dffe1c5"
+PARKING_ZIP = os.path.join(ROOT, "testpartner", "parking", "prebuilt", "parking.zip")
+
+
+class Seeding(unittest.TestCase):
+    """A fresh install carries the parking package (docs/specs/install.md): the committed file is the proven one, it
+    is a valid package the product's own CLI accepts, and a second install adds nothing."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix="seed")
+        self.addCleanup(shutil.rmtree, self.base, True)
+        self.pfx = os.path.join(self.base, "nrf-workbench")
+        os.makedirs(os.path.join(self.pfx, "config"))
+        self.log = applymod.Log(self.pfx)
+        self.ui = FakeUi()
+
+    def test_the_committed_package_is_the_proven_one_and_the_readme_agrees(self):
+        import hashlib
+        with open(PARKING_ZIP, "rb") as fh:
+            self.assertEqual(hashlib.sha256(fh.read()).hexdigest(), PARKING_SHA256)
+        with open(os.path.join(os.path.dirname(PARKING_ZIP), "README.md")) as fh:
+            readme = fh.read()
+        for text in (PARKING_SHA256, "df0255c", "nrfwb-parking 2", "56,571"):
+            self.assertIn(text, readme, "the provenance table and the file disagree")
+
+    def test_the_package_is_not_hidden_by_a_gitignore(self):
+        if not shutil.which("git"):
+            self.skipTest("git is not on this host")
+        r = subprocess.run(["git", "check-ignore", "-q", PARKING_ZIP], cwd=ROOT)
+        self.assertEqual(r.returncode, 1, "a gitignore (this repo's or a global one) hides the seed package")
+
+    def test_the_seed_list_names_only_what_this_repo_owns(self):
+        self.assertEqual([(p, n) for p, n, _r in planmod.SEEDS], [("testpartner", "parking")])
+        for _p, _n, rel in planmod.SEEDS:
+            self.assertTrue(os.path.isfile(os.path.join(ROOT, rel)), rel)
+
+    def test_the_real_cli_accepts_it_into_the_project_and_a_second_run_adds_nothing(self):
+        store = os.path.join(self.base, "store")
+        cfg = os.path.join(self.base, "host.yaml")
+        with open(cfg, "w") as fh:
+            fh.write(applymod.host_yaml_text(self.base).replace(os.path.join(self.base, "data", "firmware"), store))
+        cmd = [sys.executable, "-m", "nrf_workbench", "--json", "--config", cfg, "firmware", "put", "--file", PARKING_ZIP,
+               "--project", "testpartner", "--name", "parking"]
+        env = dict(os.environ, PYTHONPATH=ROOT)
+        first = subprocess.run(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        import json
+        body = json.loads(first.stdout)
+        self.assertEqual((body["data"]["project"], body["data"]["new"], body["data"]["sha256"]),
+                         ("testpartner", True, PARKING_SHA256))
+        self.assertEqual(body["data"]["softdevice_req"], [182])
+        second = subprocess.run(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertEqual(json.loads(second.stdout)["data"]["new"], False)
+        self.assertTrue(os.path.isfile(os.path.join(store, "testpartner", PARKING_SHA256 + ".zip")))
+
+    def test_seed_store_runs_exactly_the_cli_put_for_each_seed(self):
+        for _p, _n, rel in planmod.SEEDS:
+            os.makedirs(os.path.dirname(os.path.join(self.pfx, rel)), exist_ok=True)
+            open(os.path.join(self.pfx, rel), "wb").close()
+        run = FakeRun()
+        seen = {}
+
+        def fake(cmd, log, ui, cwd=None, **kw):
+            seen["cwd"] = cwd
+            return run(cmd, log, ui)
+
+        applymod.seed_store(self.pfx, self.log, self.ui, fake)
+        cfg = os.path.join(self.pfx, "config", "host.yaml")
+        self.assertEqual(run.calls, [[planmod.venv_python(self.pfx), "-m", "nrf_workbench", "--config", cfg, "firmware", "put",
+                                      "--file", os.path.join(self.pfx, planmod.SEEDS[0][2]), "--project", "testpartner",
+                                      "--name", "parking"]])
+        self.assertEqual(seen["cwd"], self.pfx, "the package is imported from the install, so the CLI runs there")
+
+    def test_a_missing_package_is_said_and_nothing_is_run(self):
+        run = FakeRun()
+        applymod.seed_store(self.pfx, self.log, self.ui, run)
+        self.assertEqual(run.calls, [])
+        self.assertIn("was not added", "\n".join(self.ui.said))
+
+    def test_a_failed_seed_is_reported_and_is_not_fatal(self):
+        for _p, _n, rel in planmod.SEEDS:
+            os.makedirs(os.path.dirname(os.path.join(self.pfx, rel)), exist_ok=True)
+            open(os.path.join(self.pfx, rel), "wb").close()
+        applymod.seed_store(self.pfx, self.log, self.ui, FakeRun(rc=1))       # no exception
+        self.assertTrue(any("NOT added" in w for w in self.ui.warned), self.ui.warned)
+
+    def test_the_plan_seeds_after_the_config_and_only_when_the_store_is_on(self):
+        host = {"python": "3.13.5", "has_venv": True, "systemd": False, "serial_group": None,
+                "root": True, "apt": None, "sudo": None}
+
+        def steps():
+            ctx = {"prefix": self.pfx, "host": host, "args": mock.Mock(git=False, wheelhouse=None), "pins": [],
+                   "pins_hash": "x", "features": ["core"], "source": self.base, "staged": False, "commit": "abc"}
+            return planmod.build(ctx)["steps"]
+        ids = [s["id"] for s in steps()]
+        self.assertLess(ids.index("config"), ids.index("seed"))
+        self.assertLess(ids.index("venv"), ids.index("seed"), "the CLI needs the virtual environment first")
+        self.assertFalse([s for s in steps() if s["id"] == "seed"][0]["skip"], "a fresh install seeds")
+        with open(os.path.join(self.pfx, "config", "host.yaml"), "w") as fh:
+            fh.write("{}\n")
+        seed = [s for s in steps() if s["id"] == "seed"][0]
+        self.assertTrue(seed["skip"], "no store, no seed")
+        self.assertIn("store is off", seed["why_skip"])
+
+
 class NeverTouchesHardware(unittest.TestCase):
     def test_no_serial_device_access_in_the_installer(self):
         # What "never touches a serial device" means: no serial library, no tty control, and no OPEN
