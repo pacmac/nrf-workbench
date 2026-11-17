@@ -74,6 +74,17 @@ The other intents are refused by name (`intent_not_built`) until their slice lan
   device is a disconnect and a connect), `wiring.disconnect`. Writes record the caller in the activity log like any command.
 - **`wiring` is a capability that needs only `paths.wiring`**; it is not tied to a Pi, because a USB adapter works on any host.
 
+## The page is live where the commands are (built 2026-11-17)
+
+When `wiring.show` is a listed command the Wiring page uses the real commands for the debug log and shows no preview
+banner: devices, adapters, connections and their live state (listening, adapter unplugged, port in use, error) come from
+the service; Connect, Change and Remove call `wiring.connect|change|disconnect`; **a refusal is shown as the service worded
+it, in the sheet, and the sheet stays open**. Intents that are not built are listed, disabled, saying "Not built yet".
+Where the commands are absent (no wiring folder) the page keeps the clickable sample, labelled as a preview.
+**Two honest limits:** an adapter plugged in after the page opened is found by "Look again" or by reopening the page (there
+is no push for adapters yet), and while only the debug log is built the Pi header map is replaced by a note, because it
+would show every pin free even where the GPIO page has assigned one.
+
 ## Not yet built
 
 Control lines, buses, SWD and analog connections; the migration of the flat GPIO pin map into control connections; the

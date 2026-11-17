@@ -216,7 +216,7 @@ export default function App() {
         {page === "bench" && <Bench name={name} session={session} info={info} feed={feed} />}
         {page === "devices" && <Devices boards={boards} boardsAt={boardsAt} onFlash={openFlash} />}
         {page === "firmware" && <Firmware commands={info.commands} boards={boards} onFlash={openFlash} onDone={onCommandDone} />}
-        {page === "wiring" && <Wiring onOpenPage={setPage} />}
+        {page === "wiring" && <Wiring commands={info.commands} refreshKey={linksTick} onOpenPage={setPage} />}
         {page === "console" && consoleOn && <Console commands={info.commands} links={links} lines={consoleLines} activity={activity} feed={consoleFeed} onDone={onCommandDone} />}
         {page === "gpio" && gpioOn && <Gpio commands={info.commands} onDone={onCommandDone} />}
         {page === "activity" && <Activity activity={activity} />}

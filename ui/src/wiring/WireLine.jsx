@@ -38,7 +38,7 @@ export default function WireLine({ conn, ctx, hue, focused, onFocus, onEdit, onR
         </div>
         <p className="text-sm">{d.summary}</p>
         <div className="flex flex-wrap items-center gap-2">
-          {d.chips.map((c) => <Chip key={c.text} tone={c.tone}>{c.text}</Chip>)}
+          {d.chips.map((c) => <Chip key={c.text} tone={c.tone} title={c.title}>{c.text}</Chip>)}
           <span className="flex-1" />
           {conn.spec.intent === "log" && <Button tone="quiet" onClick={onOpenConsole}>Open console</Button>}
           {asking ? (

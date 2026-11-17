@@ -135,7 +135,7 @@ const QUESTIONS = {
         ...ctx.adapters.map((a) => {
           const taken = exclusiveTaken(ctx, `adapter:${a.id}`);
           return { value: `adapter:${a.id}`, label: `USB adapter ${a.name}`, hint: `${a.ids}, serial ${a.id}, ${a.node}`,
-                   disabled: Boolean(taken), why: taken ? `Already used by the ${holderText(taken, ctx)}.` : "" };
+                   disabled: Boolean(taken) || Boolean(a.problem), why: a.problem || (taken ? `Already used by the ${holderText(taken, ctx)}.` : "") };
         }),
         ...PI_UARTS.map((u) => {
           const taken = u.pins.map((p) => exclusiveTaken(ctx, `pin:${p}`)).find(Boolean);
@@ -261,6 +261,20 @@ export function withAnswer(spec, qid, value) {
   return next;
 }
 
+// What the port is doing, as the service reports it (`live`), in plain words. The sample has none and says "listening".
+export function logState(live) {
+  if (!live) return { tone: "green", text: "listening" };
+  const words = {
+    open: { tone: "green", text: "listening" },
+    absent: { tone: "amber", text: "adapter unplugged" },
+    held: { tone: "amber", text: "port in use by another program" },
+    error: { tone: "red", text: "port error" },
+    unusable: { tone: "red", text: "cannot be used" },
+  };
+  const w = words[live.state] || { tone: "slate", text: live.state };
+  return live.reason ? { ...w, title: live.reason } : w;
+}
+
 // ---- how a connection is described -----------------------------------------------------------------------------
 // The wire sentence: where it comes from on the Pi, what it carries, where it lands on the device, and what it says.
 export function describe(conn, ctx) {
@@ -277,7 +291,7 @@ export function describe(conn, ctx) {
     out.device.detail = "debug UART";
     const canSend = spec.send === "yes" && spec.voltage === "measured";
     out.summary = `Reading the debug log of ${devName} through ${a ? `USB adapter ${a.name}` : u ? u.label : "?"} at ${spec.baud} baud, ${canSend ? "and the bench may send to it" : spec.send === "yes" ? "receive only until the voltage is measured" : "receive only"}.`;
-    out.chips.push({ tone: "green", text: "listening" }, canSend ? { tone: "blue", text: "can send" } : { tone: "amber", text: "receive only" });
+    out.chips.push(logState(conn.live), canSend ? { tone: "blue", text: "can send" } : { tone: "amber", text: "receive only" });
   } else if (spec.intent === "control") {
     out.pi = { title: `Pi pin ${physicalPin(spec.pin)}`, detail: `GPIO${spec.pin}` };
     out.signal = ({ reset: L.reset || "reset", boot: L.boot || "boot", power: L.power || "power" })[spec.fn];

@@ -8,7 +8,12 @@ import {
 // one line you can change, the next open question is shown, and when everything is answered the finished sentence is
 // the connection. Only what is possible is offered; the rest stays visible, greyed, and says who has it.
 
-const INTENT_QUESTION = { id: "intent", title: "What do you want to do?", type: "choice", options: () => INTENTS, answer: (spec) => intentLabel(spec.intent) };
+// An intent that is not built yet is listed, so you can see what is coming, but cannot be chosen, and says why.
+const INTENT_QUESTION = {
+  id: "intent", title: "What do you want to do?", type: "choice",
+  options: (ctx) => INTENTS.map((i) => (ctx.built.includes(i.value) ? i : { ...i, disabled: true, why: "Not built yet." })),
+  answer: (spec) => intentLabel(spec.intent),
+};
 
 function Choice({ q, options, value, onPick }) {
   return (
@@ -123,6 +128,8 @@ function Answered({ q, spec, ctx, onChange, changeable }) {
 export default function AddSheet({ device, hue, base, initial, editingId, onSave, onCancel }) {
   const [spec, setSpec] = useState(initial || {});
   const [openId, setOpenId] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState("");
   const heading = useRef(null);
   useEffect(() => { if (heading.current) heading.current.focus(); }, []);
 
@@ -139,6 +146,15 @@ export default function AddSheet({ device, hue, base, initial, editingId, onSave
     setOpenId(null);
   }
   const switchIntent = (intent) => { setSpec({ intent }); setOpenId(null); };
+
+  // The page's save returns an error message, or nothing when it worked. A refusal is the service's, worded by it, and the
+  // sheet stays open with everything you answered so you can change one thing and try again.
+  async function save() {
+    setBusy(true);
+    setFailure("");
+    const why = await onSave(spec);
+    if (why) { setFailure(why); setBusy(false); }
+  }
 
   return (
     <section aria-label={editing ? "Change this connection" : `Connect something to ${name}`} className="space-y-3 rounded-xl border border-blue-300 bg-slate-50 p-4 dark:border-blue-800 dark:bg-slate-950">
@@ -164,8 +180,9 @@ export default function AddSheet({ device, hue, base, initial, editingId, onSave
             <span aria-hidden="true" className={`w-1.5 shrink-0 rounded-full ${hue.dot}`} />
             <p className="text-sm" data-testid="sentence">{describe({ id: editingId || "new", device: device.serial, spec }, ctx).summary}</p>
           </div>
+          {failure && <p role="alert" className="rounded-lg bg-red-100 p-2 text-sm text-red-900 dark:bg-red-950 dark:text-red-200">{failure}</p>}
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => onSave(spec)}>{editing ? "Save changes" : "Connect"}</Button>
+            <Button disabled={busy} onClick={save}>{editing ? "Save changes" : "Connect"}</Button>
             <Button tone="quiet" onClick={onCancel}>Cancel</Button>
           </div>
         </div>
