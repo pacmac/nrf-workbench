@@ -275,6 +275,9 @@ class StreamsWiring(Base):
         self.assertIsNone(host.streams.activity)
         self.assertIn("streams.events.retain", host.streams.absent["events"])
         self.assertIn("streams.activity.max_age_days", host.streams.absent["activity"])
+        self.assertIn("streams.console.retain", host.streams.absent["console"])
+        self.assertIsNone(host.streams.console)
+        self.assertIsNone(host.console, "no bounded log, no console broker")
 
     def test_bounds_in_days_become_seconds_in_the_streams(self):
         t = Tree()
@@ -284,14 +287,14 @@ class StreamsWiring(Base):
         _app, host, _r, _c = service.build(cfg, sysfs=t.sysfs, hooks={"tool": "/fake"})
         self.assertEqual((host.streams.events.retain, host.streams.events.max_age_s), (50, 2 * 86400))
         self.assertEqual((host.streams.activity.bus.retain, host.streams.activity.bus.max_age_s), (7, 43200))
-        self.assertEqual(host.streams.absent, {})
+        self.assertEqual(list(host.streams.absent), ["console"], "only the console is unconfigured here, and it says why")
 
     def test_the_two_streams_are_independent_and_one_alone_is_fine(self):
         cfg, _ = cfgmod.load(env={}, overrides={"streams": {"activity": {"retain": 5, "max_age_days": 1}}})
         streams = service.build_streams(cfg)
         self.assertIsNone(streams.events)
         self.assertIsNotNone(streams.activity)
-        self.assertEqual(list(streams.absent), ["events"])
+        self.assertEqual(list(streams.absent), ["events", "console"])
 
     def test_every_command_through_the_built_app_is_recorded(self):
         from starlette.testclient import TestClient

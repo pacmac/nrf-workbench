@@ -366,6 +366,14 @@ chosen, not defaulted.
   nothing to list. **[verified 2026-11-17: `capabilities()` registers `firmware_store` only when
   `paths.firmware` is set.]** The path written is absolute, so moving the install folder means
   changing that one line.
+- **A fresh `host.yaml` also turns the console and every live log on (2026-11-17).** It writes `paths.links`
+  (`config/links.yaml`, created with `links: []`: nothing is wired yet, and declaring a link would claim a wire that
+  is not there), `paths.console` (`data/console`, mode 0700, which the installer creates and hands to the install's
+  owner like `data/firmware`) and the three stream bounds, because a stream with no bound is silently OFF
+  (`core.md`). Each bound states its budget in the file: events 1 000 entries / 7 days (an event is under 1 KB, so
+  about 1 MB), activity 5 000 / 30 days (an entry is under 2 KB, so about 10 MB), console 20 000 lines / 7 days (a
+  line is capped at 1 024 bytes, so 20 MB). **These are budgets, not measurements:** nothing has measured the real
+  rates on a bench. An existing `host.yaml` is not edited for any of this.
 - **An existing `host.yaml` is never edited to add it.** On an upgrade that finds a `host.yaml` with
   no `paths.firmware`, the installer creates the folder anyway, changes nothing in the file, and
   prints the two lines to add, so a user's own configuration is never rewritten under them.

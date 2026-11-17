@@ -29,6 +29,10 @@ from .core.events import Bus, Streams
 from .core.registry import Registry
 from .core.result import Result
 from .core.sessions import SessionStore
+from .console import commands as console_commands
+from .console import links as console_links
+from .console.broker import Broker
+from .console.port import Port
 from .dashboard import server as dashboard_server
 from .devices import commands as device_commands
 from .devices import profile as profilemod
@@ -59,6 +63,9 @@ class Host(object):
         self.sysfs, self.devroot, self.proc = sysfs, devroot, proc
         self.lock_path = config["paths"]["lock"]
         self.hooks = hooks or {}
+        # the console (docs/specs/console.md): the declared links, the file's own problems, and the broker that owns
+        # the adapters, which only a running service has (build() sets it; the CLI's local mode leaves it None)
+        self.console, self.console_links, self.console_problems = None, [], []
         self._services, self._guard = {}, threading.Lock()
 
     def service(self, name, factory):
@@ -101,7 +108,21 @@ def capabilities(host):
         caps.add("firmware_store")
     if host.hooks.get("tool") or flash_file.find_tool():
         caps.add("uploader")
+    # The console needs its links file, a folder for its macros and a bounded log: with any of the three unset it is
+    # absent, and GET /api/streams says which (no default is assumed for any of them).
+    if (host.config["paths"]["links"] and host.config["paths"]["console"]
+            and cfgmod.stream_bounds(host.config, "console") is not None):
+        caps.add("console")
     return caps
+
+
+def board_ids(profiles):
+    """Every USB id any board profile lists: a link whose adapter has one of these is refused, never opened."""
+    ids = set()
+    for prof in profiles:
+        for mode in prof["modes"].values():
+            ids.update(mode.get("ids") or [])
+    return sorted(ids)
 
 
 def build_host(cfg, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
@@ -112,13 +133,17 @@ def build_host(cfg, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
     registry = Registry()
     programmer_commands.register(registry, host)
     device_commands.register(registry, host)
-    return host, registry, capabilities(host)
+    console_commands.register(registry, host)
+    caps = capabilities(host)
+    if "console" in caps:
+        host.console_links, host.console_problems = console_links.load(cfg["paths"]["links"], board_ids(profiles))
+    return host, registry, caps
 
 
 def build_streams(cfg):
     """The retained streams. A stream with no configured bound is NOT started (it would be unbounded): it is
     absent, with the reason, and the service says so."""
-    absent, events, activity = {}, None, None
+    absent, events, activity, console = {}, None, None, None
     bounds = cfgmod.stream_bounds(cfg, "events")
     if bounds is None:
         absent["events"] = "no bound configured: set streams.events.retain and streams.events.max_age_days"
@@ -129,7 +154,12 @@ def build_streams(cfg):
         absent["activity"] = "no bound configured: set streams.activity.retain and streams.activity.max_age_days"
     else:
         activity = ActivityLog(*bounds)
-    return Streams(events, activity, absent)
+    bounds = cfgmod.stream_bounds(cfg, "console")
+    if bounds is None:
+        absent["console"] = "no bound configured: set streams.console.retain (lines) and streams.console.max_age_days"
+    else:
+        console = Bus(*bounds)
+    return Streams(events, activity, absent, console)
 
 
 def bench_name(cfg):
@@ -141,6 +171,13 @@ def build(cfg, token=None, sysfs="/sys", devroot="/dev", proc="/proc", hooks=Non
     """(app, host, registry, capabilities) from a loaded configuration."""
     host, registry, caps = build_host(cfg, sysfs, devroot, proc, hooks)
     host.streams = build_streams(cfg)
+    if "console" in caps:
+        # The broker owns the adapters; the caller (main) starts and stops it. `hooks` lets a test supply the port and
+        # the kernel's uevents without a real device.
+        hooks = hooks or {}
+        extra = {"open_uevents": hooks["open_uevents"]} if hooks.get("open_uevents") else {}
+        resolve = hooks.get("console_resolve") or (lambda link: console_links.resolve(link, host.sysfs, host.devroot))
+        host.console = Broker(host.console_links, resolve, hooks.get("open_port", Port), host.streams.console, **extra)
     sessions = SessionStore(MAX_SESSIONS, SESSION_MAX_AGE_S)
     host.sessions = sessions
     auth = Auth(token, cfg["service"]["access"], sessions)
@@ -257,7 +294,9 @@ def _parser():
     p.add_argument("--lock", help="the host lock file")
     p.add_argument("--profiles", help="a directory of board profiles (default: the ones shipped with the product)")
     p.add_argument("--units", help="a units file: per-serial settings such as protected")
-    for stream, what in (("events", "the live device feed"), ("activity", "the activity log")):
+    p.add_argument("--links", help="links.yaml: the declared debug links (the console needs this, --console-dir and a bounded log)")
+    p.add_argument("--console-dir", dest="console_dir", help="a folder for the console's own data: the macros")
+    for stream, what in (("events", "the live device feed"), ("activity", "the activity log"), ("console", "the console log, in lines")):
         p.add_argument("--%s-retain" % stream, dest="%s_retain" % stream, type=int,
                        help="how many %s entries to keep. REQUIRED with --%s-max-age-days, and has no default: "
                             "without both, %s is off and says why" % (stream, stream, what))
@@ -268,15 +307,16 @@ def _parser():
 
 def main(argv=None, run=None, env=None, make_monitor=DeviceMonitor):
     args = _parser().parse_args(argv)
-    overrides = {"service": {}, "paths": {}, "streams": {"events": {}, "activity": {}}}
+    overrides = {"service": {}, "paths": {}, "streams": {"events": {}, "activity": {}, "console": {}}}
     for flag, section, key in (("listen", "service", "listen"), ("access", "service", "access"),
                                ("token_file", "service", "token_file"), ("bench_name", "service", "bench_name"),
                                ("firmware_dir", "paths", "firmware"),
                                ("lock", "paths", "lock"), ("profiles", "paths", "profiles"),
-                               ("units", "paths", "units")):
+                               ("units", "paths", "units"), ("links", "paths", "links"),
+                               ("console_dir", "paths", "console")):
         if getattr(args, flag):
             overrides[section][key] = getattr(args, flag)
-    for stream in ("events", "activity"):
+    for stream in ("events", "activity", "console"):
         for flag, key in (("%s_retain" % stream, "retain"), ("%s_max_age_days" % stream, "max_age_days")):
             if getattr(args, flag) is not None:
                 overrides["streams"][stream][key] = getattr(args, flag)
@@ -319,9 +359,14 @@ def main(argv=None, run=None, env=None, make_monitor=DeviceMonitor):
     absent = [c.name for c in registry.commands() if registry.unmet(c, caps)]
     if absent:
         print("absent here (GET /api/capabilities says why): %s" % ", ".join(absent), flush=True)
-    for name in ("events", "activity"):
+    for name in ("events", "activity", "console"):
         reason = host.streams.absent.get(name)
         print("stream %s: %s" % (name, "OFF (%s)" % reason if reason else "on"), flush=True)
+    if host.console is not None:
+        for link in host.console_links:
+            print("console link %s: %s" % (link.name, "declared" if link.usable else "NOT USABLE (%s)" % "; ".join(p.message for p in link.problems)), flush=True)
+        for problem in host.console_problems:
+            print("console links file: %s" % problem, flush=True)
     if run is None:
         import uvicorn
         run = uvicorn.run
@@ -329,9 +374,13 @@ def main(argv=None, run=None, env=None, make_monitor=DeviceMonitor):
     if host.streams.events is not None:
         monitor = make_monitor(lambda: device_commands.boards(host), host.streams.events.publish)
         monitor.start()                       # blocks on the kernel's uevents, never a timer
+    if host.console is not None:
+        host.console.start()                  # opens a declared adapter that is attached; one thread, no timer
     try:
         run(app, host=host_addr, port=port, log_level="info")
     finally:
+        if host.console is not None:
+            host.console.stop()
         if monitor is not None:
             monitor.stop()
     return 0

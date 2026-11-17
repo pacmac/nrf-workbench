@@ -11,8 +11,8 @@ import sys
 import time
 
 from . import MARKER
-from .plan import (SEEDS, SYSTEM_UNIT_DIR, UNIT_NAME, link_state, service_owner, sets_firmware, store_path,
-                   unit_path, unit_text, venv_python)
+from .plan import (SEEDS, SYSTEM_UNIT_DIR, UNIT_NAME, console_path, link_state, links_path, service_owner,
+                   sets_firmware, store_path, unit_path, unit_text, venv_python)
 
 def host_yaml_text(prefix):
     """The host configuration a fresh install starts with: it names the package store, so the service turns
@@ -20,9 +20,21 @@ def host_yaml_text(prefix):
     JSON string, which is also a valid YAML scalar, so no character in it can break the file."""
     return ("# nrf-workbench host configuration. Created by the installer, never overwritten.\n"
             "# The package store: where uploaded firmware lives, one folder per project (docs/specs/firmware.md).\n"
-            "# Other settings: docs/specs/core.md.\n"
+            "# The console: the declared debug links (config/links.yaml, none declared yet) and the folder for its\n"
+            "# macros (docs/specs/console.md). Other settings: docs/specs/core.md.\n"
             "paths:\n"
-            "  firmware: %s\n" % json.dumps(store_path(prefix)))
+            "  firmware: %s\n"
+            "  links: %s\n"
+            "  console: %s\n"
+            "# How much each live log keeps. A log with no bound is off, so these are set, each with its budget:\n"
+            "#   events    1000 entries, 7 days: a device event is under 1 KB, so at most about 1 MB\n"
+            "#   activity  5000 entries, 30 days: one entry per command, under 2 KB, so at most about 10 MB\n"
+            "#   console   20000 lines, 7 days: a line is capped at 1024 bytes, so at most 20 MB\n"
+            "streams:\n"
+            "  events: {retain: 1000, max_age_days: 7}\n"
+            "  activity: {retain: 5000, max_age_days: 30}\n"
+            "  console: {retain: 20000, max_age_days: 7}\n"
+            % (json.dumps(store_path(prefix)), json.dumps(links_path(prefix)), json.dumps(console_path(prefix))))
 
 
 CONFIG_FILES = {
@@ -146,18 +158,21 @@ def _owner_of(path):
 
 
 def ensure_store(prefix, log):
-    """Create <prefix>/data/firmware (mode 0700, as the store itself creates it). The service runs as the
-    owner of the install folder (plan.service_owner), so a folder made by root inside a user's install is
-    handed to that user, or the service could not write to its own store."""
-    store = store_path(prefix)
-    created = not os.path.isdir(store)
-    os.makedirs(store, mode=0o700, exist_ok=True)
-    if created:
-        log.stamp("created " + store)
-        uid, gid = _owner_of(prefix)
-        if os.geteuid() == 0 and uid != 0:
-            for path in (os.path.dirname(store), store):
-                os.chown(path, uid, gid)
+    """Create <prefix>/data/firmware and <prefix>/data/console (mode 0700, as the service itself creates them).
+    The service runs as the owner of the install folder (plan.service_owner), so a folder made by root inside a
+    user's install is handed to that user, or the service could not write to its own folders."""
+    handed = []                                    # each folder is handed over once, however many stores it holds
+    for store in (store_path(prefix), console_path(prefix)):
+        created = not os.path.isdir(store)
+        os.makedirs(store, mode=0o700, exist_ok=True)
+        if created:
+            log.stamp("created " + store)
+            uid, gid = _owner_of(prefix)
+            if os.geteuid() == 0 and uid != 0:
+                for path in (os.path.dirname(store), store):
+                    if path not in handed:
+                        handed.append(path)
+                        os.chown(path, uid, gid)
 
 
 def seed_store(prefix, log, ui, run=run_logged):

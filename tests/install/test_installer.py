@@ -684,6 +684,23 @@ class StoreDefault(unittest.TestCase):
         self.assertIn("firmware.list", [c.name for c in registry.commands()] if hasattr(registry, "commands") else
                       ["firmware.list"])
 
+    def test_a_fresh_install_turns_on_the_console_and_every_live_log_with_stated_bounds(self):
+        from nrf_workbench import service
+        applymod.write_config(self.pfx, self.log)
+        console = os.path.join(self.pfx, "data", "console")
+        self.assertEqual(os.stat(console).st_mode & 0o777, 0o700)
+        cfg, problems = self.load()
+        self.assertEqual(problems, [])
+        self.assertEqual((cfg["paths"]["links"], cfg["paths"]["console"]),
+                         (os.path.join(self.pfx, "config", "links.yaml"), console))
+        streams = service.build_streams(cfg)
+        self.assertEqual(streams.absent, {}, "a fresh install has every feed on: a feed with no bound is silently off")
+        self.assertEqual((streams.events.retain, streams.events.max_age_s), (1000, 7 * 86400))
+        self.assertEqual((streams.activity.bus.retain, streams.activity.bus.max_age_s), (5000, 30 * 86400))
+        self.assertEqual((streams.console.retain, streams.console.max_age_s), (20000, 7 * 86400))
+        _host, _registry, caps = service.build_host(cfg, sysfs=self.base, devroot=self.base, proc=self.base)
+        self.assertIn("console", caps)
+
     def test_a_path_with_yaml_special_characters_survives(self):
         import yaml
         for pfx in ('/srv/a#b', "/srv/a: b", '/srv/a"b', "/srv/a'b", "/srv/a\\b", "/srv/{x}", "/srv/-"):
@@ -726,7 +743,9 @@ class StoreDefault(unittest.TestCase):
                 mock.patch.object(applymod.os, "chown", side_effect=lambda p, u, g: chowned.append((p, u, g))):
             applymod.ensure_store(self.pfx, self.log)
         store = os.path.join(self.pfx, "data", "firmware")
-        self.assertEqual(chowned, [(os.path.dirname(store), 4242, 4343), (store, 4242, 4343)])
+        console = os.path.join(self.pfx, "data", "console")
+        self.assertEqual(chowned, [(os.path.dirname(store), 4242, 4343), (store, 4242, 4343), (console, 4242, 4343)],
+                         "data is handed over once, and the console's folder with it")
         chowned[:] = []
         with mock.patch.object(applymod.os, "geteuid", return_value=0), \
                 mock.patch.object(applymod, "_owner_of", return_value=(0, 0)), \

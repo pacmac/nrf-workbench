@@ -299,6 +299,12 @@ Added with `dashboard.md`. All of it is generated from or carried by the core ev
   the record of every `command.result` from every caller. **The live `activity` feed on `/ws/events` also
   carries `command.started`** (`core.md`), so a client can show what is running now; the history endpoint
   does not, because a finished command's start is only noise there.
+- **The `console` feed (2026-11-17)** carries `console.line` (every line any declared link logs, with its byte
+  offset) and `console.link` (a link's state changing); a page filters by link. It is on only when the console is
+  (`console.md`: links file, macros folder and a bounded log), and `GET /api/streams` reports it as `console`.
+  The commands are `console.links`, `console.since`, `console.send`, `console.reopen` and
+  `console.macro_list|set|delete|run`, all registered like any other (`/api/console/<command>`); a send's history is
+  the activity log's `console.send` rows, which is what a page's up/down-arrow history is built from.
 - **Readiness is `programmer.status`, re-evaluated whenever `devices.changed` fires** and published
   as `readiness.changed`, so the dashboard's "can I flash this now?" is the dry-run of the same
   guards a flash runs.

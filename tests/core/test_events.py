@@ -319,8 +319,10 @@ class StreamsHolder(unittest.TestCase):
     def test_it_says_what_is_on_and_why_the_rest_is_off(self):
         from nrf_workbench.core.events import Streams
         s = Streams(events=Bus(1, 1), activity=None, absent={"activity": "no bound configured"})
-        self.assertEqual(s.to_dict(), {"events": True, "activity": False, "absent": {"activity": "no bound configured"}})
-        self.assertEqual(Streams().to_dict(), {"events": False, "activity": False, "absent": {}})
+        self.assertEqual(s.to_dict(), {"events": True, "activity": False, "console": False,
+                                       "absent": {"activity": "no bound configured"}})
+        self.assertEqual(Streams().to_dict(), {"events": False, "activity": False, "console": False, "absent": {}})
+        self.assertTrue(Streams(console=Bus(1, 1)).to_dict()["console"])
 
     def test_the_absent_map_is_copied(self):
         from nrf_workbench.core.events import Streams

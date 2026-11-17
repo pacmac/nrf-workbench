@@ -595,7 +595,8 @@ class ActivityApi(Base):
         self.assertIn("no bound configured", r.json()["message"])
 
     def test_the_streams_endpoint_says_what_is_on_and_what_is_off_and_why(self):
-        self.assertEqual(self.client.get("/api/streams").json(), {"events": True, "activity": True, "absent": {}})
+        self.assertEqual(self.client.get("/api/streams").json(),
+                         {"events": True, "activity": True, "console": False, "absent": {}})
         client = TestClient(app_for(streams(events=None)))
         self.addCleanup(client.close)
         body = client.get("/api/streams").json()
@@ -605,7 +606,8 @@ class ActivityApi(Base):
     def test_an_app_built_with_no_streams_at_all_still_answers(self):
         client = TestClient(build_app(make_registry(), None, Auth(None, "token"), set()))
         self.addCleanup(client.close)
-        self.assertEqual(client.get("/api/streams").json(), {"events": False, "activity": False, "absent": {}})
+        self.assertEqual(client.get("/api/streams").json(),
+                         {"events": False, "activity": False, "console": False, "absent": {}})
         self.assertEqual(client.get("/api/activity").status_code, 404)
         self.assertEqual(client.get("/api/demo/echo", params={"text": "x"}).status_code, 200)
 

@@ -33,6 +33,9 @@ def feeds_of(streams):
         # both types: the live feed shows what is running now (the start) as well as what happened (the result);
         # the history endpoint, ActivityLog.since, stays results-only
         feeds["activity"] = (streams.activity.bus, (streams.activity.STARTED, streams.activity.TYPE))
+    if streams is not None and streams.console is not None:
+        # the lines every declared link logs, and the link's own state changes; the page filters by link
+        feeds["console"] = (streams.console, ("console.line", "console.link"))
     return feeds
 
 

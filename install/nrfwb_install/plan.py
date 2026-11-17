@@ -30,6 +30,16 @@ def store_path(prefix):
     return os.path.join(prefix, "data", "firmware")
 
 
+def links_path(prefix):
+    """The declared debug links, which the installer creates empty (docs/specs/console.md)."""
+    return os.path.join(prefix, "config", "links.yaml")
+
+
+def console_path(prefix):
+    """The console's own folder: its macros (docs/specs/console.md)."""
+    return os.path.join(prefix, "data", "console")
+
+
 def unit_blocker(prefix):
     """Why this folder cannot be written into a unit file, or None. `%` and `$` are escaped instead."""
     if any(c in '"\\' or ord(c) < 32 or ord(c) == 127 for c in prefix):
@@ -176,6 +186,8 @@ def build(ctx):
     missing = [n for n in ("host.yaml", "units.yaml", "links.yaml") if not os.path.exists(os.path.join(cfg, n))]
     if not os.path.isdir(store_path(prefix)):
         missing.append("data/firmware (the package store)")
+    if not os.path.isdir(console_path(prefix)):
+        missing.append("data/console (the console's macros)")
     store_on = True                            # a host.yaml that does not exist yet is created with the store set
     try:
         with open(os.path.join(cfg, "host.yaml"), "r") as fh:
