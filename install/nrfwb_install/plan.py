@@ -40,6 +40,11 @@ def console_path(prefix):
     return os.path.join(prefix, "data", "console")
 
 
+def gpio_path(prefix):
+    """The GPIO pin map's folder (docs/specs/gpio.md). Written into host.yaml always; the commands exist only on a Pi."""
+    return os.path.join(prefix, "data", "gpio")
+
+
 def unit_blocker(prefix):
     """Why this folder cannot be written into a unit file, or None. `%` and `$` are escaped instead."""
     if any(c in '"\\' or ord(c) < 32 or ord(c) == 127 for c in prefix):
@@ -193,6 +198,8 @@ def build(ctx):
         missing.append("data/firmware (the package store)")
     if not os.path.isdir(console_path(prefix)):
         missing.append("data/console (the console's macros)")
+    if not os.path.isdir(gpio_path(prefix)):
+        missing.append("data/gpio (the GPIO pin map)")
     store_on = True                            # a host.yaml that does not exist yet is created with the store set
     try:
         with open(os.path.join(cfg, "host.yaml"), "r") as fh:

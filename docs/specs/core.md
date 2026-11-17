@@ -114,6 +114,11 @@ returned, never a tail. **[brief]**
 | `store_full` | refused | the filesystem cannot hold the upload; nothing is evicted (`firmware.md`) | bytes needed, bytes free |
 | `in_use` | refused | a stored firmware is a unit's declared return path, so it cannot be deleted or moved to another project (`firmware.md`) | the unit(s) |
 | `macro_unknown` | refused | a console macro to run or delete does not exist (`console.md`) | the name |
+| `pin_reserved` | refused | a GPIO assignment to BCM 0 or 1, the HAT ID EEPROM's bus (`gpio.md`) | the gpio |
+| `pin_not_on_header` | refused | a GPIO assignment to a number that is not on the 40-pin header (0 to 27) | the gpio |
+| `pin_taken` | refused | that GPIO is already assigned to another name | the gpio, who holds it |
+| `pin_unknown` | refused | an unassign of a name that is not assigned | the name |
+| `voltage_unsafe` | refused | a GPIO signal declared above 3.3 V: header pins are not 5 V tolerant | the gpio, the voltage |
 | `write_failed` | failed | bytes could not be written to a console adapter within the bound, or the macros file cannot be read or written (`console.md`) | the link, or the file's problem |
 | `bad_project` | refused | a project name breaks the rule: 1 to 64 characters from `a-z 0-9 . _ -`, starting with a letter or a digit (`firmware.md`) | the name |
 | `project_unknown` | refused | a project to remove does not exist (`firmware.md`) | the name |
@@ -149,7 +154,7 @@ One function maps a `Result` to both, so the CLI and API cannot disagree.
 | class | CLI exit | HTTP |
 |---|---|---|
 | ok | 0 | 200 |
-| refused | 1 | 409 for state, holder, lock, serial, protected and link-wiring refusals (`link_absent`, `link_rx_only`, `voltage_unverified`, `dtr_rts_unsafe`); 422 for `bad_package`, `wrong_softdevice`, `no_bound`, `baud_refused`, `not_a_declared_link`, `checksum_mismatch`, `bad_project`; 404 for `firmware_unknown`, `project_unknown`, `macro_unknown`; 411 for `length_required`; 507 for `store_full`; 409 for `in_use` |
+| refused | 1 | 409 for state, holder, lock, serial, protected and link-wiring refusals (`link_absent`, `link_rx_only`, `voltage_unverified`, `dtr_rts_unsafe`); 422 for `bad_package`, `wrong_softdevice`, `no_bound`, `baud_refused`, `not_a_declared_link`, `checksum_mismatch`, `bad_project`; 422 also for `pin_reserved`, `pin_not_on_header`, `voltage_unsafe`; 404 for `firmware_unknown`, `project_unknown`, `macro_unknown`, `pin_unknown`; 411 for `length_required`; 507 for `store_full`; 409 for `in_use` |
 | (usage error: bad arguments) | 2 | 400 |
 | failed | 3 | 500 |
 | suspect | 4 | 500, `ok` false |

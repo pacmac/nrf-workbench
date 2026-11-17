@@ -693,6 +693,8 @@ class StoreDefault(unittest.TestCase):
         self.assertEqual(problems, [])
         self.assertEqual((cfg["paths"]["links"], cfg["paths"]["console"]),
                          (os.path.join(self.pfx, "config", "links.yaml"), console))
+        self.assertEqual(cfg["paths"]["gpio"], os.path.join(self.pfx, "data", "gpio"))
+        self.assertEqual(os.stat(os.path.join(self.pfx, "data", "gpio")).st_mode & 0o777, 0o700)
         streams = service.build_streams(cfg)
         self.assertEqual(streams.absent, {}, "a fresh install has every feed on: a feed with no bound is silently off")
         self.assertEqual((streams.events.retain, streams.events.max_age_s), (1000, 7 * 86400))
@@ -744,8 +746,9 @@ class StoreDefault(unittest.TestCase):
             applymod.ensure_store(self.pfx, self.log)
         store = os.path.join(self.pfx, "data", "firmware")
         console = os.path.join(self.pfx, "data", "console")
-        self.assertEqual(chowned, [(os.path.dirname(store), 4242, 4343), (store, 4242, 4343), (console, 4242, 4343)],
-                         "data is handed over once, and the console's folder with it")
+        gpio = os.path.join(self.pfx, "data", "gpio")
+        self.assertEqual(chowned, [(os.path.dirname(store), 4242, 4343), (store, 4242, 4343), (console, 4242, 4343),
+                                   (gpio, 4242, 4343)], "data is handed over once, and each service folder with it")
         chowned[:] = []
         with mock.patch.object(applymod.os, "geteuid", return_value=0), \
                 mock.patch.object(applymod, "_owner_of", return_value=(0, 0)), \

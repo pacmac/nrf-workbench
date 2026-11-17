@@ -4,22 +4,19 @@ A macro is a name and some lines. It belongs to the BENCH, not to a browser: it 
 (written atomically), so the CLI, the MCP and every browser see the same ones. Running one sends its lines in order
 through the same send path as a typed line, so every guard applies to every line (docs/specs/console.md, "slice 1").
 """
-import json
 import os
 import re
-import tempfile
 import threading
 import time
 
+from ..core import jsonstore
 from .broker import LINE_CAP_BYTES
 
 SLUG = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 # A macro is a few commands. 4 096 bytes is four times the line cap: room for a handful of full-length lines.
 MAX_BYTES = 4 * LINE_CAP_BYTES
 
-
-class MacroError(Exception):
-    """The macros file cannot be used (it is unreadable or not what this code writes)."""
+MacroError = jsonstore.StoreError                  # the macros file cannot be used (unreadable or not what this code writes)
 
 
 def check_line(line):
@@ -59,30 +56,10 @@ class MacroStore(object):
         self._lock = threading.Lock()
 
     def _read(self):
-        try:
-            with open(self.path, "r") as fh:
-                data = json.load(fh)
-        except FileNotFoundError:
-            return {}
-        except (OSError, ValueError) as exc:
-            raise MacroError("%s cannot be read: %s" % (self.path, exc))
-        if not isinstance(data, dict) or not isinstance(data.get("macros"), dict):
-            raise MacroError("%s is not a macros file" % self.path)
-        return data["macros"]
+        return jsonstore.read_map(self.path, "macros")
 
     def _write(self, macros):
-        directory = os.path.dirname(self.path)
-        os.makedirs(directory, mode=0o700, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=directory, prefix=".macros-", suffix=".part")
-        try:
-            with os.fdopen(fd, "w") as fh:
-                json.dump({"macros": macros}, fh, sort_keys=True, indent=1)
-                fh.flush()
-                os.fsync(fh.fileno())
-            os.replace(tmp, self.path)
-        finally:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
+        jsonstore.write_map(self.path, "macros", macros)
 
     def list(self):
         with self._lock:

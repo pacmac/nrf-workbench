@@ -37,6 +37,7 @@ from .dashboard import server as dashboard_server
 from .devices import commands as device_commands
 from .devices import profile as profilemod
 from .devices.monitor import DeviceMonitor
+from .gpio import commands as gpio_commands
 from .programmer import commands as programmer_commands
 from .programmer import flash_file
 
@@ -113,7 +114,20 @@ def capabilities(host):
     if (host.config["paths"]["links"] and host.config["paths"]["console"]
             and cfgmod.stream_bounds(host.config, "console") is not None):
         caps.add("console")
+    # The pin map needs its folder AND a Raspberry Pi: a gpiochip is not evidence of a Pi header (core.md; the Proxmox
+    # host has one and is not a Pi), so the device tree's own model decides. Elsewhere the commands are absent.
+    if host.config["paths"]["gpio"] and is_raspberry_pi(host.proc):
+        caps.add("gpio")
     return caps
+
+
+def is_raspberry_pi(proc="/proc"):
+    """True only if the device tree says Raspberry Pi. Absent on x86 and on any board that is not one."""
+    try:
+        with open(os.path.join(proc, "device-tree", "model"), "rb") as fh:
+            return b"Raspberry Pi" in fh.read()
+    except OSError:
+        return False
 
 
 def board_ids(profiles):
@@ -134,6 +148,7 @@ def build_host(cfg, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
     programmer_commands.register(registry, host)
     device_commands.register(registry, host)
     console_commands.register(registry, host)
+    gpio_commands.register(registry, host)
     caps = capabilities(host)
     if "console" in caps:
         host.console_links, host.console_problems = console_links.load(cfg["paths"]["links"], board_ids(profiles))
@@ -296,6 +311,7 @@ def _parser():
     p.add_argument("--units", help="a units file: per-serial settings such as protected")
     p.add_argument("--links", help="links.yaml: the declared debug links (the console needs this, --console-dir and a bounded log)")
     p.add_argument("--console-dir", dest="console_dir", help="a folder for the console's own data: the macros")
+    p.add_argument("--gpio-dir", dest="gpio_dir", help="a folder for the GPIO pin map (the gpio commands exist only on a Raspberry Pi)")
     for stream, what in (("events", "the live device feed"), ("activity", "the activity log"), ("console", "the console log, in lines")):
         p.add_argument("--%s-retain" % stream, dest="%s_retain" % stream, type=int,
                        help="how many %s entries to keep. REQUIRED with --%s-max-age-days, and has no default: "
@@ -313,7 +329,7 @@ def main(argv=None, run=None, env=None, make_monitor=DeviceMonitor):
                                ("firmware_dir", "paths", "firmware"),
                                ("lock", "paths", "lock"), ("profiles", "paths", "profiles"),
                                ("units", "paths", "units"), ("links", "paths", "links"),
-                               ("console_dir", "paths", "console")):
+                               ("console_dir", "paths", "console"), ("gpio_dir", "paths", "gpio")):
         if getattr(args, flag):
             overrides[section][key] = getattr(args, flag)
     for stream in ("events", "activity", "console"):
