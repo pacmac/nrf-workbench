@@ -139,7 +139,13 @@ class Dropped(CommandsBase):
         self.store.put = watched
 
     def store_files(self):
-        return sorted(os.listdir(self.store.root))
+        """Everything in the store, relative to it, folders included: a dropped upload must leave no file and
+        no project folder behind either."""
+        out = []
+        for dirpath, dirs, files in os.walk(self.store.root):
+            for n in dirs + files:
+                out.append(os.path.relpath(os.path.join(dirpath, n), self.store.root))
+        return sorted(out)
 
     def drop(self, sent):
         with Live(self.app) as live:
@@ -171,7 +177,7 @@ class Dropped(CommandsBase):
             s.close()
         self.assertEqual(status, 200, body)
         self.assertEqual(body["data"]["sha256"], self.id)
-        self.assertEqual(len(self.store_files()), 2)
+        self.assertEqual(len(self.store_files()), 3)       # the default project folder, the record and the image
 
 
 if __name__ == "__main__":

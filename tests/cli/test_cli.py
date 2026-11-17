@@ -99,7 +99,7 @@ class Listing(Real):
         rc, out, err = self.cli("commands")
         self.assertEqual(rc, 0)
         lines = out.strip().splitlines()
-        self.assertEqual(len(lines), 7)
+        self.assertEqual(len(lines), 10)
         self.assertEqual([l.split()[0] for l in lines], sorted(l.split()[0] for l in lines))
         self.assertIn("programmer.flash_stream", out)
         self.assertRegex([l for l in lines if l.startswith("firmware.put")][0], r"firmware\.put\s+write\s+Upload")

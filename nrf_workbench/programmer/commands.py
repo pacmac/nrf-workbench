@@ -22,16 +22,17 @@ from ..devices import entry, identity
 from ..guards.lock import DEFAULT_PATH
 from . import flash_file as ff
 from . import flash_firmware as ffw
-from .firmware_store import Store
+from .firmware_store import DEFAULT_PROJECT, Store
 
 _SHA = re.compile(r"^[0-9a-fA-F]{64}$")
+_PROJECT_DOC = "a project folder: 1 to 64 characters from a-z 0-9 . _ - starting with a letter or a digit"
 STORE = ("firmware_store",)
 FLASH = ("firmware_store", "uploader")
 
 
 def _in_use(host, sha):
     """The units that declare this stored package as their way back from the bootloader."""
-    image = os.path.realpath(os.path.join(host.config["paths"]["firmware"], sha + ".zip"))
+    image = os.path.realpath(_store(host).image_path(sha))      # the project folder it is in, not a flat path
     users = []
     for serial, unit in sorted((host.units or {}).items()):
         rp = (unit or {}).get("return_path") or {}
@@ -53,11 +54,12 @@ def _body(ctx):
 
 
 # -- the store ------------------------------------------------------------------------------------
-def _put(ctx, name=None, sha256=None):
+def _put(ctx, name=None, sha256=None, project=None):
     body = _body(ctx)
     if sha256 is not None and not _SHA.match(sha256):
         raise UsageError("sha256 must be 64 hex characters", "sha256")
-    return _store(ctx.host).put(body, body.length, name=name, sha256=sha256, uploaded_by=ctx.caller)
+    return _store(ctx.host).put(body, body.length, name=name, sha256=sha256, uploaded_by=ctx.caller,
+                                project=project)
 
 
 def _list(ctx):
@@ -70,6 +72,18 @@ def _show(ctx, id):
 
 def _delete(ctx, id):
     return _store(ctx.host).delete(id)
+
+
+def _move(ctx, id, project):
+    return _store(ctx.host).move(id, project)
+
+
+def _project_new(ctx, project):
+    return _store(ctx.host).project_new(project)
+
+
+def _project_delete(ctx, project):
+    return _store(ctx.host).project_delete(project)
 
 
 # -- flashing -------------------------------------------------------------------------------------
@@ -95,14 +109,16 @@ def _flash(ctx, serial, firmware, enter_bound_s, flash_bound_s, expect_product=N
         touch=hooks.get("touch", entry.default_touch), watcher=hooks.get("watcher"), ledger=hooks.get("ledger"))
 
 
-def _flash_stream(ctx, serial, enter_bound_s, flash_bound_s, expect_product=None, name=None, sha256=None):
+def _flash_stream(ctx, serial, enter_bound_s, flash_bound_s, expect_product=None, name=None, sha256=None,
+                  project=None):
     """Receive and validate the WHOLE file, store it, then flash it from the store: the board is erased
     when the transfer starts, so it is never fed from the socket. The upload stays in the store either
     way, so a refused flash is retried by id with nothing sent twice."""
-    put = _put(ctx, name=name, sha256=sha256)
+    put = _put(ctx, name=name, sha256=sha256, project=project)
     if not put.ok:
         return put
-    upload = {"id": put.data["sha256"], "new": put.data["new"], "bytes": put.data["bytes"]}
+    upload = {"id": put.data["sha256"], "new": put.data["new"], "bytes": put.data["bytes"],
+              "project": put.data["project"]}
     res = _flash(ctx, serial, upload["id"], enter_bound_s, flash_bound_s, expect_product)
     res.data = dict(res.data, upload=upload)
     res.evidence = dict(res.evidence, upload=upload)
@@ -121,19 +137,32 @@ def register(registry, host):
     def add(command):
         registry.add(command, module=__name__)
 
-    add(Command("firmware.put", "Upload a firmware package into the store; the file is the request body.", _put,
+    add(Command("firmware.put", "Upload a firmware package into a project folder of the store; the file is the "
+                "request body.", _put,
                 args=(Arg("name", required=False, doc="a label for the entry; data only, never a path"),
-                      Arg("sha256", required=False, doc="the SHA-256 of the file; a mismatch refuses the upload")),
+                      Arg("sha256", required=False, doc="the SHA-256 of the file; a mismatch refuses the upload"),
+                      Arg("project", required=False, doc=_PROJECT_DOC + "; default %s" % DEFAULT_PROJECT)),
                 requires=STORE, effect="write", body="raw",
-                result="the record: sha256 (the id), bytes, name, image_bytes, softdevice_req, packets, new"))
-    add(Command("firmware.list", "List the stored firmware, newest first.", _list, requires=STORE,
-                result="items: the records"))
+                result="the record: sha256 (the id), bytes, name, project, image_bytes, softdevice_req, packets, new"))
+    add(Command("firmware.list", "List the stored firmware, newest first, and every project folder.", _list,
+                requires=STORE, result="items: the records, each with its project; projects: every project name"))
     add(Command("firmware.show", "Show one stored firmware and which units name it as their way back.", _show,
                 args=(Arg("id", doc="the SHA-256, or a unique prefix of at least 8 hex characters"),),
-                requires=STORE, result="the record plus used_by"))
+                requires=STORE, result="the record plus project and used_by"))
     add(Command("firmware.delete", "Delete a stored firmware, unless a unit declares it as its way back.", _delete,
                 args=(Arg("id", doc="the SHA-256, or a unique prefix of at least 8 hex characters"),),
                 requires=STORE, effect="write", result="the id deleted"))
+    add(Command("firmware.move", "File a stored firmware under another project, unless a unit declares it as "
+                "its way back.", _move,
+                args=(Arg("id", doc="the SHA-256, or a unique prefix of at least 8 hex characters"),
+                      Arg("project", doc=_PROJECT_DOC + "; created if it does not exist")),
+                requires=STORE, effect="write", result="id, from (the project it left), project"))
+    add(Command("firmware.project_new", "Create an empty project folder in the store.", _project_new,
+                args=(Arg("project", doc=_PROJECT_DOC),),
+                requires=STORE, effect="write", result="project, new"))
+    add(Command("firmware.project_delete", "Remove a project folder, only if it holds no package.", _project_delete,
+                args=(Arg("project", doc=_PROJECT_DOC),),
+                requires=STORE, effect="write", result="project"))
     add(Command("programmer.flash", "Flash a stored firmware to a board, entering its bootloader if needed.", _flash,
                 args=(Arg("serial", doc="the USB serial of the board to flash"),
                       Arg("firmware", doc="the id of the stored firmware")) + _BOUNDS +
@@ -146,6 +175,7 @@ def register(registry, host):
                 args=(Arg("serial", doc="the USB serial of the board to flash"),) + _BOUNDS +
                 (Arg("expect_product", required=False, doc="the USB product string the image announces"),
                  Arg("name", required=False, doc="a label for the stored entry"),
-                 Arg("sha256", required=False, doc="the SHA-256 of the file")),
+                 Arg("sha256", required=False, doc="the SHA-256 of the file"),
+                 Arg("project", required=False, doc=_PROJECT_DOC + "; default %s" % DEFAULT_PROJECT)),
                 requires=FLASH, effect="write", body="raw",
                 result="as programmer.flash, plus upload: id, new, bytes"))

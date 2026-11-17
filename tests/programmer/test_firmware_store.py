@@ -101,20 +101,33 @@ class Base(unittest.TestCase):
         self.root = os.path.join(self.parent, "store")
         self.in_use = {}
         self.store = Store(self.root, in_use_by=lambda s: self.in_use.get(s, []), now=Clock())
+        self.pdir = os.path.join(self.root, "unsorted")          # the default project's folder
 
     def listing(self):
-        return sorted(os.listdir(self.root))
+        """Everything in the store, relative to it, folders included, so "a refusal left nothing behind" also
+        means no project folder was left behind."""
+        out = []
+        for dirpath, dirs, files in os.walk(self.root):
+            for n in dirs + files:
+                out.append(os.path.relpath(os.path.join(dirpath, n), self.root))
+        return sorted(out)
+
+    def entry_files(self, sha_hex, project="unsorted"):
+        """What one stored package looks like in a listing."""
+        return sorted([project, "%s/%s.json" % (project, sha_hex), "%s/%s.zip" % (project, sha_hex)])
 
     def put(self, data, **kw):
         return self.store.put(io.BytesIO(data), len(data), **kw)
 
-    def plant(self, sha_hex, record=True, image=True):
+    def plant(self, sha_hex, record=True, image=True, project="unsorted"):
         """An entry made directly, for ids that cannot be made by hashing."""
+        folder = os.path.join(self.root, project)
+        os.makedirs(folder, exist_ok=True)
         if record:
-            with open(os.path.join(self.root, sha_hex + ".json"), "w") as f:
+            with open(os.path.join(folder, sha_hex + ".json"), "w") as f:
                 json.dump({"sha256": sha_hex, "bytes": 1, "name": None, "uploaded_at": "2000-01-01T00:00:00Z"}, f)
         if image:
-            with open(os.path.join(self.root, sha_hex + ".zip"), "wb") as f:
+            with open(os.path.join(folder, sha_hex + ".zip"), "wb") as f:
                 f.write(b"x")
 
 
@@ -126,8 +139,8 @@ class Put(Base):
         d = r.data
         self.assertEqual((d["sha256"], d["bytes"], d["new"]), (sha(data), len(data), True))
         self.assertEqual((d["image_bytes"], d["softdevice_req"], d["packets"]), (1152, [182], 3))
-        self.assertEqual((d["name"], d["uploaded_by"]), ("parking", "bench"))
-        self.assertEqual(self.listing(), [sha(data) + ".json", sha(data) + ".zip"])
+        self.assertEqual((d["name"], d["uploaded_by"], d["project"]), ("parking", "bench", "unsorted"))
+        self.assertEqual(self.listing(), self.entry_files(sha(data)))
         with open(self.store.image_path(sha(data)), "rb") as f:
             self.assertEqual(f.read(), data)
 
@@ -165,14 +178,14 @@ class Put(Base):
         for snapshot in body.seen:
             self.assertEqual([n for n in snapshot if not n.startswith(".incoming-")], [], snapshot)
         self.assertIn(True, [any(n.startswith(".incoming-") for n in s) for s in body.seen])   # a temporary
-        self.assertEqual(len(self.listing()), 2)                  # and the temporary is gone afterwards
+        self.assertEqual(self.listing(), self.entry_files(sha(data)))   # and the temporary is gone afterwards
 
     def test_names_are_data_never_paths(self):
         data = pkg()
         r = self.put(data, name="../../etc/x")
         self.assertTrue(r.ok)
         self.assertEqual(r.data["name"], "../../etc/x")
-        self.assertEqual(self.listing(), [sha(data) + ".json", sha(data) + ".zip"])
+        self.assertEqual(self.listing(), self.entry_files(sha(data)))
         self.assertEqual(os.listdir(self.parent), ["store"])      # nothing was created outside the store
 
     def test_bad_arguments_are_usage_errors_not_results(self):
@@ -329,7 +342,7 @@ class Reading(Base):
     def test_an_unreadable_record_is_reported_not_hidden_and_not_listed(self):
         good = self.put(pkg()).data["sha256"]
         bad = "b" * 64
-        with open(os.path.join(self.root, bad + ".json"), "w") as f:
+        with open(os.path.join(self.pdir, bad + ".json"), "w") as f:
             f.write("{ not json")
         r = self.store.list()
         self.assertEqual([i["sha256"] for i in r.data["items"]], [good])
@@ -337,7 +350,8 @@ class Reading(Base):
 
     def test_a_record_whose_id_is_not_its_file_name_is_unreadable(self):
         other = "c" * 64
-        with open(os.path.join(self.root, other + ".json"), "w") as f:
+        os.makedirs(self.pdir)
+        with open(os.path.join(self.pdir, other + ".json"), "w") as f:
             json.dump({"sha256": "d" * 64}, f)
         self.assertEqual(self.store.list().evidence["unreadable"], [other])
 
@@ -378,7 +392,7 @@ class Verify(Base):
 
     def test_an_image_with_a_record_that_cannot_be_read_is_refused(self):
         s = self.put(pkg()).data["sha256"]
-        with open(os.path.join(self.root, s + ".json"), "w") as f:
+        with open(os.path.join(self.pdir, s + ".json"), "w") as f:
             f.write("nope")
         # It still resolves (list reports it as unreadable rather than hiding it) but it is never flashed.
         r = self.store.verify(s)
@@ -391,7 +405,7 @@ class Delete(Base):
         s = self.put(pkg()).data["sha256"]
         r = self.store.delete(s[:8])
         self.assertTrue(r.ok)
-        self.assertEqual((r.data["id"], self.listing()), (s, []))
+        self.assertEqual((r.data["id"], self.listing()), (s, ["unsorted"]))     # the project folder stays, empty
 
     def test_a_declared_return_package_cannot_be_deleted(self):
         s = self.put(pkg()).data["sha256"]
@@ -399,7 +413,7 @@ class Delete(Base):
         r = self.store.delete(s)
         self.assertEqual((r.cls, r.code), ("refused", "in_use"))
         self.assertEqual(r.evidence["units"], ["unit-a", "unit-b"])
-        self.assertEqual(len(self.listing()), 2)                      # untouched
+        self.assertEqual(self.listing(), self.entry_files(s))         # untouched
 
     def test_an_unknown_id_is_firmware_unknown(self):
         self.assertEqual(self.store.delete("deadbeef").code, "firmware_unknown")
@@ -407,12 +421,12 @@ class Delete(Base):
     def test_an_image_left_without_a_record_is_not_listed_and_a_new_upload_completes_it(self):
         data = pkg()
         s = self.put(data).data["sha256"]
-        os.unlink(os.path.join(self.root, s + ".json"))               # a crash between the two files
+        os.unlink(os.path.join(self.pdir, s + ".json"))               # a crash between the two files
         self.assertEqual(self.store.list().data["items"], [])
         r = self.put(data)
         self.assertTrue(r.ok)
         self.assertTrue(r.data["new"])
-        self.assertEqual(len(self.listing()), 2)
+        self.assertEqual(self.listing(), self.entry_files(s))
         self.assertTrue(self.store.verify(s).ok)
 
 
@@ -478,8 +492,341 @@ class Concurrent(Base):
         for t in threads:
             t.join()
         self.assertTrue(all(r.ok for r in results), [r.to_dict() for r in results])
-        self.assertEqual(self.listing(), [sha(data) + ".json", sha(data) + ".zip"])
+        self.assertEqual(self.listing(), self.entry_files(sha(data)))
         self.assertTrue(self.store.verify(sha(data)).ok)
+
+
+GOOD_PROJECTS = ["a", "mt-alarm", "v1.2_x", "9lives", "testpartner", "a" * 64]
+BAD_PROJECTS = ["", ".", "..", "../x", "x/..", "a/b", "/abs", "A", "Mt-Alarm", "-x", "_x", ".hidden", "a b",
+                "a" * 65, "é", "a\x00b", "a\nb", "a\\b", "~root", "unsorted/"]
+
+
+class ProjectRule(Base):
+    """The one rule that lets a client string become a folder name (docs/specs/firmware.md, "projects")."""
+
+    def test_the_rule(self):
+        for name in GOOD_PROJECTS:
+            self.assertIsNone(firmware_store.check_project(name), name)
+        for name in BAD_PROJECTS:
+            r = firmware_store.check_project(name)
+            self.assertEqual((r.cls, r.code), ("refused", "bad_project"), repr(name))
+
+    def test_a_non_string_is_a_usage_error_not_a_result(self):
+        for bad in (7, b"a", ["a"], True):
+            with self.assertRaises(TypeError):
+                firmware_store.check_project(bad)
+            with self.assertRaises(TypeError):
+                self.put(pkg(), project=bad)
+
+    def test_a_bad_name_costs_no_upload_and_touches_nothing(self):
+        data = pkg()
+        for name in BAD_PROJECTS:
+            body, before = Counting(data), self.listing()
+            r = self.store.put(body, len(data), project=name)
+            self.assertEqual((r.cls, r.code), ("refused", "bad_project"), repr(name))
+            self.assertEqual(body.reads, 0, "the body was read for a bad name: %r" % name)
+            self.assertEqual(self.listing(), before, repr(name))
+            self.assertEqual(os.listdir(self.parent), ["store"], "something was made outside the store")
+
+    def test_a_good_name_is_a_real_folder_and_the_record_does_not_repeat_it(self):
+        data = pkg()
+        r = self.put(data, project="mt-alarm")
+        self.assertEqual((r.data["project"], r.data["new"]), ("mt-alarm", True))
+        self.assertEqual(self.listing(), self.entry_files(sha(data), "mt-alarm"))
+        with open(os.path.join(self.root, "mt-alarm", sha(data) + ".json")) as f:
+            self.assertNotIn("project", json.load(f), "the folder is the one source of truth")
+        self.assertEqual(os.stat(os.path.join(self.root, "mt-alarm")).st_mode & 0o777, 0o700)
+
+    def test_a_link_or_a_file_named_like_a_project_is_refused_and_never_written_through(self):
+        outside = os.path.join(self.parent, "outside")
+        os.makedirs(outside)
+        os.symlink(outside, os.path.join(self.root, "escape"))
+        with open(os.path.join(self.root, "afile"), "w") as f:
+            f.write("x")
+        self.assertEqual(self.store.projects(), [], "a link is not a project")
+        data = pkg()
+        self.assertTrue(self.put(data, project="mt-alarm").ok)                # something real to move
+        s = sha(data)
+        for name in ("escape", "afile"):
+            for r in (self.put(pkg(seed=9), project=name), self.store.move(s, name), self.store.project_new(name)):
+                self.assertEqual((r.cls, r.code), ("refused", "bad_project"), name)
+        self.assertEqual(os.listdir(outside), [], "something was written through the link")
+        self.assertEqual(self.store.list().data["items"][0]["project"], "mt-alarm")
+
+
+class Projects(Base):
+    def test_a_put_with_no_project_goes_to_unsorted(self):
+        r = self.put(pkg())
+        self.assertEqual(r.data["project"], "unsorted")
+
+    def test_list_names_each_packages_project_and_every_project_empty_ones_too(self):
+        a = self.put(pkg(seed=1), project="alpha").data["sha256"]
+        b = self.put(pkg(seed=2), project="beta").data["sha256"]
+        self.assertTrue(self.store.project_new("empty").ok)
+        data = self.store.list().data
+        self.assertEqual(data["projects"], ["alpha", "beta", "empty"])
+        self.assertEqual(dict((i["sha256"], i["project"]) for i in data["items"]), {a: "alpha", b: "beta"})
+
+    def test_the_same_bytes_into_another_project_are_not_copied_and_say_where_they_are(self):
+        data = pkg()
+        first = self.put(data, project="alpha").data
+        before = self.listing()
+        r = self.put(data, project="beta")
+        self.assertTrue(r.ok)
+        self.assertEqual((r.data["new"], r.data["project"], r.data["sha256"]), (False, "alpha", first["sha256"]))
+        self.assertIn("already stored in project alpha", r.message)
+        self.assertEqual(self.listing(), before, "no second copy, and no folder for the project that was asked for")
+
+    def test_show_and_verify_name_the_project_and_the_path_is_inside_it(self):
+        s = self.put(pkg(), project="alpha").data["sha256"]
+        self.assertEqual(self.store.show(s).data["project"], "alpha")
+        v = self.store.verify(s)
+        self.assertEqual(v.data["project"], "alpha")
+        self.assertEqual(v.data["path"], os.path.join(self.root, "alpha", s + ".zip"))
+        self.assertEqual(self.store.image_path(s), v.data["path"])
+
+    def test_an_ambiguous_prefix_across_projects_names_the_candidates(self):
+        a, b = "aaaaaaaa" + "1" * 56, "aaaaaaaa" + "2" * 56
+        self.plant(a, project="x")
+        self.plant(b, project="y")
+        sha_hex, refusal = self.store.resolve("aaaaaaaa")
+        self.assertIsNone(sha_hex)
+        self.assertEqual(sorted(refusal.evidence["candidates"]), [a, b])
+        self.assertEqual(self.store.resolve("aaaaaaaa2")[0], b)
+
+    def test_the_same_hash_copied_into_two_projects_by_hand_is_one_entry_the_first_name_wins(self):
+        s = "e" * 64
+        self.plant(s, project="y")
+        self.plant(s, project="x")
+        items = self.store.list().data["items"]
+        self.assertEqual([(i["sha256"], i["project"]) for i in items], [(s, "x")])
+
+    def test_a_folder_that_breaks_the_rule_is_not_a_project(self):
+        os.makedirs(os.path.join(self.root, "Not A Project"))
+        os.makedirs(os.path.join(self.root, ".hidden"))
+        self.assertEqual(self.store.projects(), [])
+
+
+class Move(Base):
+    def one(self, project="a"):
+        data = pkg()
+        return sha(data), self.put(data, project=project)
+
+    def test_a_move_files_the_package_under_another_project_and_the_id_stays(self):
+        s, _ = self.one("a")
+        r = self.store.move(s[:8], "b")
+        self.assertTrue(r.ok, r.to_dict())
+        self.assertEqual((r.data["id"], r.data["from"], r.data["project"]), (s, "a", "b"))
+        self.assertEqual(self.listing(), sorted(self.entry_files(s, "b") + ["a"]))      # "a" is left, empty
+        v = self.store.verify(s)
+        self.assertTrue(v.ok, v.to_dict())
+        self.assertEqual(self.store.list().data["items"][0]["project"], "b")
+
+    def test_moving_to_its_own_project_changes_nothing(self):
+        s, _ = self.one("a")
+        before = self.listing()
+        r = self.store.move(s, "a")
+        self.assertTrue(r.ok)
+        self.assertEqual(r.message, "already in that project")
+        self.assertEqual(self.listing(), before)
+
+    def test_a_declared_return_package_cannot_be_moved(self):
+        s, _ = self.one("a")
+        self.in_use[s] = ["unit-a"]
+        before = self.listing()
+        r = self.store.move(s, "b")
+        self.assertEqual((r.cls, r.code), ("refused", "in_use"))
+        self.assertEqual(r.evidence["units"], ["unit-a"])
+        self.assertEqual(self.listing(), before, "a refused move changed something")
+
+    def test_every_refusal_leaves_the_store_as_it_was(self):
+        s, _ = self.one("a")
+        before = self.listing()
+        for ident, project, code in (("deadbeef", "b", "firmware_unknown"), (s, "../x", "bad_project"),
+                                     ("zz", "b", "firmware_unknown")):
+            r = self.store.move(ident, project)
+            self.assertEqual((r.cls, r.code), ("refused", code), (ident, project))
+            self.assertEqual(self.listing(), before)
+        os.unlink(os.path.join(self.root, "a", s + ".zip"))
+        before = self.listing()
+        r = self.store.move(s, "b")
+        self.assertEqual((r.cls, r.code), ("refused", "bad_package"))
+        self.assertEqual(self.listing(), before, "a move with no image made a folder or moved a record")
+
+    def test_a_crash_after_the_link_leaves_the_old_entry_whole_and_a_retry_finishes(self):
+        s, _ = self.one("a")
+        real = os.replace
+
+        def boom(src, dst, *a, **k):
+            if str(dst).endswith(".json") and os.sep + "b" + os.sep in str(dst):
+                raise OSError("power cut")
+            return real(src, dst, *a, **k)
+
+        with mock.patch.object(firmware_store.os, "replace", boom):
+            with self.assertRaises(OSError):
+                self.store.move(s, "b")
+        self.assertEqual(self.store.list().data["items"][0]["project"], "a", "the old entry is still the listed one")
+        self.assertTrue(self.store.verify(s).ok)
+        self.assertTrue(os.path.exists(os.path.join(self.root, "b", s + ".zip")), "the link was made")
+        self.assertEqual(self.store.list().evidence["unreadable"], [])
+        r = self.store.move(s, "b")                                   # the link a crash left is the same file
+        self.assertTrue(r.ok, r.to_dict())
+        self.assertEqual(self.listing(), sorted(self.entry_files(s, "b") + ["a"]))
+
+    def test_a_crash_after_the_record_moved_leaves_the_new_entry_whole(self):
+        s, _ = self.one("a")
+        real = os.unlink
+
+        def boom(path, *a, **k):
+            if str(path).endswith(os.path.join("a", s + ".zip")):
+                raise OSError("power cut")
+            return real(path, *a, **k)
+
+        with mock.patch.object(firmware_store.os, "unlink", boom):
+            with self.assertRaises(OSError):
+                self.store.move(s, "b")
+        item = self.store.list().data["items"][0]
+        self.assertEqual(item["project"], "b")
+        self.assertTrue(self.store.verify(s).ok)
+        self.assertTrue(os.path.exists(os.path.join(self.root, "a", s + ".zip")), "an unlisted image is left")
+        self.assertEqual(len(self.store.list().data["items"]), 1)
+
+
+class ProjectFolders(Base):
+    def test_new_makes_an_empty_folder_and_says_so_only_the_first_time(self):
+        r = self.store.project_new("alpha")
+        self.assertEqual((r.ok, r.data["new"]), (True, True))
+        self.assertEqual(self.store.project_new("alpha").data["new"], False)
+        self.assertEqual((self.listing(), self.store.projects()), (["alpha"], ["alpha"]))
+
+    def test_new_refuses_a_bad_name(self):
+        for name in BAD_PROJECTS:
+            self.assertEqual(self.store.project_new(name).code, "bad_project", repr(name))
+        self.assertEqual(self.listing(), [])
+
+    def test_delete_removes_an_empty_project(self):
+        self.store.project_new("alpha")
+        r = self.store.project_delete("alpha")
+        self.assertTrue(r.ok, r.to_dict())
+        self.assertEqual(self.listing(), [])
+
+    def test_delete_refuses_a_project_that_holds_packages_and_loses_nothing(self):
+        data = pkg()
+        self.put(data, project="alpha")
+        self.put(pkg(seed=2), project="alpha")
+        before = self.listing()
+        r = self.store.project_delete("alpha")
+        self.assertEqual((r.cls, r.code, r.evidence["packages"]), ("refused", "project_not_empty", 2))
+        self.assertEqual(self.listing(), before)
+        self.assertTrue(self.store.verify(sha(data)).ok)
+
+    def test_delete_refuses_a_folder_with_files_that_are_not_packages_and_names_them(self):
+        self.store.project_new("alpha")
+        with open(os.path.join(self.root, "alpha", "notes.txt"), "w") as f:
+            f.write("mine")
+        r = self.store.project_delete("alpha")
+        self.assertEqual((r.cls, r.code), ("refused", "project_not_empty"))
+        self.assertEqual(r.evidence["files"], ["notes.txt"])
+        self.assertTrue(os.path.exists(os.path.join(self.root, "alpha", "notes.txt")))
+
+    def test_delete_of_an_unknown_or_badly_named_project(self):
+        self.assertEqual(self.store.project_delete("nothere").code, "project_unknown")
+        self.assertEqual(self.store.project_delete("../store").code, "bad_project")
+        self.assertEqual(self.store.project_delete(".").code, "bad_project")
+
+
+class Filing(unittest.TestCase):
+    """A store from before project folders: entries sit directly in the store folder (docs/specs/firmware.md)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = os.path.join(self.tmp.name, "store")
+        os.makedirs(self.root)
+
+    def flat(self, seed, record=True, image=True, where=None):
+        data = pkg(seed=seed)
+        s = sha(data)
+        where = where or self.root
+        os.makedirs(where, exist_ok=True)
+        if image:
+            with open(os.path.join(where, s + ".zip"), "wb") as f:
+                f.write(data)
+        if record:
+            with open(os.path.join(where, s + ".json"), "w") as f:
+                json.dump({"sha256": s, "bytes": len(data), "name": "old%d" % seed, "uploaded_at": "2026-11-16T10:00:00Z",
+                           "image_bytes": 1152, "softdevice_req": [182], "packets": 3}, f)
+        return s
+
+    def names(self):
+        return sorted(n for n in os.listdir(self.root))
+
+    def test_flat_entries_are_filed_into_unsorted_when_the_store_opens(self):
+        a, b = self.flat(1), self.flat(2)
+        store = Store(self.root)
+        self.assertEqual(store.filed, 2)
+        self.assertEqual(self.names(), ["unsorted"], "nothing is left loose in the store")
+        self.assertEqual(sorted(os.listdir(os.path.join(self.root, "unsorted"))),
+                         sorted([a + ".json", a + ".zip", b + ".json", b + ".zip"]))
+        listing = store.list()
+        self.assertEqual(sorted(i["sha256"] for i in listing.data["items"]), sorted([a, b]))
+        self.assertEqual(set(i["project"] for i in listing.data["items"]), {"unsorted"})
+        self.assertEqual(listing.evidence["filed_on_open"], 2)
+        self.assertTrue(store.verify(a).ok)
+
+    def test_a_second_open_finds_nothing_to_file(self):
+        self.flat(1)
+        Store(self.root)
+        again = Store(self.root)
+        self.assertEqual(again.filed, 0)
+        self.assertNotIn("filed_on_open", again.list().evidence)
+
+    def test_a_pair_a_crash_left_half_moved_is_finished(self):
+        a = self.flat(1, image=False, where=os.path.join(self.root, "unsorted"))       # record moved, image not
+        with open(os.path.join(self.root, a + ".zip"), "wb") as f:
+            f.write(pkg(seed=1))
+        b = self.flat(2)                                                               # image linked, record not
+        os.makedirs(os.path.join(self.root, "unsorted"), exist_ok=True)
+        os.link(os.path.join(self.root, b + ".zip"), os.path.join(self.root, "unsorted", b + ".zip"))
+        store = Store(self.root)
+        self.assertEqual(self.names(), ["unsorted"])
+        self.assertTrue(store.verify(a).ok)
+        self.assertTrue(store.verify(b).ok)
+        self.assertEqual(len(store.list().data["items"]), 2)
+
+    def test_a_record_with_no_image_is_still_filed_and_still_refused_at_the_flash(self):
+        a = self.flat(1, image=False)
+        store = Store(self.root)
+        self.assertEqual(store.filed, 1)
+        self.assertEqual(store.verify(a).code, "bad_package")
+
+    def test_an_image_copied_in_by_hand_with_no_record_is_left_alone(self):
+        a = self.flat(1, record=False)
+        store = Store(self.root)
+        self.assertEqual(store.filed, 0)
+        self.assertEqual(self.names(), [a + ".zip"])
+        self.assertEqual(store.list().data["items"], [])
+
+
+class ConcurrentProjects(Base):
+    def test_the_same_bytes_into_different_projects_at_once_end_as_one_entry_in_one_project(self):
+        data = pkg()
+        results = []
+
+        def go(project):
+            results.append(self.store.put(io.BytesIO(data), len(data), project=project))
+
+        threads = [threading.Thread(target=go, args=(p,)) for p in ("a", "b", "c", "d", "e", "f")]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertTrue(all(r.ok for r in results), [r.to_dict() for r in results])
+        winners = [r for r in results if r.data["new"]]
+        self.assertEqual(len(winners), 1, "exactly one upload made the entry")
+        where = winners[0].data["project"]
+        self.assertEqual(set(r.data["project"] for r in results), {where}, "the others were told where it is")
+        self.assertEqual(self.listing(), self.entry_files(sha(data), where), "one copy, one folder")
 
 
 if __name__ == "__main__":

@@ -72,7 +72,7 @@ class Parity(RemoteBase):
         self.assertEqual(rc, 0, err)
         self.assertEqual(json.loads(out), {"commands": [c.to_dict() for c in self.reg.commands(ALL)]})
         rc, out, err = self.cli("commands")
-        self.assertEqual(len(out.strip().splitlines()), 7)
+        self.assertEqual(len(out.strip().splitlines()), 10)
 
     def test_capabilities_come_from_the_service(self):
         rc, out, err = self.cli("--json", "capabilities")

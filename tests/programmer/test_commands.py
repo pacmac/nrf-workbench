@@ -93,13 +93,20 @@ class Base(unittest.TestCase):
 class Registration(Base):
     def test_every_command_is_registered_with_its_effect_and_body(self):
         rows = dict((c.name, c) for c in self.reg.commands())
-        self.assertEqual(sorted(rows), ["devices.list", "firmware.delete", "firmware.list", "firmware.put",
+        self.assertEqual(sorted(rows), ["devices.list", "firmware.delete", "firmware.list", "firmware.move",
+                                        "firmware.project_delete", "firmware.project_new", "firmware.put",
                                         "firmware.show", "programmer.flash", "programmer.flash_stream"])
         self.assertEqual([rows[n].body for n in ("firmware.put", "programmer.flash_stream")], ["raw", "raw"])
         self.assertEqual([rows[n].body for n in ("firmware.list", "programmer.flash", "devices.list")], [None] * 3)
         self.assertEqual([rows[n].effect for n in ("devices.list", "firmware.list", "firmware.show")], ["read"] * 3)
-        self.assertEqual([rows[n].effect for n in ("firmware.put", "firmware.delete", "programmer.flash",
-                                                   "programmer.flash_stream")], ["write"] * 4)
+        self.assertEqual([rows[n].effect for n in ("firmware.put", "firmware.delete", "firmware.move",
+                                                   "firmware.project_new", "firmware.project_delete",
+                                                   "programmer.flash", "programmer.flash_stream")], ["write"] * 7)
+        for n in ("firmware.put", "programmer.flash_stream"):          # the project is optional on an upload
+            project = dict((a.name, a) for a in rows[n].args)["project"]
+            self.assertFalse(project.required, n)
+        for n in ("firmware.move", "firmware.project_new", "firmware.project_delete"):
+            self.assertTrue(dict((a.name, a) for a in rows[n].args)["project"].required, n)
 
     def test_both_bounds_are_required_arguments_with_a_unit(self):
         for name in ("programmer.flash", "programmer.flash_stream"):
@@ -111,8 +118,9 @@ class Registration(Base):
     def test_an_unmet_requirement_makes_commands_absent(self):
         self.assertEqual([c.name for c in self.reg.commands({"sysfs"})], ["devices.list"])
         self.assertEqual([c.name for c in self.reg.commands({"firmware_store"})],
-                         ["firmware.delete", "firmware.list", "firmware.put", "firmware.show"])
-        self.assertEqual(len(self.reg.commands(ALL)), 7)
+                         ["firmware.delete", "firmware.list", "firmware.move", "firmware.project_delete",
+                          "firmware.project_new", "firmware.put", "firmware.show"])
+        self.assertEqual(len(self.reg.commands(ALL)), 10)
         self.assertEqual(self.reg.commands(set()), [])
 
     def test_registering_twice_names_the_module(self):
@@ -162,7 +170,7 @@ class Store(Base):
 
     def test_a_declared_return_package_cannot_be_deleted_and_is_shown(self):
         self.put()
-        image = os.path.join(self.host.config["paths"]["firmware"], self.id + ".zip")
+        image = os.path.join(self.host.config["paths"]["firmware"], "unsorted", self.id + ".zip")   # the default project
         self.host.units = {"UNIT-A": {"return_path": {"method": "flash", "package": image}},
                            "UNIT-B": {"return_path": {"method": "flash", "package": "/some/other.zip"}},
                            "UNIT-C": {"protected": True}}
@@ -176,6 +184,56 @@ class Store(Base):
     def test_an_unknown_id(self):
         self.assertEqual(self.call("firmware.show", {"id": "deadbeef"}).code, "firmware_unknown")
         self.assertEqual(self.call("firmware.delete", {"id": "deadbeef"}).code, "firmware_unknown")
+
+
+class Projects(Base):
+    """The project folders through the registry, the way the CLI, the HTTP API and the MCP call them."""
+
+    def test_a_put_into_a_project_shows_in_the_list_with_its_project(self):
+        r = self.put(project="mt-alarm", name="v3")
+        self.assertEqual((r.cls, r.data["project"]), ("ok", "mt-alarm"))
+        data = self.call("firmware.list").data
+        self.assertEqual(data["projects"], ["mt-alarm"])
+        self.assertEqual([(i["sha256"], i["project"]) for i in data["items"]], [(self.id, "mt-alarm")])
+        self.assertEqual(self.call("firmware.show", {"id": self.id}).data["project"], "mt-alarm")
+
+    def test_a_bad_project_is_a_refusal_with_the_status_a_client_expects(self):
+        from nrf_workbench.core import status
+        for name in ("../x", "A", "", "a/b"):
+            r = self.put(project=name)
+            self.assertEqual((r.cls, r.code), ("refused", "bad_project"), repr(name))
+            self.assertEqual(status.http_status(r), 422)
+        self.assertEqual(self.call("firmware.list").data["items"], [])
+
+    def test_new_move_and_delete_a_project(self):
+        self.put(project="alpha")
+        self.assertEqual(self.call("firmware.project_new", {"project": "beta"}).data, {"project": "beta", "new": True})
+        r = self.call("firmware.move", {"id": self.id[:8], "project": "beta"})
+        self.assertEqual((r.cls, r.data["from"], r.data["project"]), ("ok", "alpha", "beta"))
+        self.assertEqual(self.call("firmware.list").data["projects"], ["alpha", "beta"])
+        gone = self.call("firmware.project_delete", {"project": "alpha"})
+        self.assertEqual(gone.cls, "ok", gone.to_dict())
+        refused = self.call("firmware.project_delete", {"project": "beta"})
+        self.assertEqual((refused.cls, refused.code), ("refused", "project_not_empty"))
+        self.assertEqual(self.call("firmware.list").data["projects"], ["beta"])
+
+    def test_the_unknown_project_codes_have_their_http_statuses(self):
+        from nrf_workbench.core import status
+        r = self.call("firmware.project_delete", {"project": "nothere"})
+        self.assertEqual((r.code, status.http_status(r)), ("project_unknown", 404))
+        r = self.call("firmware.project_delete", {"project": "x"})
+        self.assertEqual((r.code, status.http_status(r)), ("project_unknown", 404))
+        self.put(project="alpha")
+        r = self.call("firmware.project_delete", {"project": "alpha"})
+        self.assertEqual((r.code, status.http_status(r)), ("project_not_empty", 409))
+
+    def test_a_unit_return_path_follows_the_project_folder_and_blocks_a_move(self):
+        self.put(project="alpha")
+        image = os.path.join(self.host.config["paths"]["firmware"], "alpha", self.id + ".zip")
+        self.host.units = {"UNIT-A": {"return_path": {"method": "flash", "package": image}}}
+        self.assertEqual(self.call("firmware.show", {"id": self.id}).data["used_by"], ["UNIT-A"])
+        r = self.call("firmware.move", {"id": self.id, "project": "beta"})
+        self.assertEqual((r.cls, r.code), ("refused", "in_use"))
 
 
 class Flash(Base):
@@ -237,9 +295,27 @@ class Stream(Base):
     def test_upload_then_flash_in_one_call_and_the_upload_stays_in_the_store(self):
         r = self.stream(name="parking")
         self.assertEqual(r.cls, "ok", r.to_dict())
-        self.assertEqual(r.data["upload"], {"id": self.id, "new": True, "bytes": len(self.data)})
+        self.assertEqual(r.data["upload"], {"id": self.id, "new": True, "bytes": len(self.data),
+                                            "project": "unsorted"})
         self.assertEqual(r.data["firmware"]["name"], "parking")
         self.assertEqual([i["sha256"] for i in self.call("firmware.list").data["items"]], [self.id])
+
+    def test_the_upload_goes_into_the_named_project_and_the_flash_uses_it_from_there(self):
+        r = self.stream(name="parking", project="testpartner")
+        self.assertEqual(r.cls, "ok", r.to_dict())
+        self.assertEqual(r.data["upload"]["project"], "testpartner")
+        (item,) = self.call("firmware.list").data["items"]
+        self.assertEqual(item["project"], "testpartner")
+        cmd = self.runner.calls[-1][0]
+        pkg_arg = cmd[cmd.index("-pkg") + 1]
+        self.assertEqual(pkg_arg, os.path.join(self.host.config["paths"]["firmware"], "testpartner", self.id + ".zip"),
+                         "the board was flashed from the stored file in its project folder")
+
+    def test_a_bad_project_is_refused_before_the_board_is_touched(self):
+        r = self.stream(project="../etc")
+        self.assertEqual((r.cls, r.code), ("refused", "bad_project"))
+        self.assertEqual(self.touch.calls, [], "the board was touched for an upload that was refused")
+        self.assertEqual(self.call("firmware.list").data["items"], [])
 
     def test_the_file_is_stored_complete_BEFORE_the_board_is_touched(self):
         seen = []

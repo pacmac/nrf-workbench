@@ -16,6 +16,7 @@ CODES = {
     "serial_unverifiable": REFUSED, "two_candidates": REFUSED, "protected": REFUSED,
     "bad_package": REFUSED, "wrong_softdevice": REFUSED, "firmware_unknown": REFUSED,
     "checksum_mismatch": REFUSED, "length_required": REFUSED, "store_full": REFUSED, "in_use": REFUSED,
+    "bad_project": REFUSED, "project_unknown": REFUSED, "project_not_empty": REFUSED,
     "not_in_bootloader": REFUSED, "no_bound": REFUSED, "capability_missing": REFUSED,
     "service_not_running": REFUSED, "link_absent": REFUSED, "not_a_declared_link": REFUSED,
     "baud_refused": REFUSED, "link_rx_only": REFUSED, "voltage_unverified": REFUSED,
@@ -35,8 +36,8 @@ CLI_ONLY = frozenset(["service_not_running", "port_in_use", "port_privileged", "
 # A refused result is 409 (state, holder, lock, serial, protected, wiring, in use) unless it is one of these.
 REFUSED_HTTP = {
     "bad_package": 422, "wrong_softdevice": 422, "no_bound": 422, "baud_refused": 422,
-    "not_a_declared_link": 422, "checksum_mismatch": 422,
-    "firmware_unknown": 404,
+    "not_a_declared_link": 422, "checksum_mismatch": 422, "bad_project": 422,
+    "firmware_unknown": 404, "project_unknown": 404,
     "length_required": 411,
     "store_full": 507,
 }

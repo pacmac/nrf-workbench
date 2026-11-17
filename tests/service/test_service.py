@@ -167,7 +167,7 @@ class Build(Base):
         client = TestClient(app)
         self.addCleanup(client.close)
         names = [c["name"] for c in client.get("/api/commands").json()["commands"]]
-        self.assertEqual(len(names), 7)
+        self.assertEqual(len(names), 10)
         (b,) = client.get("/api/devices/list").json()["data"]["boards"]
         self.assertEqual((b["profile"], b["state"]), ("rak4631", "app"))
         self.assertEqual(client.get("/api/firmware/list").json()["data"]["items"], [])

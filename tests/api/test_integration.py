@@ -87,10 +87,11 @@ class Flash(Http):
     def test_flash_in_one_call_streams_the_upload_then_flashes_from_the_store(self):
         r = self.client.post("/api/programmer/flash_stream", params=dict(FLASH, name="parking"), content=self.data)
         self.assertEqual(r.status_code, 200, r.text)
-        self.assertEqual(r.json()["data"]["upload"], {"id": self.id, "new": True, "bytes": len(self.data)})
+        self.assertEqual(r.json()["data"]["upload"], {"id": self.id, "new": True, "bytes": len(self.data),
+                                                      "project": "unsorted"})
         self.assertEqual(self.items(), [self.id])
         cmd = self.runner.calls[0][0]
-        self.assertEqual(cmd[cmd.index("-pkg") + 1], os.path.join(self.host.config["paths"]["firmware"], self.id + ".zip"))
+        self.assertEqual(cmd[cmd.index("-pkg") + 1], os.path.join(self.host.config["paths"]["firmware"], "unsorted", self.id + ".zip"))
 
     def test_a_chunked_flash_stream_is_refused_before_the_board_is_touched(self):
         r = self.client.post("/api/programmer/flash_stream", params=FLASH, content=self.chunked())
@@ -135,7 +136,8 @@ class Discovery(Http):
         (b,) = self.client.get("/api/devices/list").json()["data"]["boards"]
         self.assertEqual((b["serial"], b["state"]), (SERIAL, "app"))
         names = sorted(c["mcp"] for c in self.client.get("/api/commands").json()["commands"])
-        self.assertEqual(names, ["devices_list", "firmware_delete", "firmware_list", "firmware_put", "firmware_show",
+        self.assertEqual(names, ["devices_list", "firmware_delete", "firmware_list", "firmware_move",
+                                 "firmware_project_delete", "firmware_project_new", "firmware_put", "firmware_show",
                                  "programmer_flash", "programmer_flash_stream"])
 
     def test_without_an_uploader_the_flash_commands_are_absent_and_say_why(self):

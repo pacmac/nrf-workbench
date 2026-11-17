@@ -207,6 +207,14 @@ part of the product and nothing reads them.)
   **[derived: the delete rule, "a crash leaves an unlisted image, never a listed entry with no image",
   applied to a move. Renaming the image first would break it.]** The folders are on one filesystem, so
   a hard link is always available.
+- **A package a unit names as its way back cannot be moved** (`in_use`, naming the unit), as it cannot
+  be deleted: the unit's declared path is the image's path, and a move changes it. **[derived while
+  building: `units.yaml` stores an absolute path to the image, so the project folder is part of it.]**
+- **A name already used by something that is not a project folder is refused** (`bad_project`): a
+  symbolic link, which could lead out of the store, or a plain file. Nothing is written through it.
+- **Concurrent writers take one lock on the store folder** around anything that decides where a package
+  lives (the final step of a put, a move, a delete, removing a project), so six uploads of the same
+  bytes into six projects end as one entry in one project and the other five are told where it is.
 - **Existing flat entries are filed on first open.** When the store opens and finds `<sha256>.json`
   files directly in its folder (an install from before this change), it moves each pair into
   `unsorted/` by the same three steps, reports how many it moved, and finds none the second time.
