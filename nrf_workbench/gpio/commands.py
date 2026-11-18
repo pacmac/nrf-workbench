@@ -38,6 +38,11 @@ def _pins(ctx):
 
 
 def _assign(ctx, **fields):
+    from ..wiring import commands as wiring_commands      # imported here: the wiring commands import this module
+    held = wiring_commands.pins_held(ctx.host)
+    if fields.get("gpio") in held:
+        return Result.refused("pin_taken", "BCM %d is held by the wiring connection %s: disconnect it first" % (fields["gpio"], held[fields["gpio"]]),
+                              {"gpio": fields["gpio"], "held_by": held[fields["gpio"]]})
     try:
         record, created = _store(ctx.host).assign(fields, by=ctx.caller)
     except Invalid as exc:

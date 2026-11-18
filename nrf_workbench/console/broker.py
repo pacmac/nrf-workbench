@@ -34,7 +34,7 @@ SUSPENDED_WHY = "released so another tool can use the adapter; it reopens when t
 def _wire(link):
     """What makes two links the SAME open port: a change in any of these closes the port and reopens it. The device it is
     associated with, and whether the bench may send, are only labels and permissions, so they do not."""
-    return (tuple(link.ids), link.serial, link.adapter_slot, link.baud, link.eol, link.usable)
+    return (tuple(link.ids), link.serial, link.adapter_slot, link.port, link.baud, link.eol, link.usable)
 
 
 class LinkState(object):

@@ -79,13 +79,29 @@ class Validation(Files):
     def test_an_unknown_setting_is_a_problem_so_a_typo_is_not_silently_ignored(self):
         self.assertIn(("invalid", "unknown setting boud"), self.problems(boud=9600))
 
-    def test_the_backend_is_known_and_pi_uart_is_listed_but_not_built(self):
-        self.assertIn("invalid", self.codes(backend="rtt"))
-        raws = good(backend="pi-uart")
+    def pi(self, **kw):
+        raws = good(backend="pi-uart", port="ttyAMA0")
         raws.pop("adapter")
+        raws.update(kw)
         (link,) = self.load([raws])
-        self.assertEqual([p.code for p in link.problems], ["backend_not_built"])
-        self.assertFalse(link.usable)
+        return link
+
+    def test_the_backend_is_known_and_pi_uart_needs_a_port_the_bench_knows_the_pins_of(self):
+        self.assertIn("invalid", self.codes(backend="rtt"))
+        self.assertEqual(self.pi().problems, [])
+        self.assertTrue(self.pi().usable)
+        no_port = good(backend="pi-uart")
+        no_port.pop("adapter")
+        (link,) = self.load([no_port])
+        self.assertEqual([p.code for p in link.problems], ["invalid"])
+        for port in ("ttyS0", "ttyUSB0", "/dev/ttyAMA0", "ttyAMA", 7, ""):
+            self.assertIn("invalid", [p.code for p in self.pi(port=port).problems], repr(port))
+        self.assertEqual([p.code for p in self.pi(port="ttyAMA3").problems], ["not_a_declared_link"],
+                         "a Pi UART whose header pins are not known is listed with the reason and never opened")
+
+    def test_a_pi_uart_link_never_reaches_a_modem_line_and_still_refuses_dtr_rts(self):
+        self.assertEqual([p.code for p in self.pi(dtr_rts_reach_dut=True).problems], ["dtr_rts_unsafe"])
+        self.assertEqual(self.pi().to_dict()["port"], "ttyAMA0")
 
     def test_the_adapter_is_identified_by_ids_and_a_serial(self):
         for ids in ([], None, ["1A86:55D4"], ["1a86"], ["1a86:55d4:00"], [7]):
@@ -199,6 +215,27 @@ class Resolving(Files):
 
     def resolve(self):
         return links.resolve(self.link, self.tree.sysfs, self.tree.dev)
+
+    def pi_link(self):
+        raw = good(backend="pi-uart", port="ttyAMA0")
+        raw.pop("adapter")
+        return self.load([raw])[0]
+
+    def test_the_pis_own_uart_is_found_by_its_node_and_says_how_to_enable_it_when_there_is_none(self):
+        link = self.pi_link()
+        found, why = links.resolve(link, self.tree.sysfs, self.tree.dev)
+        self.assertIsNone(found)
+        self.assertIn("UART is not enabled", why)
+        self.assertIn("wiring.uart_status", why)
+        node = self.tree.node("ttyAMA0", 204, 64)
+        found, why = links.resolve(link, self.tree.sysfs, self.tree.dev)
+        self.assertEqual((found["node"], why), (node, ""))
+
+    def test_a_pi_uart_node_that_is_not_a_character_device_is_not_opened(self):
+        open(os.path.join(self.tree.dev, "ttyAMA0"), "w").close()
+        found, why = links.resolve(self.pi_link(), self.tree.sysfs, self.tree.dev)
+        self.assertIsNone(found)
+        self.assertIn("not a character device", why)
 
     def test_the_adapter_is_found_by_ids_and_serial_and_its_node_by_device_number(self):
         node = self.dongle()

@@ -52,9 +52,9 @@ function Inbox({ adapters, devices, onSetUp, onDismiss }) {
   return (
     <div className="space-y-2">
       {adapters.map((a) => (
-        <div key={a.id} role="group" aria-label={`${a.name} is plugged in but not connected`} className="space-y-2 rounded-xl border border-blue-300 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950">
+        <div key={a.id} role="group" aria-label={`${a.name} is ${a.ids === "pi-uart" ? "available" : "plugged in"} but not connected`} className="space-y-2 rounded-xl border border-blue-300 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950">
           <p className="text-sm">
-            <strong>{a.name}</strong> <span className="font-mono text-xs">({a.ids}, {short(a.id)}, {a.node})</span> is plugged in and is not connected to anything.
+            <strong>{a.name}</strong> <span className="font-mono text-xs">({a.ids}, {short(a.id)}, {a.node})</span> is {a.ids === "pi-uart" ? "built into the Pi" : "plugged in"} and is not connected to anything.
             Which device is it wired to?
           </p>
           <div className="flex flex-wrap items-center gap-2">

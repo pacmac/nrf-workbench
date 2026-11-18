@@ -11,6 +11,7 @@ import time
 
 from ..console import links as linkmod
 from ..core import jsonstore
+from . import detect
 
 SLUG = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 SERIAL = re.compile(r"^[A-Za-z0-9._-]{1,64}$")          # a USB serial as a board or an adapter reports it
@@ -47,6 +48,15 @@ def holder_of(connections, adapter_serial, ids, ignore=None):
 def to_link(record, board_ids=()):
     """The console Link for a stored debug-log connection. It is built and validated by the console's own code, so a
     connection is usable exactly when a link declared in links.yaml with the same facts would be."""
+    if record["adapter"]["ids"][0] == detect.PI_IDS:
+        # The Pi's own UART (docs/specs/pi-uart.md): 3.3 V by design on both ends, no modem lines on the pins, so sending needs no measurement.
+        return linkmod.build({
+            "name": record["name"], "device": record["device"], "backend": "pi-uart",
+            "port": record["adapter"]["serial"][len(detect.PI_PREFIX):],
+            "baud": record["baud"], "dut_tx_to_host": True, "host_tx_to_dut": bool(record["send"]),
+            "voltage": {"dut": 3.3, "adapter": 3.3, "verified": bool(record["send"])},
+            "dtr_rts_reach_dut": False, "reply_marker": None,
+        }, (), board_ids)
     return linkmod.build({
         "name": record["name"], "device": record["device"], "backend": "usb-adapter",
         "adapter": {"ids": list(record["adapter"]["ids"]), "serial": record["adapter"]["serial"]},
@@ -80,7 +90,9 @@ def build_log(fields, detected, others, board_ids, existing=None):
     if not isinstance(send, bool):
         raise Invalid("send is true or false: may the bench send to the device", "send")
     measured = f.get("voltage_measured")
-    if send and not isinstance(measured, bool):
+    if adapter_serial.startswith(detect.PI_PREFIX):
+        measured = None                                 # the Pi's UART is 3.3 V by design: nothing to measure, and nothing is asked
+    elif send and not isinstance(measured, bool):
         raise Invalid("voltage_measured is true or false when send is true: has someone measured the adapter's voltage", "voltage_measured")
     if not send and measured is not None:
         raise Invalid("voltage_measured is only asked when send is true", "voltage_measured")
@@ -97,13 +109,15 @@ def build_log(fields, detected, others, board_ids, existing=None):
                       {"adapter": adapter_serial})
     ids = mine[0]["ids"] if mine else existing["adapter"]["ids"][0]
     if mine and mine[0]["problem"]:
-        raise Refused("adapter_absent", mine[0]["problem"], {"adapter": adapter_serial})
+        raise Refused(mine[0].get("problem_code") or "adapter_absent", mine[0]["problem"], {"adapter": adapter_serial})
     taken = holder_of(others, adapter_serial, ids)
     if taken is not None:
         raise Refused("adapter_taken", "that adapter is already used by %s" % taken["name"],
                       {"adapter": adapter_serial, "held_by": taken["name"]})
     record = {"name": name, "intent": "log", "device": device, "adapter": {"ids": [ids], "serial": adapter_serial},
               "baud": baud, "send": send, "voltage_measured": measured if send else None}
+    if ids == detect.PI_IDS:
+        record["pins"] = list(linkmod.PI_UART_PINS.get(adapter_serial[len(detect.PI_PREFIX):], ()))     # held by this connection (gpio.assign refuses them)
     link = to_link(record, board_ids)
     for problem in link.problems:                       # the console's own refusals: a board's own port, the touch baud, ...
         if problem.code in ("not_a_declared_link", "baud_refused", "dtr_rts_unsafe"):

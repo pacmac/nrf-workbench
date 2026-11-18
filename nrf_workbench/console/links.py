@@ -7,12 +7,18 @@ device number (the same `devices.identity` code the boards use), never by a `/de
 
 Reading is safe on any valid link; sending needs a wire to the device (`host_tx_to_dut`) and a measured voltage.
 """
+import os
 import re
+import stat
 
 import yaml
 
 from ..devices import identity
 
+# The Pi's own UARTs a link may use, and the BCM pins each one is on, TX then RX (docs/specs/pi-uart.md). Only the PL011 on header
+# pins 8 and 10 is known; any other port is listed with the reason and never opened.
+PI_PORT = re.compile(r"^ttyAMA[0-9]$")
+PI_UART_PINS = {"ttyAMA0": (14, 15)}
 SLUG = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 IDS = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{4}$")
 # The standard rates the kernel names a constant for. 1200 is deliberately absent: a 1200-baud open IS the bootloader touch.
@@ -50,6 +56,7 @@ class Link(object):
         # True for the USB bridge that is part of an ESP32 dev board: DTR/RTS reach its reset pins BY DESIGN, so opening the
         # port is the one case where `dtr_rts_reach_dut` is allowed. This code still never sets either line.
         self.own_bridge = raw.get("own_bridge") is True
+        self.port = raw.get("port") if isinstance(raw.get("port"), str) else None          # the Pi's own UART (backend pi-uart), by name
         self.baud = raw.get("baud")
         self.dut_tx_to_host = raw.get("dut_tx_to_host")
         self.host_tx_to_dut = raw.get("host_tx_to_dut")
@@ -77,7 +84,7 @@ class Link(object):
     def to_dict(self):
         return {"name": self.name, "slot": self.slot, "device": self.device, "backend": self.backend,
                 "adapter": {"ids": self.ids, "serial": self.serial, "slot": self.adapter_slot},
-                "own_bridge": self.own_bridge, "dtr_rts_reach_dut": self.dtr_rts_reach_dut,
+                "own_bridge": self.own_bridge, "dtr_rts_reach_dut": self.dtr_rts_reach_dut, "port": self.port,
                 "baud": self.baud, "dut_tx_to_host": self.dut_tx_to_host, "host_tx_to_dut": self.host_tx_to_dut,
                 "rx_only": self.host_tx_to_dut is not True, "voltage": self.voltage, "reply_marker": self.reply_marker,
                 "eol": self.eol, "problems": [p.to_dict() for p in self.problems]}
@@ -99,7 +106,12 @@ def _validate(raw, seen, board_ids):
     if backend not in BACKENDS:
         problems.append(Problem("invalid", "backend must be one of %s" % ", ".join(BACKENDS)))
     elif backend == "pi-uart":
-        problems.append(Problem("backend_not_built", "the pi-uart backend is not built yet; this link is listed and not opened"))
+        port = raw.get("port")
+        if not isinstance(port, str) or not PI_PORT.match(port):
+            problems.append(Problem("invalid", "port is the Pi's own UART by name, such as ttyAMA0"))
+        elif port not in PI_UART_PINS:
+            problems.append(Problem("not_a_declared_link", "%s is not a UART whose header pins are known here (only %s is)"
+                                    % (port, ", ".join(sorted(PI_UART_PINS)))))
 
     adapter = raw.get("adapter")
     ids = adapter.get("ids") if isinstance(adapter, dict) else None
@@ -177,6 +189,15 @@ def resolve(link, sysfs="/sys", devroot="/dev"):
     is the USB device whose ids and serial are the link's; its node is joined by device number."""
     if not link.usable:
         return None, "the link is not usable: " + "; ".join(p.message for p in link.problems)
+    if link.backend == "pi-uart":
+        node = os.path.join(devroot, link.port)
+        try:
+            mode = os.stat(node).st_mode
+        except OSError:
+            return None, "there is no %s: the Pi's UART is not enabled (wiring.uart_status says how)" % node
+        if not stat.S_ISCHR(mode):
+            return None, "%s exists but is not a character device" % node
+        return {"device": {"name": link.port}, "node": node}, ""
     by_slot = link.adapter_slot is not None
     mine = [d for d in identity.inventory(sysfs)
             if d["id"] in link.ids and (d["name"] == link.adapter_slot if by_slot else d["serial"] == link.serial)]
