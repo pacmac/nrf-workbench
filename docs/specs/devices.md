@@ -423,3 +423,21 @@ safety rules, so SWD and USB flashing cannot diverge.
 - A `two`, `unrecognised` and `absent` state each reproduced against the fake `/dev` fixtures
   (harness), with no hardware.
 - A re-enumeration during a held lock leaves state unchanged and restarts nothing.
+
+## TOOL names (added 2026-11-18, Peter: "we can associate a macid or serial number with a name cant we ? ... and save it in a local .yaml or json")
+
+A board has a **name**: a label a person gave it, kept **against its USB serial** in `<paths.wiring>/device-names.json`
+(`{"names": {"<serial>": "<name>"}}`). **The serial still identifies the board**; a name never selects, matches or guards
+anything, so a flash, a protected unit and every refusal still go by serial. **[derived]**
+
+- `devices.name(serial, name)` and `devices.unname(serial)`; `devices.list` and the live board list carry `name` (null when
+  there is none). Both naming commands need the folder (`paths.wiring`), so they are absent without it.
+- The name follows the board to any port, and survives a service restart and the board being unplugged.
+- Rule: the project name rule (1 to 64 of `a-z 0-9 . _ -`, starting with a letter or digit). **Unique** across boards
+  (`name_taken`). The serial must be attached when naming (`node_absent`), so a typo is never stored.
+- The file is plain JSON, written atomically, **read on every use**, so a hand edit takes effect at once. One that cannot be
+  read never takes the board list down (names are labels, so the list shows none), and `devices.name` then fails
+  (`write_failed`) **without overwriting it**.
+- ESP32 targets already carry their name in `esp32.json` (`esp32.declare`, `esp32.rename`); the two namespaces are separate.
+- The page: a Name row on each Devices card (Name it, Rename, Remove name); the name shows in the Attached band, the flash
+  dialog and the board picker. Not done: the Wiring page's device cards still show the serial only.

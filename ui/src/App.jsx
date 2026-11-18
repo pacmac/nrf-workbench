@@ -37,7 +37,7 @@ function tickerText(event) {
       }
     }
     const n = p.boards.length;
-    const what = n === 0 ? "no board attached" : p.boards.map((b) => `${b.serial} ${b.mode}`).join(", ");
+    const what = n === 0 ? "no board attached" : p.boards.map((b) => `${b.name ? `${b.name} ` : ""}${b.serial} ${b.mode}`).join(", ");
     return `attached: ${what}`;
   }
   if (event.type === "devices.live_unavailable") return `live updates unavailable: ${p.reason}`;
@@ -189,6 +189,13 @@ export default function App() {
     return () => { live = false; };
   }, [authenticated, espPath, usbTick, espTick]);
 
+  // A name is saved in a file, which raises no kernel event, so after naming the boards are read again from the service.
+  const listPath = ((info.commands || []).find((c) => c.name === "devices.list") || {}).path || null;
+  const refreshBoards = useCallback(() => {
+    if (!listPath) return;
+    readJson(listPath).then((r) => { if (r.ok && r.body && r.body.data) { setBoards(r.body.data.boards || []); setBoardsAt(Date.now() / 1000); } }).catch(() => {});
+  }, [listPath]);
+
   // A write that came back 401 means the session ended (expiry, restart, another login): show the login again.
   const onCommandDone = useCallback((r) => {
     setEspTick((n) => n + 1);
@@ -243,7 +250,7 @@ export default function App() {
           onFlash={openFlash}
         />
         {page === "bench" && <Bench name={name} session={session} info={info} feed={feed} />}
-        {page === "devices" && <Devices boards={boards} boardsAt={boardsAt} onFlash={openFlash} />}
+        {page === "devices" && <Devices boards={boards} boardsAt={boardsAt} onFlash={openFlash} commands={info.commands} onNamed={refreshBoards} onDone={onCommandDone} />}
         {page === "firmware" && <Firmware commands={info.commands} boards={boards} onFlash={openFlash} onDone={onCommandDone} refreshKey={espTick + usbTick} />}
         {page === "wiring" && <Wiring commands={info.commands} refreshKey={linksTick + usbTick} onOpenPage={setPage} />}
         {page === "console" && consoleOn && <Console commands={info.commands} links={links} lines={consoleLines} activity={activity} feed={consoleFeed} onDone={onCommandDone} />}

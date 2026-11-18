@@ -76,7 +76,8 @@ class Parity(RemoteBase):
 
     def test_capabilities_come_from_the_service(self):
         rc, out, err = self.cli("--json", "capabilities")
-        self.assertEqual(json.loads(out), {"present": sorted(ALL), "absent": []})
+        self.assertEqual(json.loads(out), {"present": sorted(ALL), "absent": [
+            {"name": "devices.name", "unmet": ["wiring"]}, {"name": "devices.unname", "unmet": ["wiring"]}]})
 
     def test_json_is_the_same_result_local_mode_gives(self):
         remote_rc, remote_out, _ = self.cli("--json", "devices", "list")

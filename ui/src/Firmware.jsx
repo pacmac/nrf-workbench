@@ -220,7 +220,7 @@ export default function Firmware({ commands, boards, onFlash, onDone, refreshKey
                   <Field label="Flash to board" hint="More than one board is attached, and none is chosen for you.">
                     <select className={inputClass} value={flashBoard ? boardSerial : NONE} onChange={(e) => setBoardSerial(e.target.value)} aria-label="Flash to board">
                       <option value={NONE}>Choose a board…</option>
-                      {boards.map((b) => <option key={`${b.serial}-${b.mode}`} value={b.serial}>{b.serial} ({b.mode})</option>)}
+                      {boards.map((b) => <option key={`${b.serial}-${b.mode}`} value={b.serial}>{b.name ? `${b.name}, ` : ""}{b.serial} ({b.mode})</option>)}
                     </select>
                   </Field>
                 )}

@@ -170,6 +170,7 @@ export default function FlashDialog({ board, commands, initial, onClose, onDone 
 
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-slate-100 p-3 text-sm dark:bg-slate-950">
         <Chip tone={board.mode === "app" ? "green" : "amber"}>{board.mode}</Chip>
+        {board.name && <strong>{board.name}</strong>}
         <span className="font-mono">{board.serial}</span>
         <span>{board.product}</span>
         <Chip>{board.profile}</Chip>
@@ -287,7 +288,7 @@ export default function FlashDialog({ board, commands, initial, onClose, onDone 
           <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100" role="note">
             {ready ? (
               <>
-                <strong>This erases <span className="font-mono">{board.serial}</span> ({board.product}) and writes {packageName} ({bytesText(imageBytes)}).</strong>{" "}
+                <strong>This erases {board.name ? `${board.name}, ` : ""}<span className="font-mono">{board.serial}</span> ({board.product}) and writes {packageName} ({bytesText(imageBytes)}).</strong>{" "}
                 The board enters its bootloader by itself; no button. Expect {rangeText(range)}
                 ({(THROUGHPUT_SLOWEST_BPS / 1000).toFixed(2)} to {(THROUGHPUT_FASTEST_BPS / 1000).toFixed(2)} kB/s measured).
               </>

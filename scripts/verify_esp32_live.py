@@ -31,7 +31,7 @@ from nrf_workbench import service  # noqa: E402
 from nrf_workbench.core import config as cfgmod  # noqa: E402
 from nrf_workbench.devices import commands as device_commands  # noqa: E402
 from nrf_workbench.devices.monitor import DeviceMonitor  # noqa: E402
-from fakes import Tree  # noqa: E402
+from fakes import SERIAL, Tree  # noqa: E402
 from test_decode import make_elf  # noqa: E402
 from test_esp32 import bundle, merged  # noqa: E402
 
@@ -59,6 +59,7 @@ class Bench(object):
         self.tree.node("ttyUSB1", 188, 1)
         self.tree.usb("1-4", DONGLE, "USB Single Serial", serial="5B1F007437", manufacturer="QinHeng", tty="ttyACM1", majmin="166:1")
         self.tree.node("ttyACM1", 166, 1)
+        self.tree.app_board("1-6", "ttyACM3", "166:3", serial=SERIAL)        # an nRF board, to be named on the Devices page
         self.master, self.slave = os.openpty()
         self.node = os.ttyname(self.slave)
         self.runs = []
@@ -253,6 +254,32 @@ def run(browser, theme, size, shots):
         page.get_by_text("No ESP32 declared yet").wait_for()
         check("%s forgetting the board takes its console link with it" % tag, bench.host.console.states() == [], bench.host.console.states())
         shot("8-forgotten")
+
+        # an nRF board is named by its serial, in a JSON file, from the Devices page
+        nav.get_by_role("button", name="Devices").click()
+        page.get_by_text("no name").wait_for()
+        page.get_by_role("button", name="Name %s" % SERIAL).click()
+        field = page.get_by_label("Name for %s" % SERIAL)
+        field.fill("Left-RAK")
+        check("%s the board's name is lower-cased as it is typed" % tag, field.input_value() == "left-rak")
+        page.get_by_role("button", name="Save name").click()
+        page.get_by_role("heading", name="left-rak").wait_for()
+        path = os.path.join(bench.tmp, "wiring", "device-names.json")
+        with open(path) as fh:
+            saved = fh.read()
+        check("%s the name is kept against the serial in a plain JSON file" % tag, '"%s": "left-rak"' % SERIAL in saved, saved)
+        check("%s the Attached band shows the name beside the serial, at once" % tag,
+              page.locator("section", has=page.get_by_role("heading", name="Attached")).inner_text().count("left-rak") == 1)
+        shot("8b-named")
+        page.get_by_role("button", name="Rename %s" % SERIAL).click()
+        page.get_by_label("Name for %s" % SERIAL).fill("right-rak")
+        page.get_by_role("button", name="Save name").click()
+        page.get_by_role("heading", name="right-rak").wait_for()
+        page.get_by_role("button", name="Remove the name of %s" % SERIAL).click()
+        page.get_by_text("no name").wait_for()
+        with open(path) as fh:
+            check("%s removing the name takes it out of the file" % tag, SERIAL not in fh.read())
+        nav.get_by_role("button", name="Firmware").click()
 
         # a built-in-USB ESP32 plugged in later is found on "Look again" and is not an ESP32 until declared
         bench.tree.usb("1-5", ("303a", "1001"), "USB JTAG/serial debug unit", serial="64:E8:33:85:4A:A4", manufacturer="Espressif", tty="ttyACM2", majmin="166:2")

@@ -86,6 +86,7 @@ export default function Band({ feed, boards, boardsAt, unavailable, ticker, esp,
             <li key={`${b.serial}-${b.mode}-${b.sysfs}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
               <Chip tone={MODE_TONE[b.mode] || "slate"}>{b.mode}</Chip>
               {b.state !== b.mode && <Chip tone="red" title="the same board is attached in both modes at once">state: {b.state}</Chip>}
+              {b.name && <strong className="text-sm">{b.name}</strong>}
               <span className="font-mono text-sm">{b.serial}</span>
               <span className="text-sm text-slate-700 dark:text-slate-300">{b.product}</span>
               <span className="font-mono text-xs text-slate-600 dark:text-slate-400">{b.id}</span>

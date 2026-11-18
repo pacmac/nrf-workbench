@@ -93,8 +93,8 @@ class Base(unittest.TestCase):
 class Registration(Base):
     def test_every_command_is_registered_with_its_effect_and_body(self):
         rows = dict((c.name, c) for c in self.reg.commands())
-        self.assertEqual(sorted(rows), ["devices.list", "firmware.delete", "firmware.list", "firmware.move",
-                                        "firmware.project_delete", "firmware.project_new", "firmware.put",
+        self.assertEqual(sorted(rows), ["devices.list", "devices.name", "devices.unname", "firmware.delete", "firmware.list",
+                                        "firmware.move", "firmware.project_delete", "firmware.project_new", "firmware.put",
                                         "firmware.show", "programmer.flash", "programmer.flash_stream"])
         self.assertEqual([rows[n].body for n in ("firmware.put", "programmer.flash_stream")], ["raw", "raw"])
         self.assertEqual([rows[n].body for n in ("firmware.list", "programmer.flash", "devices.list")], [None] * 3)

@@ -146,8 +146,11 @@ class Discovery(Http):
         self.addCleanup(client.close)
         self.assertEqual(client.post("/api/programmer/flash", json={}).status_code, 404)
         absent = client.get("/api/capabilities").json()["absent"]
-        self.assertEqual(sorted(a["name"] for a in absent), ["programmer.flash", "programmer.flash_stream"])
-        self.assertEqual(absent[0]["unmet"], ["uploader"])
+        self.assertEqual(sorted(a["name"] for a in absent), ["devices.name", "devices.unname", "programmer.flash",
+                                                              "programmer.flash_stream"])
+        by_name = dict((a["name"], a) for a in absent)
+        self.assertEqual(by_name["programmer.flash"]["unmet"], ["uploader"])
+        self.assertEqual(by_name["devices.name"]["unmet"], ["wiring"], "naming needs the folder the names are kept in")
         self.assertEqual(client.get("/api/firmware/list").status_code, 200)
 
 
