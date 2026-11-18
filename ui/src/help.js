@@ -62,8 +62,11 @@ export const TOPICS = [
       { symptom: "The adapter is not offered", cause: "It is not plugged in, has no serial number, or another connection already uses it.", fix: "Plug it in. The list updates by itself." },
       { symptom: "It says listening but nothing prints", cause: "The firmware prints in bursts or the baud rate is wrong.", fix: "Check the baud rate. Some firmware prints only every minute or so." },
       { symptom: "Sending is refused", cause: "The link is receive only, or a USB adapter's voltage is not recorded as measured.", fix: "Edit the connection: turn sending on, and say the voltage has been measured." },
+      { symptom: "A board wired to the Pi's serial port will not start when you power it", cause: "The Pi drives its TX pin high at 3.3 V, and that feeds the unpowered board through its input.", fix: "Press Release lines on its connection, power the board, then Engage lines. Release makes both pins inputs with no pull and the chip says so. It does not apply to a USB adapter." },
     ],
     codes: [
+      { code: "pins_not_controllable", fix: "Only the Pi's own serial port can be released. A USB adapter's lines belong to its chip." },
+      { code: "pins_not_set", fix: "The Pi's pin tool refused, or the pins did not read back as asked. The link stays paused; try Engage lines again." },
       { code: "adapter_taken", fix: "Disconnect the other connection that uses this adapter first." },
       { code: "port_held", fix: "Another program has the port open. Close it." },
       { code: "intent_not_built", fix: "Only the debug log can be wired so far." },

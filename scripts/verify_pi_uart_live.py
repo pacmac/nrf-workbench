@@ -21,6 +21,7 @@ import urllib.request
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tests", "devices"))
+sys.path.insert(0, os.path.join(ROOT, "tests", "wiring"))
 
 import uvicorn  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
@@ -29,6 +30,7 @@ from navhelp import go_to  # noqa: E402
 from nrf_workbench import service  # noqa: E402
 from nrf_workbench.core import config as cfgmod  # noqa: E402
 from fakes import SERIAL, Tree  # noqa: E402
+from test_release import FakePinctrl  # noqa: E402
 
 THEMES = ("light", "dark")
 results = []
@@ -59,7 +61,9 @@ class Bench(object):
                         "console": {"retain": 500, "max_age_days": 1}}})
         assert problems == [], problems
         self.uev_a, self.uev_b = socket.socketpair()
-        hooks = {"tool": "/fake/uploader", "open_uevents": lambda: self.uev_a,
+        self.pin_log = []
+        self.pins = FakePinctrl(self.pin_log)                    # the Pi's pin registers, kept in memory (tests/wiring/test_release.py)
+        hooks = {"tool": "/fake/uploader", "open_uevents": lambda: self.uev_a, "pinctrl": self.pins,
                  "console_resolve": lambda link: ({"device": {}, "node": self.node}, "")}
         self.app, self.host, _r, _c = service.build(cfg, sysfs=self.tree.sysfs, devroot=self.tree.dev, proc=self.tree.proc, hooks=hooks)
         self.host.console.start()
@@ -118,6 +122,30 @@ def run(browser, theme, shots):
         (st,) = bench.host.console.states()
         check("%s the console has a pi-uart link on ttyAMA0, open, receive-only, at 115200" % theme,
               (st["backend"], st["port"], st["state"], st["rx_only"], st["baud"]) == ("pi-uart", "ttyAMA0", "open", True, 115200), st)
+        # release and engage the Pi's lines (docs/specs/line-release.md)
+        row = wires.get_by_role("listitem").first
+        row.get_by_text("Pi lines driven").wait_for()
+        check("%s the connection says the Pi's lines are driven and offers to release them" % theme,
+              row.get_by_role("button", name=re.compile("^Release the Pi lines")).is_visible())
+        page.screenshot(path=os.path.join(shots, "%s-2b-driven.png" % theme), full_page=True)
+        row.get_by_role("button", name=re.compile("^Release the Pi lines")).click()
+        row.get_by_text("Pi lines released").wait_for()
+        (st2,) = bench.host.console.states()
+        check("%s release held the link and floated both pins (inputs, no pull), and the page says so" % theme,
+              st2["state"] == "held" and bench.pins.pins[14][:2] == ["ip", "pn"] and bench.pins.pins[15][:2] == ["ip", "pn"]
+              and row.get_by_role("button", name=re.compile("^Engage the Pi lines")).is_visible(), (st2["state"], bench.pins.pins))
+        page.screenshot(path=os.path.join(shots, "%s-2c-released.png" % theme), full_page=True)
+        go_to(page, "Home")
+        conn = page.get_by_role("list", name="Connections")
+        conn.get_by_text("released").first.wait_for()
+        check("%s Home shows the released link as needing attention and says how to fix it" % theme,
+              "engage them to read again" in conn.inner_text() and "needs attention" in conn.inner_text(), conn.inner_text())
+        go_to(page, "Wiring")
+        wires.get_by_role("button", name=re.compile("^Engage the Pi lines")).click()
+        wires.get_by_text("Pi lines driven").wait_for()
+        (st3,) = bench.host.console.states()
+        check("%s engage gave the pins back (a0, the Pi's pulls) and the link reads again" % theme,
+              st3["state"] == "open" and bench.pins.pins[14][:2] == ["a0", "pn"] and bench.pins.pins[15][:2] == ["a0", "pu"], (st3["state"], bench.pins.pins))
         os.write(bench.master, b"HB up=12345 heap=88000\n")
         go_to(page, "Console")
         page.get_by_text("HB up=12345 heap=88000").wait_for()

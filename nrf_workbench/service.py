@@ -46,6 +46,7 @@ from .i2c import commands as i2c_commands
 from .project import commands as project_commands
 from .wiring import commands as wiring_commands
 from .wiring import detect as wiring_detect
+from .wiring import pinctrl as wiring_pinctrl
 from .programmer import commands as programmer_commands
 from .programmer import flash_file
 
@@ -134,6 +135,9 @@ def capabilities(host):
     # host has one and is not a Pi), so the device tree's own model decides. Elsewhere the commands are absent.
     if host.config["paths"]["gpio"] and is_raspberry_pi(host.proc):
         caps.add("gpio")
+        # Floating a Pi UART link's pins (docs/specs/line-release.md) needs the Pi's own pin tool.
+        if wiring_pinctrl.available(host):
+            caps.add("pinctrl")
     return caps
 
 

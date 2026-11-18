@@ -68,14 +68,18 @@ def _connections(host, errors):
         st = host.console.state(r["name"]) if host.console is not None else None
         raw = (st or {}).get("state")
         state = LISTENING if raw == "open" else ABSENT if raw in (None, "absent") else ATTENTION
+        pin_state = wiring_commands.lines_of(host, r)           # a Pi UART connection's pins, read now (docs/specs/line-release.md)
+        why = (st or {}).get("reason") or ("" if st else "the console is not running")
+        if pin_state is not None and pin_state["state"] in ("floating", "mixed"):
+            state, why = ATTENTION, "the Pi's lines are released (%s): engage them to read again" % pin_state["state"]
         serial = r["adapter"]["serial"]
         a = adapters.get(serial)
         via = "Pi UART (header pins 8 and 10)" if r["adapter"]["ids"][0] == detect.PI_IDS else (a["name"] if a else serial)
         out.append({"name": r["name"], "device": r["device"], "device_name": labels.get(r["device"]), "via": via, "adapter_serial": serial,
                     "baud": r["baud"],
-                    "state": state, "why": (st or {}).get("reason") or ("" if st else "the console is not running"),
+                    "state": state, "why": why,
                     "rx_only": not r.get("send"), "lines": (st or {}).get("lines"), "last_byte_at": (st or {}).get("last_byte_at"),
-                    "pins": r.get("pins") or [], "page": "wiring"})
+                    "pins": r.get("pins") or [], "pin_state": pin_state["state"] if pin_state else None, "page": "wiring"})
         by_device.setdefault(r["device"], []).append(r["name"])
     return out, by_device
 

@@ -15,8 +15,23 @@ function End({ title, detail, align }) {
   );
 }
 
-export default function WireLine({ conn, ctx, hue, focused, onFocus, onEdit, onRemove, onOpenConsole }) {
+// What a Pi UART connection's pins are doing, as read from the pins (docs/specs/line-release.md), in the words the Pi would use.
+const PINS = {
+  driven: { tone: "green", text: "Pi lines driven", title: "The UART owns the pins: the Pi drives its TX line high while idle." },
+  floating: { tone: "amber", text: "Pi lines released", title: "The pins are inputs with no pull: the Pi drives nothing into the board." },
+  mixed: { tone: "red", text: "Pi lines half released", title: "One pin is released and the other is not. Engage them to put both back." },
+  unknown: { tone: "slate", text: "Pi lines unknown", title: "The pins could not be read." },
+};
+
+export default function WireLine({ conn, ctx, hue, focused, onFocus, onEdit, onRemove, onOpenConsole, onRelease, onEngage }) {
   const [asking, setAsking] = useState(false);
+  const [note, setNote] = useState("");
+  const pins = conn.pinState ? PINS[conn.pinState] || PINS.unknown : null;
+  async function run(action) {
+    setNote("");
+    const res = await action();
+    if (res && !res.ok) setNote(res.message);
+  }
   const d = describe(conn, ctx);
   const device = ctx.devices.find((x) => x.serial === conn.device);
   return (
@@ -39,7 +54,11 @@ export default function WireLine({ conn, ctx, hue, focused, onFocus, onEdit, onR
         <p className="text-sm">{d.summary}</p>
         <div className="flex flex-wrap items-center gap-2">
           {d.chips.map((c) => <Chip key={c.text} tone={c.tone} title={c.title}>{c.text}</Chip>)}
+          {pins && <Chip tone={pins.tone} title={pins.title}>{pins.text}</Chip>}
           <span className="flex-1" />
+          {pins && onRelease && onEngage && (conn.pinState === "driven"
+            ? <Button tone="quiet" onClick={() => run(onRelease)} aria-label={`Release the Pi lines of ${conn.id}`}>Release lines</Button>
+            : <Button tone="quiet" onClick={() => run(onEngage)} aria-label={`Engage the Pi lines of ${conn.id}`}>Engage lines</Button>)}
           {conn.spec.intent === "log" && <Button tone="quiet" onClick={onOpenConsole}>Open console</Button>}
           {asking ? (
             <span className="flex items-center gap-2" role="group" aria-label={`Remove this connection from ${device ? device.model : "the device"}?`}>
@@ -54,6 +73,7 @@ export default function WireLine({ conn, ctx, hue, focused, onFocus, onEdit, onR
             </>
           )}
         </div>
+        {note && <p role="alert" className="text-[13px] text-red-800 dark:text-red-300">{note}</p>}
       </div>
     </li>
   );

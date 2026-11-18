@@ -262,8 +262,10 @@ export function withAnswer(spec, qid, value) {
 }
 
 // What the port is doing, as the service reports it (`live`), in plain words. The sample has none and says "listening".
-export function logState(live) {
+export function logState(live, pinState) {
   if (!live) return { tone: "green", text: "listening" };
+  // A link held on purpose while its Pi lines are released is not "in use by another program" (docs/specs/line-release.md).
+  if (live.state === "held" && (pinState === "floating" || pinState === "mixed")) return { tone: "amber", text: "paused: lines released", title: live.reason };
   const words = {
     open: { tone: "green", text: "listening" },
     absent: { tone: "amber", text: "adapter unplugged" },
@@ -286,12 +288,13 @@ export function describe(conn, ctx) {
   if (spec.intent === "log") {
     const a = ctx.adapters.find((x) => `adapter:${x.id}` === spec.via);
     const u = PI_UARTS.find((x) => `uart:${x.id}` === spec.via);
-    out.pi = a ? { title: "USB adapter", detail: `${a.name} · ${short(a.id)}` } : { title: u ? u.label.replace(/ \(.*\)/, "") : "Pi pins", detail: u ? u.label.replace(/.*\(|\)/g, "") : "" };
+    const builtIn = Boolean(a && a.ids === "pi-uart");                      // the Pi's own serial port is listed with the adapters but is not one
+    out.pi = a ? { title: builtIn ? "Pi serial port" : "USB adapter", detail: `${a.name} · ${short(a.id)}` } : { title: u ? u.label.replace(/ \(.*\)/, "") : "Pi pins", detail: u ? u.label.replace(/.*\(|\)/g, "") : "" };
     out.signal = L.debug || "debug UART";
     out.device.detail = "debug UART";
     const canSend = spec.send === "yes" && spec.voltage === "measured";
-    out.summary = `Reading the debug log of ${devName} through ${a ? `USB adapter ${a.name}` : u ? u.label : "?"} at ${spec.baud} baud, ${canSend ? "and the bench may send to it" : spec.send === "yes" ? "receive only until the voltage is measured" : "receive only"}.`;
-    out.chips.push(logState(conn.live), canSend ? { tone: "blue", text: "can send" } : { tone: "amber", text: "receive only" });
+    out.summary = `Reading the debug log of ${devName} through ${a ? (builtIn ? a.name : `USB adapter ${a.name}`) : u ? u.label : "?"} at ${spec.baud} baud, ${canSend ? "and the bench may send to it" : spec.send === "yes" ? "receive only until the voltage is measured" : "receive only"}.`;
+    out.chips.push(logState(conn.live, conn.pinState), canSend ? { tone: "blue", text: "can send" } : { tone: "amber", text: "receive only" });
   } else if (spec.intent === "control") {
     out.pi = { title: `Pi pin ${physicalPin(spec.pin)}`, detail: `GPIO${spec.pin}` };
     out.signal = ({ reset: L.reset || "reset", boot: L.boot || "boot", power: L.power || "power" })[spec.fn];

@@ -18,7 +18,8 @@ export function fromShow(data) {
     devices: data.devices.map((d) => ({ serial: d.serial, model: (d.model || "device").toUpperCase(), mode: d.mode, labels: {} })),
     adapters: data.adapters.map((a) => ({ id: a.serial || `no-serial-${a.ids}`, serial: a.serial, name: a.name, ids: a.ids, node: a.node || "no node", problem: a.problem, heldBy: a.held_by })),
     probes: [],
-    connections: data.connections.map((c) => ({ id: c.name, device: c.device, spec: toSpec(c), live: c.status, canSend: c.can_send })),
+    // pinState: what a Pi UART connection's pins are doing, read from the pins (driven, floating, mixed, unknown); null for a USB adapter.
+    connections: data.connections.map((c) => ({ id: c.name, device: c.device, spec: toSpec(c), live: c.status, canSend: c.can_send, pinState: c.pin_state ? c.pin_state.state : null })),
     built: Object.entries(data.intents).filter(([, v]) => v === "built").map(([k]) => k),
   };
 }
@@ -80,6 +81,9 @@ export function useLiveWiring(commands, refreshKey) {
       return send("wiring.change", body);
     },
     disconnect: (id) => send("wiring.disconnect", { name: id }),
+    // Float or reclaim a Pi UART connection's pins (docs/specs/line-release.md); absent where the host has no pinctrl.
+    release: find("wiring.release") ? (id) => send("wiring.release", { name: id }) : null,
+    engage: find("wiring.engage") ? (id) => send("wiring.engage", { name: id }) : null,
     dismiss: (id) => setDismissed((old) => [...old, id]),
     refresh,
   };

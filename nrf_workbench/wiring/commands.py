@@ -15,7 +15,7 @@ from ..esp32 import targets as esp_targets
 from ..gpio import commands as gpio_commands
 from ..gpio.pinmap import PinStoreError
 from ..guards import checks
-from . import detect
+from . import detect, pinctrl
 from .store import BUILT, INTENTS, Invalid, Refused, StoreError, WiringStore, build_log, holder_of, to_link
 
 WIRING = ("wiring",)
@@ -164,6 +164,9 @@ def _show(ctx):
         st = host.console.state(r["name"]) if host.console is not None and r["intent"] == "log" else None
         c["status"] = {k: st[k] for k in ("state", "reason", "node", "lines", "bytes", "last_byte_at")} if st else None
         c["can_send"] = bool(r.get("send")) and r.get("voltage_measured") is True
+        lines = lines_of(host, r)
+        if lines is not None:
+            c["pin_state"] = lines
         conns.append(c)
     return Result.success({"devices": sorted(devices.values(), key=lambda d: d["serial"]), "adapters": detected, "connections": conns,
                            "intents": dict((i, "built" if i in BUILT else "not built") for i in INTENTS)},
@@ -242,6 +245,77 @@ def _disconnect(ctx, name):
     return Result.success({"name": name}, "disconnected")
 
 
+def lines_of(host, record):
+    """What the Pi's pins of this connection are doing right now, read from the pins (docs/specs/line-release.md): {state, pins, why}.
+    None for a connection that has no Pi pins (a USB adapter's lines are its chip's) or on a host without pinctrl."""
+    if not record.get("pins") or not pinctrl.available(host):
+        return None
+    try:
+        pins = pinctrl.get(host, record["pins"])
+    except pinctrl.PinctrlError as exc:
+        return {"state": "unknown", "pins": [], "why": str(exc)}
+    return {"state": pinctrl.state_word(pins), "pins": pins, "why": ""}
+
+
+def _own_pi_connection(host, name):
+    """(record, None) or (None, the refusal): a connection of this bench that holds Pi pins."""
+    try:
+        record = next((r for r in _store(host).list() if r["name"] == name), None)
+    except StoreError as exc:
+        return None, _failed(exc)
+    if record is None:
+        return None, Result.refused("connection_unknown", "no connection has that name", {"name": name})
+    if not record.get("pins"):
+        return None, Result.refused("pins_not_controllable", "%s does not use the Pi's own pins: a USB adapter's lines are driven by its "
+                                    "chip, not by the Pi, so the bench cannot float them" % name, {"name": name})
+    return record, None
+
+
+def _not_set(name, what, lines, exc=None):
+    why = str(exc) if exc else "the pins read back as %s, not %s" % (lines["state"] if lines else "unknown", what)
+    return Result.failed("pins_not_set", "%s: %s" % (name, why), {"name": name, "wanted": what, "pin_state": lines})
+
+
+def _release(ctx, name):
+    """Stop reading, then float the connection's Pi pins, then say what they read back as."""
+    host = ctx.host
+    record, refusal = _own_pi_connection(host, name)
+    if refusal is not None:
+        return refusal
+    if host.console is not None:
+        host.console.suspend(name)                       # the port is closed BEFORE the pins are touched
+    try:
+        pinctrl.float_pins(host, record["pins"])
+    except pinctrl.PinctrlError as exc:
+        return _not_set(name, "floating", lines_of(host, record), exc)
+    lines = lines_of(host, record)
+    if lines["state"] != "floating":
+        return _not_set(name, "floating", lines)
+    return Result.success({"name": name, "pin_state": lines, "link": host.console.state(name) if host.console is not None else None},
+                          "released: GPIO %s are inputs with no pull; the link is held, engage it to read again"
+                          % ", ".join(str(g) for g in record["pins"]))
+
+
+def _engage(ctx, name):
+    """Give the pins back to the UART, check they read back as driven, and only then let the link open."""
+    host = ctx.host
+    record, refusal = _own_pi_connection(host, name)
+    if refusal is not None:
+        return refusal
+    try:
+        pinctrl.engage_pins(host, record["pins"])
+    except pinctrl.PinctrlError as exc:
+        return _not_set(name, "driven", lines_of(host, record), exc)
+    lines = lines_of(host, record)
+    if lines["state"] != "driven":
+        return _not_set(name, "driven", lines)
+    if host.console is not None:
+        host.console.resume(name)
+    return Result.success({"name": name, "pin_state": lines, "link": host.console.state(name) if host.console is not None else None},
+                          "engaged: GPIO %s are the UART's again and the link reads"
+                          % ", ".join(str(g) for g in record["pins"]))
+
+
 def register(registry, host):
     def add(command):
         registry.add(command, module=__name__)
@@ -275,3 +349,11 @@ def register(registry, host):
         requires=WIRING, effect="write", result="the connection"))
     add(Command("wiring.disconnect", "Remove a connection. The console stops reading its adapter at once.", _disconnect,
                 args=(Arg("name", doc="the connection's name"),), requires=WIRING, effect="write", result="the name removed"))
+    add(Command("wiring.release", "Stop the console reading a Pi UART connection and make its Pi pins inputs with no pull, so the Pi no "
+                "longer drives a board that is being power-cycled; reports what the pins read back as. A USB adapter is refused.",
+                _release, args=(Arg("name", doc="the connection's name (a Pi UART one)"),), requires=("wiring", "pinctrl"), effect="write",
+                result="name, pin_state (state driven/floating/mixed/unknown and each pin's function, pull, level), link"))
+    add(Command("wiring.engage", "Give a released Pi UART connection's pins back to the UART and let the console read again. The link "
+                "stays held if the pins do not read back as the UART's.", _engage,
+                args=(Arg("name", doc="the connection's name (a Pi UART one)"),), requires=("wiring", "pinctrl"), effect="write",
+                result="name, pin_state (state and each pin's function, pull, level), link"))

@@ -164,6 +164,8 @@ function Page({ w, actions, live, error, commands, onOpenPage }) {
                 onFocus={setFocusId}
                 onEdit={() => setSheet({ editingId: c.id, initial: c.spec, key: c.id })}
                 onRemove={() => actions.disconnect(c.id)}
+                onRelease={actions.release && actions.engage && c.pinState ? () => actions.release(c.id) : null}
+                onEngage={actions.release && actions.engage && c.pinState ? () => actions.engage(c.id) : null}
                 onOpenConsole={() => onOpenPage && onOpenPage("console")}
               />
             ))}
