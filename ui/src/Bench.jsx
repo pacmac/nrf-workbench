@@ -16,13 +16,18 @@ export default function Bench({ name, session, info, feed }) {
           <dt className="text-slate-600 dark:text-slate-400">Address</dt>
           <dd className="break-all font-mono">{window.location.host}</dd>
           <dt className="text-slate-600 dark:text-slate-400">Access</dt>
-          <dd>{session.access === "open-read" ? "reads are open, writes need the token" : "everything needs the token"}</dd>
+          <dd>{session.access === "open" ? "open: no token on this network" : session.access === "open-read" ? "reads are open, writes need the token" : "everything needs the token"}</dd>
           <dt className="text-slate-600 dark:text-slate-400">You are</dt>
           <dd>{session.caller || "not logged in"}</dd>
           <dt className="text-slate-600 dark:text-slate-400">Live feed</dt>
           <dd>{feed.state}{feed.detail ? `: ${feed.detail}` : ""}</dd>
         </dl>
-        {plain && (
+        {plain && session.access === "open" && (
+          <p role="note" className="mt-3 rounded-lg bg-amber-100 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+            <strong>Open to this network.</strong> Anyone who can reach this address can flash, reset and send to the boards. Use it only on a network you trust.
+          </p>
+        )}
+        {plain && session.access !== "open" && (
           <p role="note" className="mt-3 rounded-lg bg-amber-100 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
             <strong>Unencrypted.</strong> This page is served over plain HTTP beyond this machine, so the token and the session cookie
             cross the network in clear text. Use it only on a network you trust.
