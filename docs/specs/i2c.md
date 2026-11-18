@@ -36,6 +36,21 @@ read) it was; it is a result, not an error. A missing `/dev/i2c-N` is `node_abse
 (`I2C_TIMEOUT`, in 10 ms units): the longest transfer allowed is 256 + 256 bytes at 100 kHz, 512 x 9 bits / 100 kHz = 46 ms, so
 200 ms is 4x that and still catches a slave that stretches the clock for ever. One attempt; nothing retries.
 
+## Measured on the bench Pi (2026-11-18)
+
+I2C was turned on with `dtparam i2c_arm=on` and `modprobe i2c-dev` at runtime (no reboot needed), then made permanent by
+uncommenting `dtparam=i2c_arm=on` in `/boot/firmware/config.txt` (backup `config.txt.bak-before-i2c-20261118`) and adding `i2c-dev`
+to `/etc/modules`. **The persistent part has not been through a reboot.** `i2c.buses` then listed bus 1 (`bcm2835 (i2c@7e804000)`,
+**100,000 Hz** from the device tree) and buses 20 and 21 (the HDMI DDC channels, `fef04500.i2c`, `fef09500.i2c`), and a transfer
+on bus 1 was refused `i2c_pins_unclaimed` with BCM 2 and 3 named: the gate works on the real service.
+
+A miss the Pi caught: the first version read bus names from `/sys/class/i2c-adapter`, which the fake tree had and the Pi does not; the
+real place is `/sys/class/i2c-dev/i2c-N`.
+
+**Not done, and why:** no real transfer. The gate needs BCM 2 and 3 assigned with service `i2c` and a **measured** voltage, and
+nobody has measured the TimerCAM's SDA and SCL idle level (Peter's "3.3 V" is a stated value, not a measurement). The bench does not
+claim a measurement for a person.
+
 ## Files this spec allows
 
 `nrf_workbench/i2c/{__init__,bus,commands}.py`, `nrf_workbench/service.py` (registration), `nrf_workbench/core/status.py` and
