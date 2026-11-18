@@ -240,8 +240,9 @@ class FakeMonitor(object):
     """Stands in for the device monitor: records how it was built, started and stopped."""
     instances = []
 
-    def __init__(self, read_state, publish):
+    def __init__(self, read_state, publish, read_usb=None):
         self.read_state, self.publish, self.started, self.stopped = read_state, publish, 0, 0
+        self.read_usb = read_usb
         FakeMonitor.instances.append(self)
 
     def start(self):
@@ -344,6 +345,16 @@ class StreamsWiring(Base):
         rc, calls, out, err = self.run_main(self.addr() + ["--events-retain", "5", "--events-max-age-days", "1"])
         (m,) = FakeMonitor.instances
         self.assertIsInstance(m.read_state(), list)
+        self.assertIsInstance(m.read_usb(), list, "every USB device is read too, so an adapter plugged in is a live change")
+        t = Tree()
+        self.addCleanup(t.close)
+        t.usb("1-1.3", ("0403", "6001"), "M5stack", serial="5D52ADF916", tty="ttyUSB0", majmin="188:0")
+        node = t.node("ttyUSB0", 188, 0)
+        (row,) = service.usb_level(t.sysfs, t.dev)
+        self.assertEqual((row["slot"], row["id"], row["node"]), ("1-1.3", "0403:6001", node))
+        t.unplug("1-1.3")
+        t.usb("1-1.3", ("0403", "6001"), "M5stack", serial="5D52ADF916")          # the device is there and its tty is not, yet
+        self.assertIsNone(service.usb_level(t.sysfs, t.dev)[0]["node"], "the node appearing is itself a change in the level")
         self.assertEqual(m.publish.__name__, "publish")
         event = m.publish("devices.changed", "devices", {"boards": []})
         self.assertEqual(event.cursor, 1)

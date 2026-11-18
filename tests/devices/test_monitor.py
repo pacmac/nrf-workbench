@@ -137,6 +137,38 @@ class Changes(unittest.TestCase):
 
 
 class Failures(unittest.TestCase):
+    def test_a_usb_device_that_is_not_a_board_is_a_live_change_with_what_was_plugged_and_unplugged(self):
+        """An ESP32 behind a bridge chip and a plain adapter are not boards, so the board list never changes for them: the
+        USB level is read too, and a change in it is published with the difference (Peter: 'I have to manually refresh')."""
+        usb = [[]]
+        h = Harness([[{"serial": "A"}]])
+        self.addCleanup(h.close)
+        cam = {"slot": "1-1.3", "id": "0403:6001", "product": "M5stack", "serial": "5D52ADF916"}
+        h.monitor = DeviceMonitor(lambda: h.states[0], lambda t, a, p: (h.published.append((t, a, p)), h.published_seen.set()),
+                                  lambda: h.source, read_usb=lambda: usb[0])
+        h.monitor.start()
+        self.assertEqual(h.published[0][2]["usb"], [])
+        h.published_seen.clear()
+        h.event()                                                 # a uevent that changes nothing publishes nothing
+        usb[0] = [cam]
+        h.event()
+        h.wait(h.published_seen)
+        kind, _area, payload = h.published[-1]
+        self.assertEqual((kind, payload["boards"], payload["usb"]), ("devices.changed", [{"serial": "A"}], [cam]))
+        self.assertEqual(payload["usb_changes"], [dict(cam, change="plugged")])
+        h.published_seen.clear()
+        usb[0] = []
+        h.event()
+        h.wait(h.published_seen)
+        self.assertEqual(h.published[-1][2]["usb_changes"], [dict(cam, change="unplugged")])
+        self.assertEqual(len([p for p in h.published if p[0] == "devices.changed"]), 3, "start, plugged, unplugged and nothing else")
+
+    def test_without_a_usb_reader_the_payload_is_what_it_always_was(self):
+        h = Harness([[{"serial": "A"}]])
+        self.addCleanup(h.close)
+        h.monitor.start()
+        self.assertEqual(sorted(h.published[0][2]), ["boards", "reason"])
+
     def test_a_failing_read_is_published_not_swallowed_and_the_monitor_keeps_running(self):
         h = Harness([[], [{"serial": "A"}]])
         self.addCleanup(h.close)

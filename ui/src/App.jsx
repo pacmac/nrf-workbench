@@ -28,6 +28,14 @@ const KEEP_ROWS = 500;
 function tickerText(event) {
   const p = event.payload;
   if (event.type === "devices.changed") {
+    // An event that carries `usb_changes` says what was plugged or unplugged; one with none is a board's state or an adapter's
+    // port appearing, which the lists below show, so it adds no line.
+    if (Array.isArray(p.usb_changes)) {
+      if (p.usb_changes.length === 0 && event.payload.reason !== "start") return null;
+      if (p.usb_changes.length > 0) {
+        return p.usb_changes.map((c) => `${c.change}: ${c.product || c.id} (${c.id}, USB port ${c.slot})`).join("; ");
+      }
+    }
     const n = p.boards.length;
     const what = n === 0 ? "no board attached" : p.boards.map((b) => `${b.serial} ${b.mode}`).join(", ");
     return `attached: ${what}`;
@@ -56,6 +64,7 @@ export default function App() {
   const [consoleLines, setConsoleLines] = useState({});         // {link: [line]}, from the console feed
   const [consoleFeed, setConsoleFeed] = useState({ state: "connecting", at: null, detail: "" });
   const [linksTick, setLinksTick] = useState(0);                // bumped when a link's state changes, to read the links again
+  const [usbTick, setUsbTick] = useState(0);                    // bumped on every USB change the service reports (plugged, unplugged, a port appearing)
   const [flashing, setFlashing] = useState(null);
   const [flashInitial, setFlashInitial] = useState(null);        // a package chosen on the Firmware page, or none
   const openFlash = useCallback((board, initial = null) => { setFlashInitial(initial); setFlashing(board); }, []);
@@ -80,10 +89,11 @@ export default function App() {
         if (real.length) {
           setBoards(real[real.length - 1].payload.boards);
           setBoardsAt(real[real.length - 1].wall);
+          setUsbTick((n) => n + 1);                       // something was plugged or unplugged: the lists that read USB read it again
         }
         const gone = p.events.find((e) => e.type === "devices.live_unavailable");
         if (gone) setUnavailable(gone.payload.reason);
-        setTicker((old) => [...p.events.map((e) => ({ key: `${p.epoch}-${e.cursor}`, wall: e.wall, text: tickerText(e) })).reverse(), ...old].slice(0, TICKER_LINES));
+        setTicker((old) => [...p.events.map((e) => ({ key: `${p.epoch}-${e.cursor}`, wall: e.wall, text: tickerText(e) })).filter((t) => t.text).reverse(), ...old].slice(0, TICKER_LINES));
       }
     } else if (feedName === "activity") {
       // The feed carries two kinds: a command that STARTED and the result that ENDS it, joined by `run`. The
@@ -177,7 +187,7 @@ export default function App() {
       if (live && r.ok && r.body && r.body.data) setEsp({ targets: r.body.data.targets || [], native: r.body.data.undeclared_native || [], at: Date.now() / 1000 });
     }).catch(() => {});
     return () => { live = false; };
-  }, [authenticated, espPath, boards, espTick]);
+  }, [authenticated, espPath, usbTick, espTick]);
 
   // A write that came back 401 means the session ended (expiry, restart, another login): show the login again.
   const onCommandDone = useCallback((r) => {
@@ -234,8 +244,8 @@ export default function App() {
         />
         {page === "bench" && <Bench name={name} session={session} info={info} feed={feed} />}
         {page === "devices" && <Devices boards={boards} boardsAt={boardsAt} onFlash={openFlash} />}
-        {page === "firmware" && <Firmware commands={info.commands} boards={boards} onFlash={openFlash} onDone={onCommandDone} refreshKey={espTick} />}
-        {page === "wiring" && <Wiring commands={info.commands} refreshKey={linksTick} onOpenPage={setPage} />}
+        {page === "firmware" && <Firmware commands={info.commands} boards={boards} onFlash={openFlash} onDone={onCommandDone} refreshKey={espTick + usbTick} />}
+        {page === "wiring" && <Wiring commands={info.commands} refreshKey={linksTick + usbTick} onOpenPage={setPage} />}
         {page === "console" && consoleOn && <Console commands={info.commands} links={links} lines={consoleLines} activity={activity} feed={consoleFeed} onDone={onCommandDone} />}
         {page === "gpio" && gpioOn && <Gpio commands={info.commands} onDone={onCommandDone} />}
         {page === "activity" && <Activity activity={activity} />}

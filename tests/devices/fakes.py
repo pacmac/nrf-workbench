@@ -48,7 +48,9 @@ class Tree(object):
             with open(os.path.join(d, "serial"), "w") as fh:
                 fh.write(serial + "\n")
         if tty:
-            t = os.path.join(d, name + ":1.0", "tty", tty)
+            # usb-serial drivers (FTDI, CP210x, CH340) put the class entry one level deeper than CDC-ACM does: seen on a Pi
+            t = (os.path.join(d, name + ":1.0", tty, "tty", tty) if tty.startswith("ttyUSB")
+                 else os.path.join(d, name + ":1.0", "tty", tty))
             os.makedirs(t, exist_ok=True)
             with open(os.path.join(t, "dev"), "w") as fh:
                 fh.write(majmin + "\n")

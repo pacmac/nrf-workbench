@@ -33,11 +33,22 @@ def open_kernel_uevents():
     return sock
 
 
+def usb_changes(before, after):
+    """[{change: plugged|unplugged, slot, id, product, serial}] between two USB levels, by slot, id and serial."""
+    key = lambda d: (d["slot"], d["id"], d["serial"])        # noqa: E731
+    old, new = dict((key(d), d) for d in before), dict((key(d), d) for d in after)
+    return ([dict(new[k], change="plugged") for k in sorted(new, key=str) if k not in old]
+            + [dict(old[k], change="unplugged") for k in sorted(old, key=str) if k not in new])
+
+
 class DeviceMonitor(object):
-    def __init__(self, read_state, publish, open_source=open_kernel_uevents):
+    def __init__(self, read_state, publish, open_source=open_kernel_uevents, read_usb=None):
         """`read_state()` returns the current list of boards (JSON-able); `publish(type, area, payload)`
-        is a bus's publish."""
+        is a bus's publish. `read_usb()`, when given, returns every USB device attached as a list of {slot, id, product,
+        serial}: a change in it is published too, with `usb` (the level) and `usb_changes` (what was plugged and unplugged), so
+        a page that lists adapters and ESP32 boards, which are not boards, updates without being asked."""
         self._read_state, self._publish, self._open_source = read_state, publish, open_source
+        self._read_usb, self._last_usb = read_usb, None
         self._thread = None
         self._sock = None
         self._wake_r = self._wake_w = None
@@ -54,7 +65,11 @@ class DeviceMonitor(object):
         except OSError as exc:
             self._sock, self.reason = None, str(exc)
         self._last = self._read_state()
-        self._publish("devices.changed", "devices", {"boards": self._last, "reason": "start"})
+        payload = {"boards": self._last, "reason": "start"}
+        if self._read_usb is not None:
+            self._last_usb = self._read_usb()
+            payload["usb"] = self._last_usb
+        self._publish("devices.changed", "devices", payload)
         if self._sock is None:
             self._publish("devices.live_unavailable", "devices", {"reason": self.reason})
             return
@@ -75,12 +90,17 @@ class DeviceMonitor(object):
                 return
             try:
                 state = self._read_state()
+                usb = self._read_usb() if self._read_usb is not None else None
             except Exception as exc:                       # noqa: BLE001 - published, not swallowed
                 self._publish("devices.read_failed", "devices", {"error": repr(exc)})
                 continue
-            if state != self._last:
-                self._last = state
-                self._publish("devices.changed", "devices", {"boards": state, "reason": "uevent"})
+            if state != self._last or usb != self._last_usb:
+                payload = {"boards": state, "reason": "uevent"}
+                if usb is not None:
+                    payload["usb"] = usb
+                    payload["usb_changes"] = usb_changes(self._last_usb or [], usb)
+                self._last, self._last_usb = state, usb
+                self._publish("devices.changed", "devices", payload)
 
     def _drain_closed(self):
         """Read everything waiting (the content is not trusted). True if the source is gone."""

@@ -35,6 +35,7 @@ from .console.broker import Broker
 from .console.port import Port
 from .dashboard import server as dashboard_server
 from .devices import commands as device_commands
+from .devices import identity
 from .devices import profile as profilemod
 from .devices.monitor import DeviceMonitor
 from .esp32 import commands as esp32_commands
@@ -141,7 +142,15 @@ def is_raspberry_pi(proc="/proc"):
         return False
 
 
-board_ids = wiring_detect.board_ids      # every USB id a board profile lists: a link on one of them is refused, never opened
+def usb_level(sysfs, devroot):
+    """Every USB device sysfs lists, for the monitor: a hub and a root hub too, since a change in any is a change worth a look.
+    The node is part of the level: a usb-serial adapter's tty appears a moment AFTER the device does, and a page that read the
+    list in between would show it with no port and never be told otherwise."""
+    return [{"slot": d["name"], "id": d["id"], "product": d["product"], "serial": d["serial"],
+             "node": identity.node_for(d, devroot)[0]} for d in identity.inventory(sysfs)]
+
+
+board_ids = wiring_detect.board_ids     # every USB id a board profile lists: a link on one of them is refused, never opened
 
 
 def build_host(cfg, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
@@ -408,7 +417,8 @@ def main(argv=None, run=None, env=None, make_monitor=DeviceMonitor):
         run = uvicorn.run
     monitor = None
     if host.streams.events is not None:
-        monitor = make_monitor(lambda: device_commands.boards(host), host.streams.events.publish)
+        monitor = make_monitor(lambda: device_commands.boards(host), host.streams.events.publish,
+                               read_usb=lambda: usb_level(host.sysfs, host.devroot))
         monitor.start()                       # blocks on the kernel's uevents, never a timer
     if host.console is not None:
         host.console.start()                  # opens a declared adapter that is attached; one thread, no timer

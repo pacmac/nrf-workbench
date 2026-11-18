@@ -69,16 +69,21 @@ def state(profile, serial, inv):
 
 def _tty_entries(devpath):
     """[(name, 'major:minor')] for the tty class entries under a USB device's sysfs directory."""
+    # Two layouts, both seen on a Raspberry Pi (2026-11-18): a CDC-ACM device has <dev>/<dev>:1.0/tty/ttyACM0/dev (three levels
+    # down), and a usb-serial one (FTDI, CP210x, CH340) has <dev>/<dev>:1.0/ttyUSB0/tty/ttyUSB0/dev (FOUR). The walk used to stop at
+    # four, so no usb-serial adapter was ever found. It now reads at depth four and stops there; and it never goes into a CHILD
+    # USB device (a directory with an idVendor), or a hub would be given the node of whatever is plugged into it.
     found = []
     for root, dirs, files in os.walk(devpath):
         depth = root[len(devpath):].count(os.sep)
-        if depth >= 4:
-            dirs[:] = []
-            continue
         if "dev" in files and os.path.basename(root).startswith("tty"):
             majmin = _read(os.path.join(root, "dev"))
             if majmin:
                 found.append((os.path.basename(root), majmin))
+        if depth >= 4:
+            dirs[:] = []
+        else:
+            dirs[:] = [d for d in dirs if not os.path.exists(os.path.join(root, d, "idVendor"))]
     return sorted(found)
 
 

@@ -29,6 +29,8 @@ from playwright.sync_api import sync_playwright  # noqa: E402
 
 from nrf_workbench import service  # noqa: E402
 from nrf_workbench.core import config as cfgmod  # noqa: E402
+from nrf_workbench.devices import commands as device_commands  # noqa: E402
+from nrf_workbench.devices.monitor import DeviceMonitor  # noqa: E402
 from fakes import Tree  # noqa: E402
 from test_decode import make_elf  # noqa: E402
 from test_esp32 import bundle, merged  # noqa: E402
@@ -71,6 +73,11 @@ class Bench(object):
                  "console_resolve": lambda link: ({"device": {}, "node": self.node}, "")}
         self.app, self.host, _r, _c = service.build(cfg, sysfs=self.tree.sysfs, devroot=self.tree.dev, proc=self.tree.proc, hooks=hooks)
         self.host.console.start()
+        # what service.main starts: the monitor that publishes every USB change on the events stream (its own uevent socket)
+        self.mon_a, self.mon_b = socket.socketpair()
+        self.monitor = DeviceMonitor(lambda: device_commands.boards(self.host), self.host.streams.events.publish,
+                                     lambda: self.mon_a, read_usb=lambda: service.usb_level(self.host.sysfs, self.host.devroot))
+        self.monitor.start()
         self.sock = socket.socket()
         self.sock.bind(("127.0.0.1", 0))
         self.sock.listen(16)
@@ -90,8 +97,9 @@ class Bench(object):
 
     def close(self):
         self.server.should_exit = True
+        self.monitor.stop()
         self.host.console.stop()
-        for s in (self.uev_a, self.uev_b):
+        for s in (self.uev_a, self.uev_b, self.mon_b):
             s.close()
         for fd in (self.master, self.slave):
             os.close(fd)
@@ -234,10 +242,18 @@ def run(browser, theme, size, shots):
         # a built-in-USB ESP32 plugged in later is found on "Look again" and is not an ESP32 until declared
         bench.tree.usb("1-5", ("303a", "1001"), "USB JTAG/serial debug unit", serial="64:E8:33:85:4A:A4", manufacturer="Espressif", tty="ttyACM2", majmin="166:2")
         bench.tree.node("ttyACM2", 166, 2)
-        page.get_by_role("button", name="Look again").click()
+        bench.mon_b.send(b"x")                                          # the kernel's word that something was plugged: no click, no reload
         page.get_by_text("ESP32, not declared").wait_for()
-        check("%s an undeclared built-in-USB ESP32 is shown as such, with where to declare it" % tag,
+        check("%s plugging it in shows it at once, with no refresh, as an ESP32 nobody has declared" % tag,
               "64:E8:33:85:4A:A4" in page.inner_text("body") and "Declare it on the Firmware page" in page.inner_text("body"))
+        check("%s the latest-changes line says what was plugged in" % tag, "plugged: USB JTAG/serial debug unit (303a:1001, USB port 1-5)" in page.inner_text("body"))
+        bench.tree.unplug("1-5")
+        bench.mon_b.send(b"x")
+        page.get_by_text("ESP32, not declared").wait_for(state="detached")
+        check("%s unplugging it takes it away at once, with no refresh" % tag, "unplugged: USB JTAG/serial debug unit" in page.inner_text("body"))
+        bench.tree.usb("1-5", ("303a", "1001"), "USB JTAG/serial debug unit", serial="64:E8:33:85:4A:A4", manufacturer="Espressif", tty="ttyACM2", majmin="166:2")
+        bench.mon_b.send(b"x")
+        page.get_by_text("ESP32, not declared").wait_for()
         check("%s the declare form offers it too, after the same Look again" % tag,
               any("64:E8:33:85:4A:A4" in o and "built-in USB" in o for o in page.get_by_label("Adapter").locator("option").all_inner_texts()),
               page.get_by_label("Adapter").locator("option").all_inner_texts())

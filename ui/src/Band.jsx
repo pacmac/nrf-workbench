@@ -16,8 +16,8 @@ const MODE_TONE = { app: "green", bootloader: "amber" };
 // board's state and mode as the service sees it. It does NOT say "ready": that verdict is a dry run of the flash
 // guards, and no command exposes one yet.
 // ESP32 boards are not in the device feed (a USB id does not say what is behind a bridge chip, so they are declared), so they are
-// read from `esp32.targets` when the page loads, when the nRF list changes and after any command, and again on "Look again".
-// A board plugged in later is not announced: it appears on the next of those, and the line says when it was last looked at.
+// read from `esp32.targets` when the page loads, on every USB change the service reports (plugged, unplugged, a port appearing),
+// after any command, and on the button. The button is for a host with no uevents, where the service says it is not live.
 function EspRows({ esp, onRefresh }) {
   const attached = esp.targets.filter((t) => t.attached > 0);
   const away = esp.targets.filter((t) => t.attached === 0);
@@ -51,7 +51,7 @@ function EspRows({ esp, onRefresh }) {
       </ul>
       <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
         {esp.targets.length === 0 && esp.native.length === 0 ? "No ESP32 board is declared or plugged in, " : "ESP32 boards "}as of {clock(esp.at)}.
-        <Button tone="quiet" onClick={onRefresh}>Look again</Button>
+        <Button tone="quiet" onClick={onRefresh}>Look at ESP32 again</Button>
       </p>
     </div>
   );
