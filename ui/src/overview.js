@@ -29,7 +29,7 @@ export function sentence(data) {
   else parts.push(`${c.connected} of ${c.devices} ${c.devices === 1 ? "device" : "devices"} connected`);
   if (c.links > 0) parts.push(`${c.listening} of ${c.links} ${c.links === 1 ? "link" : "links"} listening`);
   if (data.i2c) parts.push(data.i2c.enabled ? (data.i2c.pins_claimed ? "I2C ready" : "I2C on, its pins not claimed") : "I2C off");
-  const attention = c.attention + (c.links_attention || 0);
+  const attention = c.attention + (c.links_attention || 0) + (c.projects_attention || 0);
   return parts.join(". ") + "." + (attention > 0 ? ` ${attention} ${attention === 1 ? "needs" : "need"} attention.` : "");
 }
 

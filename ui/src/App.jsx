@@ -15,12 +15,13 @@ import Activity from "./Activity.jsx";
 import Commands from "./Commands.jsx";
 import Console from "./Console.jsx";
 import Gpio from "./Gpio.jsx";
+import Projects from "./Projects.jsx";
 import Wiring from "./wiring/Wiring.jsx";
 import FlashDialog from "./FlashDialog.jsx";
 import { addLines } from "./consoleLog.js";
 
 // The daily pages first, the reference last. The nav is one row that scrolls sideways, so it never wraps on a phone.
-const PAGES = [["home", "Home"], ["devices", "Devices"], ["wiring", "Wiring"], ["console", "Console"], ["firmware", "Firmware"], ["gpio", "GPIO"], ["activity", "Activity"], ["commands", "Commands"], ["help", "Help"]];
+const PAGES = [["home", "Home"], ["devices", "Devices"], ["projects", "Projects"], ["wiring", "Wiring"], ["console", "Console"], ["firmware", "Firmware"], ["gpio", "GPIO"], ["activity", "Activity"], ["commands", "Commands"], ["help", "Help"]];
 
 // How many activity rows the browser keeps in memory. Same derivation as the draw limit: the server's retention
 // is the real bound, this only stops a tab that stays open for weeks from growing without limit. 5 x the
@@ -166,6 +167,7 @@ export default function App() {
   const consoleOn = Boolean(authenticated && linksRow && info.streams && info.streams.console);
   const linksPath = linksRow ? linksRow.path : null;
   const gpioOn = Boolean(authenticated && (info.commands || []).some((c) => c.name === "gpio.header"));   // only on a Pi with a pin-map folder
+  const projectsOn = Boolean(authenticated && (info.commands || []).some((c) => c.name === "project.list"));   // needs the wiring folder
 
   useEffect(() => {
     if (!consoleOn) return undefined;
@@ -228,7 +230,7 @@ export default function App() {
             )}
           </p>
           <nav aria-label="Pages" ref={tabs} className="-mx-4 mt-2 flex gap-1 overflow-x-auto px-4 pb-2 [scrollbar-width:none]">
-            {PAGES.filter(([id]) => (id !== "console" || consoleOn) && (id !== "gpio" || gpioOn)).map(([id, label]) => (
+            {PAGES.filter(([id]) => (id !== "console" || consoleOn) && (id !== "gpio" || gpioOn) && (id !== "projects" || projectsOn)).map(([id, label]) => (
               <button
                 key={id}
                 onClick={() => go(id)}
@@ -250,6 +252,7 @@ export default function App() {
           <Working running={running} feedLive={live} />
           {page === "home" && <Home overview={overview} session={session} feed={feed} activity={activity} info={info} />}
           {page === "devices" && <Devices overview={overview} commands={info.commands} onFlash={openFlash} onChanged={refresh} onDone={onCommandDone} />}
+          {page === "projects" && projectsOn && <Projects commands={info.commands} refreshKey={espTick + usbTick + linksTick} onChanged={refresh} onDone={onCommandDone} />}
           {page === "firmware" && <Firmware commands={info.commands} boards={boards} onFlash={openFlash} onDone={onCommandDone} refreshKey={espTick + usbTick} />}
           {page === "wiring" && <Wiring commands={info.commands} refreshKey={linksTick + usbTick} onOpenPage={go} />}
           {page === "console" && consoleOn && <Console commands={info.commands} links={links} lines={consoleLines} activity={activity} feed={consoleFeed} onDone={onCommandDone} />}

@@ -75,6 +75,7 @@ class Host(object):
         # the console (docs/specs/console.md): the declared links, the file's own problems, and the broker that owns
         # the adapters, which only a running service has (build() sets it; the CLI's local mode leaves it None)
         self.console, self.console_links, self.console_problems = None, [], []
+        self.registry = None
         self._services, self._guard = {}, threading.Lock()
 
     def service(self, name, factory):
@@ -162,6 +163,7 @@ def build_host(cfg, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
     profiles = load_profiles(cfg["paths"]["profiles"] or PACKAGE_PROFILES)
     host = Host(cfg, profiles, load_units(cfg["paths"]["units"]), sysfs, devroot, proc, hooks)
     registry = Registry()
+    host.registry = registry                      # bench.overview composes the project summaries, which call other commands
     programmer_commands.register(registry, host)
     device_commands.register(registry, host)
     console_commands.register(registry, host)

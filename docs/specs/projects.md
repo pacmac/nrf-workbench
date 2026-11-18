@@ -58,6 +58,15 @@ are these boards, wired like this, with these pins, these macros and this firmwa
 - **Tests:** 71 (manifest 20, behaviour 51), 33 mutants of the plan, apply, release, check and the commands, all caught after five tests
   were added for the survivors.
 
+## Slice 3 as built (2026-11-18)
+
+`bench.overview` carries `projects` (those with a manifest) and Home lists them with a lamp and a one-line state; the nav gains **Projects**
+(only where the wiring folder exists); the **Projects** page lists them, opens one to its roles, requirements, resources and drift, and offers
+Plan (a diff), **Apply only after a plan with nothing blocking**, Check, Release and Delete (each asks inline), Probe I2C and Flash per role
+(the bounds are typed, never defaulted), and a manifest editor that shows the service's validation message. Help has a **Projects** topic and
+`/api/guide`'s first session says to call `project.show` first and that apply never flashes. Browser: 52 checks on the project flow, in both
+themes at phone and desktop width, including a clash shown in the plan and a bad manifest refused.
+
 ## Where it lives
 
 - `<paths.wiring>/projects/<name>/project.yaml`: the manifest (YAML, the project's own file; hand-editable). The folder is created with

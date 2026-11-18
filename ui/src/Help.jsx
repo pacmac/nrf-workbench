@@ -5,7 +5,7 @@ import { Lamp, PageHeader, cx, inputClass } from "./ui.jsx";
 // Help is the only place that explains (docs/specs/dashboard-redesign.md, "Help"): a topic list, and one short, structured topic at a time.
 // On a phone the list is the whole screen until a topic is chosen, and a Back button returns to it.
 
-const PAGE_NAME = { home: "Home", devices: "Devices", wiring: "Wiring", console: "Console", firmware: "Firmware", gpio: "GPIO", activity: "Activity", commands: "Commands" };
+const PAGE_NAME = { home: "Home", devices: "Devices", projects: "Projects", wiring: "Wiring", console: "Console", firmware: "Firmware", gpio: "GPIO", activity: "Activity", commands: "Commands" };
 
 function Block({ title, children }) {
   return (

@@ -173,8 +173,22 @@ def _header(host):
     return rows
 
 
+def _projects(host, errors):
+    """The projects that have a manifest (a firmware-only folder is not shown on Home), or None where the host has no wiring folder."""
+    registry = getattr(host, "registry", None)
+    if registry is None or not _have(host, "wiring"):
+        return None
+    from ..project import commands as project_commands
+    try:
+        return [p for p in project_commands.summaries(host, registry) if p["manifest"]]
+    except jsonstore.StoreError as exc:
+        errors["projects"] = str(exc)
+        return []
+
+
 def overview(host):
     errors, absent = {}, {}
+    projects = _projects(host, errors)
     connections, by_device = _connections(host, errors)
     if connections is None:
         absent["connections"] = "no wiring folder is configured (paths.wiring)"
@@ -186,6 +200,7 @@ def overview(host):
               "absent": sum(1 for d in devices if d["state"] == ABSENT),
               "attention": sum(1 for d in devices if d["state"] == ATTENTION),
               "links": len(connections or []), "listening": sum(1 for c in connections or [] if c["state"] == LISTENING),
-              "links_attention": sum(1 for c in connections or [] if c["state"] == ATTENTION)}
-    return {"host": host_facts(host), "devices": devices, "connections": connections, "i2c": i2c, "header": hdr, "counts": counts,
-            "absent": absent, "errors": errors}
+              "links_attention": sum(1 for c in connections or [] if c["state"] == ATTENTION),
+              "projects": len(projects or []), "projects_attention": sum(1 for p in projects or [] if p["state"] == ATTENTION)}
+    return {"host": host_facts(host), "devices": devices, "connections": connections, "projects": projects, "i2c": i2c, "header": hdr,
+            "counts": counts, "absent": absent, "errors": errors}

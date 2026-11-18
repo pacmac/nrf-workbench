@@ -66,6 +66,12 @@ class Guide(Base):
         self.assertIn("| `bad_package` | refused | 422 |", table)
         self.assertIn("| `lock_held` | refused | 409 |", table)
 
+    def test_the_first_session_tells_an_agent_to_look_for_a_project_and_that_apply_never_flashes(self):
+        session = self.text.split("## A first session")[1]
+        self.assertIn("project.show", session)
+        self.assertIn("Apply never flashes", session)
+        self.assertIn("/api/bench/overview", session)
+
     def test_the_conventions_an_agent_needs_are_there(self):
         for needle in ("Authorization: Bearer", "GET /api/<area>/<command>", "nothing was attempted and nothing changed",
                        "One attempt", "serial", "Content-Length", "/api/capabilities", "mcp_server"):

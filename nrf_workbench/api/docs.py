@@ -227,8 +227,11 @@ def guide(registry, capabilities, base="http://<host>"):
     w("- **MCP** (stdio, for an agent with MCP): `python -m nrf_workbench.api.mcp_server --host %s [--token-file FILE]`. One tool per "
       "command, named `<area>_<command>`, built from this same list.\n" % base)
     w("## A first session\n")
-    w("1. `GET /api/capabilities`, then `GET /api/devices/list`: what is here, what is attached.")
-    w("2. Read before you act: `console.links` and `console.since` show what a board is already printing.")
-    w("3. To flash: upload (`firmware.put`), then flash by the returned `sha256` with a bound you derived; read the whole Result.")
-    w("4. After any write, check the board did what you meant (its console, its `devices.list` state), not just `ok`.")
+    w("1. `GET /api/capabilities`, then `GET /api/bench/overview`: what is here, what is attached, what is wired, who holds each pin.")
+    w("2. **If the work has a project** (`GET /api/project/list`), call `project.show` first: it names the boards (by role), the wiring, the "
+      "firmware expected, what working looks like, and what is in scope. `project.check` says whether the bench matches it; `project.plan` then "
+      "`project.apply` make it match. Apply never flashes: that is `project.flash`, one role at a time, with the bounds you derive.")
+    w("3. Read before you act: `console.links` and `console.since` show what a board is already printing.")
+    w("4. To flash: upload (`firmware.put`), then flash by the returned `sha256` with a bound you derived; read the whole Result.")
+    w("5. After any write, check the board did what you meant (its console, its `devices.list` state), not just `ok`.")
     return "\n".join(out) + "\n"

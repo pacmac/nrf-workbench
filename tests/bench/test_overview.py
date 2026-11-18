@@ -249,6 +249,53 @@ class PiParts(Base):
         self.assertIn("gpio", h["capabilities"])
 
 
+class Projects(Base):
+    MANIFEST = "name: demo\npurpose: try it\nmacros:\n  ping: [ping]\n"
+
+    def put(self, text, name="demo"):
+        import io
+
+        class Body(io.BytesIO):
+            def __init__(self, data):
+                io.BytesIO.__init__(self, data)
+                self.length = len(data)
+        res = self.reg.call("project.put", {"project": name}, Context(self.host, "t", Body(text.encode())), capabilities=set(self.caps))
+        self.assertTrue(res.ok, res.message)
+
+    def test_a_project_with_a_manifest_is_listed_with_its_state_and_a_folder_with_none_is_not(self):
+        self.host.registry = self.reg
+        self.call("firmware.project_new", {"project": "fw-only"})
+        self.assertEqual(self.overview()["projects"], [])
+        self.put(self.MANIFEST)
+        (p,) = self.overview()["projects"]
+        self.assertEqual((p["name"], p["purpose"], p["state"], p["word"], p["applied"]), ("demo", "try it", "absent", "not applied", False))
+        self.assertEqual(self.reg.call("project.apply", {"project": "demo"}, Context(self.host, "t", None), capabilities=set(self.caps)).ok, True)
+        (p,) = self.overview()["projects"]
+        self.assertEqual((p["state"], p["word"], p["applied"]), ("connected", "ready", True))
+        c = self.overview()["counts"]
+        self.assertEqual((c["projects"], c["projects_attention"]), (1, 0))
+
+    def test_a_broken_manifest_is_attention_and_an_unreadable_state_costs_the_projects_section_only(self):
+        self.host.registry = self.reg
+        os.makedirs(os.path.join(self.host.config["paths"]["wiring"], "projects", "demo"))
+        with open(os.path.join(self.host.config["paths"]["wiring"], "projects", "demo", "project.yaml"), "w") as fh:
+            fh.write("name: demo\nwirng: []\n")
+        (p,) = self.overview()["projects"]
+        self.assertEqual((p["state"], self.overview()["counts"]["projects_attention"]), ("attention", 1))
+        self.put(self.MANIFEST)
+        with open(os.path.join(self.host.config["paths"]["wiring"], "projects", "state.json"), "w") as fh:
+            fh.write("{ nope")
+        self.t.app_board()
+        self.t.node("ttyACM0", 166, 0)
+        d = self.overview()
+        self.assertEqual((d["projects"], len(d["devices"])), ([], 1), "the projects section is lost, the devices are not")
+        self.assertIn("projects", d["errors"])
+
+    def test_without_a_registry_or_a_wiring_folder_the_section_is_none(self):
+        self.host.registry = None
+        self.assertIsNone(self.overview()["projects"])
+
+
 class NotAPi(Base):
     pi = False
 

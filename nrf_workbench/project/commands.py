@@ -95,11 +95,17 @@ def _summary(host, call, name):
     return row
 
 
+def summaries(host, registry, caller="overview"):
+    """Every project's row, for project.list and for bench.overview (which has no request of its own, so it makes a context)."""
+    from ..core.registry import Context
+    call = _caller(registry, Context(host, caller, None))
+    names = sorted(set(_store(host).names()) | set(_firmware_names(host)))
+    return [_summary(host, call, n) for n in names]
+
+
 def _list(registry):
     def handler(ctx):
-        call = _caller(registry, ctx)
-        names = sorted(set(_store(ctx.host).names()) | set(_firmware_names(ctx.host)))
-        rows = [_summary(ctx.host, call, n) for n in names]
+        rows = summaries(ctx.host, registry, ctx.caller)
         return Result.success({"projects": rows}, "%d project%s" % (len(rows), "" if len(rows) == 1 else "s"))
     return _guard(handler)
 

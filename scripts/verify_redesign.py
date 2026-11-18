@@ -131,14 +131,82 @@ def nav_one_row(page):
     return len(set(tops)) == 1, tops
 
 
+def project_flow(page, bench, nav, tag, shot, open_page):
+    """A project made in the page: written, planned (a clash shows and blocks Apply), applied, checked, released and deleted."""
+    name = "demo-" + tag
+    macro = "%s.ping" % name
+    manifest = ("name: %s\npurpose: try the project flow\ndevices:\n  alarm: {nrf: %s}\n  camera: {esp32: timercam}\nmacros:\n  ping: [ping]\n"
+                "pins:\n  - {gpio: 5, name: %s-gpio5, service: demo, action: strobe, direction: input, pull: up, purpose: a test input, "
+                "voltage_v: 3.3, active_low: false, voltage_verified: false}\n" % (name, SERIAL, name))
+    open_page("Projects")
+    page.get_by_label("New project name").fill(name.upper())
+    check("%s a project name is lower-cased as it is typed" % tag, page.get_by_label("New project name").input_value() == name)
+    page.get_by_role("button", name="Create project").click()
+    detail = page.get_by_label("Project %s" % name)
+    detail.wait_for()
+    detail.get_by_role("button", name="Edit manifest").click()
+    box = detail.get_by_label("Manifest")
+    box.fill("name: wrong\n")
+    detail.get_by_role("button", name="Save manifest").click()
+    detail.get_by_text("must be").first.wait_for()
+    check("%s a manifest that does not validate is refused and says which field" % tag, "bad_manifest" in detail.inner_text())
+    box.fill(manifest)
+    detail.get_by_role("button", name="Save manifest").click()
+    detail.get_by_role("button", name="Edit manifest").wait_for()
+    listed = page.request.get(bench.url + "api/project/list").json()["data"]["projects"]
+    check("%s a valid manifest is saved and listed with its purpose" % tag,
+          [p["purpose"] for p in listed if p["name"] == name] == ["try the project flow"], listed)
+    roles = detail.get_by_role("list", name="Roles")
+    roles.wait_for()
+    check("%s the roles show which boards are attached" % tag, "alarm" in roles.inner_text() and "camera" in roles.inner_text(), roles.inner_text())
+    # a clash is shown by the plan and blocks Apply
+    bench.api("api/console/macro_set", {"name": macro, "text": "other"})
+    detail.get_by_role("button", name="Plan", exact=True).click()
+    plan = detail.get_by_label("Plan")
+    plan.wait_for()
+    check("%s the plan shows a clash and does not offer Apply" % tag, "conflict" in plan.inner_text() and detail.get_by_role("button", name="Apply", exact=True).count() == 0, plan.inner_text())
+    shot("11-plan-clash")
+    bench.api("api/console/macro_delete", {"name": macro})
+    detail.get_by_role("button", name="Plan", exact=True).click()
+    detail.get_by_role("button", name="Apply", exact=True).wait_for()
+    check("%s once the clash is gone the plan is clear and Apply is offered" % tag, "Nothing blocks this" in detail.get_by_label("Plan").inner_text())
+    detail.get_by_role("button", name="Apply", exact=True).click()
+    detail.get_by_text("applied:").first.wait_for()
+    macros = page.request.get(bench.url + "api/console/macro_list").json()["data"]["macros"]
+    check("%s apply made the macro and the pin through the existing commands" % tag, [m["name"] for m in macros] == [macro], macros)
+    shot("12-applied")
+    open_page("Home")
+    home = page.get_by_role("list", name="Projects")
+    home.wait_for()
+    check("%s Home lists the applied project as ready" % tag, name in home.inner_text() and "ready" in home.inner_text(), home.inner_text())
+    open_page("Projects")
+    page.get_by_role("list", name="Projects").get_by_role("button", name=re.compile(name)).click()          # the lamp's own label comes first in the name
+    detail = page.get_by_label("Project %s" % name)
+    detail.get_by_role("button", name="Check", exact=True).click()
+    detail.get_by_text("ready").first.wait_for()
+    check("%s Check says the bench matches" % tag, True)
+    detail.get_by_role("button", name="Release", exact=True).click()
+    detail.get_by_role("button", name="Yes").click()
+    detail.get_by_text("released:").first.wait_for()
+    macros = page.request.get(bench.url + "api/console/macro_list").json()["data"]["macros"]
+    check("%s release removed what the project made" % tag, macros == [], macros)
+    detail.get_by_role("button", name="Delete", exact=True).click()
+    detail.get_by_role("button", name="Yes").click()
+    page.get_by_role("button", name=re.compile(name)).wait_for(state="detached")
+    check("%s delete removed the project from the list" % tag, True)
+    check("%s no horizontal scroll on Projects" % tag, overflow(page) <= 0, overflow(page))
+
+
 def run(browser, bench, theme, size, shots):
     label, width, height = size
     tag = "%s-%s" % (theme, label)
     context = browser.new_context(viewport={"width": width, "height": height}, color_scheme=theme)
     page = context.new_page()
-    errors = []
+    errors, refused = [], []
     page.on("pageerror", lambda e: errors.append("pageerror: %s" % e))
-    page.on("console", lambda m: errors.append("console.%s: %s" % (m.type, m.text)) if m.type == "error" else None)
+    # Chrome logs every 4xx as "Failed to load resource": those are judged by their responses below, the way verify_dashboard does.
+    page.on("console", lambda m: errors.append("console.%s: %s" % (m.type, m.text)) if m.type == "error" and not m.text.startswith("Failed to load resource") else None)
+    page.on("response", lambda r: refused.append((r.request.method, r.url.split("?")[0].split(bench.url)[-1], r.status)) if r.status >= 400 else None)
     nav = page.get_by_role("navigation", name="Pages")
 
     def shot(name):
@@ -158,7 +226,7 @@ def run(browser, bench, theme, size, shots):
         check("%s the nav is one row and never wraps" % tag, one, tops)
         check("%s the nav has every page, daily ones first" % tag,
               page.evaluate("[...document.querySelectorAll('nav[aria-label=Pages] button')].map(b => b.textContent)") ==
-              ["Home", "Devices", "Wiring", "Console", "Firmware", "GPIO", "Activity", "Commands", "Help"])
+              ["Home", "Devices", "Projects", "Wiring", "Console", "Firmware", "GPIO", "Activity", "Commands", "Help"])
         # ---- Home
         status = page.get_by_role("status").filter(has_text="devices connected")
         status.first.wait_for()
@@ -215,7 +283,7 @@ def run(browser, bench, theme, size, shots):
         search.fill("i2c")
         listing = page.get_by_role("group", name="Commands") if False else page.locator("[aria-label=Commands]")
         names = listing.locator("button").all_inner_texts()
-        check("%s Commands search narrows the list to what matches" % tag, 0 < len(names) <= 6 and all(any(w in n for w in ("scan", "transfer", "buses", "overview")) for n in names)
+        check("%s Commands search narrows the list to what matches" % tag, 0 < len(names) <= 7 and all(any(w in n for w in ("scan", "transfer", "buses", "overview", "probe")) for n in names)
               and sum(1 for n in names if "scan" in n or "transfer" in n or "buses" in n) == 3, names)
         search.fill("")
         search.fill("devices")
@@ -231,10 +299,11 @@ def run(browser, bench, theme, size, shots):
         page.get_by_role("button", name="Read", exact=True).click()
         page.get_by_text("i2c_enabled").first.wait_for()
         check("%s a command runs from the page and the whole result shows" % tag, True)
+        project_flow(page, bench, nav, tag, shot, open_page)
         # ---- Help
         open_page("Help")
         topics = page.get_by_role("navigation", name="Help topics")
-        check("%s Help is a list of short topics" % tag, topics.locator("button").count() == 9, topics.locator("button").count())
+        check("%s Help is a list of short topics" % tag, topics.locator("button").count() == 10, topics.locator("button").count())
         topics.get_by_role("button", name=re.compile("^Devices")).click()
         art = page.get_by_role("article", name="Devices")
         art.wait_for()
@@ -255,6 +324,7 @@ def run(browser, bench, theme, size, shots):
         one, tops = nav_one_row(page)
         check("%s the nav is still one row after moving about" % tag, one, tops)
         check("%s no page or console errors" % tag, not errors, errors)
+        check("%s the only refused request was the bad manifest on purpose" % tag, refused == [("POST", "api/project/put", 422)], refused)
     finally:
         context.close()
 

@@ -108,6 +108,22 @@ function ConnectionRow({ c }) {
   );
 }
 
+function ProjectLine({ p }) {
+  const nav = useContext(NavContext);
+  return (
+    <li>
+      <button type="button" onClick={() => nav.go("projects")} className="flex w-full min-h-14 items-center gap-3 px-1 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60">
+        <Lamp state={p.state} size={16} />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[15px] font-medium">{p.name}</span>
+          {p.purpose && <span className="block text-[13px] text-slate-600 dark:text-slate-400">{p.purpose}</span>}
+        </span>
+        <span className="shrink-0 text-[13px] text-slate-600 dark:text-slate-400">{p.word}</span>
+      </button>
+    </li>
+  );
+}
+
 function I2cRow({ i2c }) {
   const nav = useContext(NavContext);
   const state = !i2c.enabled ? "absent" : i2c.pins_claimed ? "connected" : "attention";
@@ -185,6 +201,13 @@ export default function Home({ overview, session, feed, activity, info }) {
               </ul>
             )}
           </Section>
+          {data.projects && data.projects.length > 0 && (
+            <Section title="Projects" page="projects" count={data.projects.length}>
+              <ul className="divide-y divide-slate-200 dark:divide-slate-800" aria-label="Projects">
+                {data.projects.map((p) => <ProjectLine key={p.name} p={p} />)}
+              </ul>
+            </Section>
+          )}
           <Section title="Connections" page="wiring" count={(data.connections || []).length}>
             <ul className="divide-y divide-slate-200 dark:divide-slate-800" aria-label="Connections">
               {(data.connections || []).map((c) => <ConnectionRow key={c.name} c={c} />)}

@@ -20,8 +20,9 @@ export const TOPICS = [
       "Every heading and every row is a link. Tap Devices, a board, a wire or the Pi to open its page.",
       "The Pi header shows each pin as a dot: blue is I2C, green is a serial link, violet is anything else in the pin map, an empty ring is free.",
       "Devices lists every board and adapter. Wiring connects a board to something. Console reads its log. Firmware flashes it.",
+      "A project bundles the wiring, pins, macros and firmware for one piece of work, so one press sets the bench up for it.",
     ],
-    related: ["devices", "wiring", "trouble"],
+    related: ["devices", "projects", "wiring", "trouble"],
   },
   {
     id: "devices",
@@ -162,6 +163,36 @@ export const TOPICS = [
       { code: "voltage_unsafe", fix: "A header pin is 3.3 V at most." },
     ],
     related: ["wiring", "commands", "trouble"],
+  },
+  {
+    id: "projects",
+    title: "Projects",
+    pages: ["projects"],
+    summary: "A project is a written-down setup: which boards play which part, how they are wired, which pins and macros, and what firmware.",
+    legend: [
+      { state: "connected", term: "Ready", text: "Applied, and everything matches." },
+      { state: "absent", term: "Not applied", text: "Described, but the bench has not been set up for it." },
+      { state: "attention", term: "Needs attention", text: "Applied, but something is missing, changed or not attached." },
+    ],
+    steps: [
+      "Make a project and write its manifest: roles, wiring, pins, macros, firmware and what working looks like.",
+      "Press Plan. It shows what would be made, what is already there, and anything that clashes. Nothing changes.",
+      "Press Apply. It sets up the bench through the same commands as the other pages. It never flashes, resets or sends.",
+      "Press Check any time. It says whether the bench still matches, and which board is not attached.",
+      "Flash a role's firmware from its row. Release removes what the project made and leaves the rest.",
+    ],
+    problems: [
+      { symptom: "Plan shows a clash", cause: "A name, pin or adapter is already used by something the project does not own.", fix: "The line says what and who has it. Release that, or change the manifest." },
+      { symptom: "Check says changed", cause: "Something the project made was edited on another page.", fix: "Release the project and apply it again, or change the manifest to match." },
+      { symptom: "A board shows not attached", cause: "It is not plugged in.", fix: "Plug it in. The page updates by itself." },
+    ],
+    codes: [
+      { code: "bad_manifest", fix: "The manifest has a mistake. The message names the field." },
+      { code: "project_conflict", fix: "Something already exists with that name and other settings." },
+      { code: "project_applied", fix: "Release the project before deleting it." },
+      { code: "project_not_applied", fix: "Apply the project first." },
+    ],
+    related: ["wiring", "flashing", "pins"],
   },
   {
     id: "commands",
