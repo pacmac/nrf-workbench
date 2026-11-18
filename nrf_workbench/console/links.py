@@ -20,7 +20,7 @@ BAUDS = (9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600)
 EOLS = ("\n", "\r", "\r\n")
 BACKENDS = ("usb-adapter", "pi-uart")
 KNOWN = frozenset(["name", "slot", "device", "backend", "adapter", "port", "baud", "dut_tx_to_host", "host_tx_to_dut", "voltage",
-                   "dtr_rts_reach_dut", "reply_marker", "eol"])
+                   "dtr_rts_reach_dut", "reply_marker", "eol", "own_bridge"])
 
 
 class Problem(object):
@@ -44,6 +44,12 @@ class Link(object):
         adapter = raw.get("adapter") if isinstance(raw.get("adapter"), dict) else {}
         self.ids = [i for i in (adapter.get("ids") or []) if isinstance(i, str)]
         self.serial = adapter.get("serial") if isinstance(adapter.get("serial"), str) else None
+        # An adapter with no unique serial is found by where it is plugged (the sysfs port name); only an ESP32 target's own
+        # bridge is declared that way (docs/specs/esp32.md, "Targets"), because a bridge chip often has no unique serial.
+        self.adapter_slot = adapter.get("slot") if isinstance(adapter.get("slot"), str) else None
+        # True for the USB bridge that is part of an ESP32 dev board: DTR/RTS reach its reset pins BY DESIGN, so opening the
+        # port is the one case where `dtr_rts_reach_dut` is allowed. This code still never sets either line.
+        self.own_bridge = raw.get("own_bridge") is True
         self.baud = raw.get("baud")
         self.dut_tx_to_host = raw.get("dut_tx_to_host")
         self.host_tx_to_dut = raw.get("host_tx_to_dut")
@@ -69,7 +75,9 @@ class Link(object):
         return True, "ok", ""
 
     def to_dict(self):
-        return {"name": self.name, "slot": self.slot, "device": self.device, "backend": self.backend, "adapter": {"ids": self.ids, "serial": self.serial},
+        return {"name": self.name, "slot": self.slot, "device": self.device, "backend": self.backend,
+                "adapter": {"ids": self.ids, "serial": self.serial, "slot": self.adapter_slot},
+                "own_bridge": self.own_bridge, "dtr_rts_reach_dut": self.dtr_rts_reach_dut,
                 "baud": self.baud, "dut_tx_to_host": self.dut_tx_to_host, "host_tx_to_dut": self.host_tx_to_dut,
                 "rx_only": self.host_tx_to_dut is not True, "voltage": self.voltage, "reply_marker": self.reply_marker,
                 "eol": self.eol, "problems": [p.to_dict() for p in self.problems]}
@@ -100,7 +108,12 @@ def _validate(raw, seen, board_ids):
             problems.append(Problem("invalid", "adapter.ids must be a list of USB ids written vvvv:pppp in lower case"))
         elif set(ids) & set(board_ids):
             problems.append(Problem("not_a_declared_link", "these ids belong to a board profile: the console never opens a device's own port"))
-        if not (isinstance(adapter, dict) and isinstance(adapter.get("serial"), str) and adapter["serial"]):
+        serial = adapter.get("serial") if isinstance(adapter, dict) else None
+        slot = adapter.get("slot") if isinstance(adapter, dict) else None
+        if raw.get("own_bridge") is True:
+            if bool(slot) == bool(serial):
+                problems.append(Problem("invalid", "an ESP32's own bridge is found by exactly one of adapter.serial and adapter.slot"))
+        elif not (isinstance(serial, str) and serial):
             problems.append(Problem("invalid", "adapter.serial is required: an adapter is found by its serial, never by a /dev name"))
 
     baud = raw.get("baud")
@@ -112,7 +125,7 @@ def _validate(raw, seen, board_ids):
     for key in ("dut_tx_to_host", "host_tx_to_dut", "dtr_rts_reach_dut"):
         if not isinstance(raw.get(key), bool):
             problems.append(Problem("invalid", "%s must be declared, true or false" % key))
-    if raw.get("dtr_rts_reach_dut") is True:
+    if raw.get("dtr_rts_reach_dut") is True and raw.get("own_bridge") is not True:
         problems.append(Problem("dtr_rts_unsafe", "DTR or RTS reach the device: opening the adapter could reset it, and a deliberately wired reset line belongs to the family driver"))
 
     voltage = raw.get("voltage")
@@ -164,11 +177,14 @@ def resolve(link, sysfs="/sys", devroot="/dev"):
     is the USB device whose ids and serial are the link's; its node is joined by device number."""
     if not link.usable:
         return None, "the link is not usable: " + "; ".join(p.message for p in link.problems)
-    mine = [d for d in identity.inventory(sysfs) if d["id"] in link.ids and d["serial"] == link.serial]
+    by_slot = link.adapter_slot is not None
+    mine = [d for d in identity.inventory(sysfs)
+            if d["id"] in link.ids and (d["name"] == link.adapter_slot if by_slot else d["serial"] == link.serial)]
+    where = "slot %s" % link.adapter_slot if by_slot else "serial %s" % link.serial
     if not mine:
-        return None, "the adapter %s (serial %s) is not attached" % (", ".join(link.ids), link.serial)
+        return None, "the adapter %s (%s) is not attached" % (", ".join(link.ids), where)
     if len(mine) > 1:
-        return None, "more than one USB device has these ids and this serial, so no node is chosen"
+        return None, "more than one USB device has these ids and this %s, so no node is chosen" % where.split()[0]
     node, why = identity.node_for(mine[0], devroot)
     if node is None:
         return None, why

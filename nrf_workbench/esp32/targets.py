@@ -14,6 +14,7 @@ from ..devices import identity
 NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 FILE = "esp32.json"
 KEY = "targets"
+DEFAULT_BAUD = 115200                  # the console rate of the ESP32 ROM and of ESP-IDF's and Arduino's default
 NATIVE_IDS = ("303a:1001",)            # the ESP32-S3/C3/C6 built-in USB Serial/JTAG: its serial is the chip's MAC
 
 
@@ -41,9 +42,9 @@ class TargetStore(object):
         rec = jsonstore.read_map(self.path, KEY).get(name)
         return dict(rec, name=name) if rec else None
 
-    def add(self, name, key, key_kind):
+    def add(self, name, key, key_kind, ids, baud=DEFAULT_BAUD):
         records = jsonstore.read_map(self.path, KEY)
-        records[name] = {"key": key, "key_kind": key_kind}
+        records[name] = {"key": key, "key_kind": key_kind, "ids": ids, "baud": baud}
         jsonstore.write_map(self.path, KEY, records)
 
     def remove(self, name):
@@ -53,6 +54,20 @@ class TargetStore(object):
         del records[name]
         jsonstore.write_map(self.path, KEY, records)
         return True
+
+
+def to_link(record, seen=()):
+    """The console Link for a target's own USB bridge (docs/specs/esp32.md, "Reset and the console"). Receive-only: the
+    bench sends nothing to an ESP32's console until a person says so. It is built by the console's own validator, so it is
+    usable exactly when a link written by hand with the same facts would be."""
+    from ..console import links as linkmod
+    adapter = {"ids": [record["ids"]]}
+    adapter["serial" if record["key_kind"] == "serial" else "slot"] = record["key"]
+    return linkmod.build({
+        "name": record["name"], "device": record["name"], "backend": "usb-adapter", "adapter": adapter,
+        "baud": record.get("baud", DEFAULT_BAUD), "dut_tx_to_host": True, "host_tx_to_dut": False,
+        "voltage": {"dut": 3.3, "adapter": None, "verified": False},
+        "dtr_rts_reach_dut": True, "own_bridge": True, "reply_marker": None}, seen)
 
 
 def matching(inv, key_kind, key):

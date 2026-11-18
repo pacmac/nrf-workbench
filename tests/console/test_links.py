@@ -117,6 +117,24 @@ class Validation(Files):
     def test_dtr_or_rts_reaching_the_device_is_refused(self):
         self.assertEqual(self.codes(dtr_rts_reach_dut=True), ["dtr_rts_unsafe"])
 
+    def test_an_esp32s_own_bridge_may_declare_that_dtr_and_rts_reach_it_and_nothing_else_may(self):
+        own = dict(own_bridge=True, dtr_rts_reach_dut=True)
+        self.assertEqual(self.problems(**own), [])
+        self.assertEqual(self.codes(dtr_rts_reach_dut=True, own_bridge=False), ["dtr_rts_unsafe"])
+        self.assertEqual(self.codes(dtr_rts_reach_dut=True, own_bridge="yes"), ["dtr_rts_unsafe"], "only a real true counts")
+        (link,) = self.load([good(**own)])
+        self.assertTrue(link.to_dict()["own_bridge"] and link.to_dict()["dtr_rts_reach_dut"])
+        (loose,) = self.load([good(dtr_rts_reach_dut=True, own_bridge="yes")])
+        self.assertFalse(loose.own_bridge, "only a real true makes a bridge the board's own")
+
+    def test_only_an_own_bridge_may_be_found_by_slot_and_it_names_exactly_one_of_serial_and_slot(self):
+        slot = {"ids": ["10c4:ea60"], "slot": "1-2"}
+        self.assertEqual(self.problems(own_bridge=True, adapter=slot), [])
+        self.assertIn("invalid", self.codes(adapter=slot), "an ordinary link still needs a serial")
+        both = dict(slot, serial="0001")
+        self.assertIn("invalid", self.codes(own_bridge=True, adapter=both))
+        self.assertIn("invalid", self.codes(own_bridge=True, adapter={"ids": ["10c4:ea60"]}))
+
     def test_the_marker_and_the_line_ending(self):
         self.assertEqual(self.problems(reply_marker=None), [])
         self.assertIn("invalid", self.codes(reply_marker=""))
@@ -197,6 +215,17 @@ class Resolving(Files):
     def test_the_wrong_serial_or_the_wrong_ids_do_not_match(self):
         self.dongle(serial="OTHER")
         self.assertIsNone(self.resolve()[0])
+
+    def test_an_own_bridge_found_by_slot_matches_the_port_and_not_the_serial_and_two_in_a_slot_cannot_happen(self):
+        (own,) = self.load([good(own_bridge=True, dtr_rts_reach_dut=True, adapter={"ids": ["1a86:55d4"], "slot": "1-4"})])
+        self.dongle(name="1-4", serial=None)                         # no serial at all: found by where it is plugged
+        found, why = links.resolve(own, self.tree.sysfs, self.tree.dev)
+        self.assertEqual(found["device"]["name"], "1-4", why)
+        self.tree.unplug("1-4")
+        self.dongle(name="1-5", tty="ttyACM2", majmin="166:2", serial=None)   # the same board in another port is not it
+        found, why = links.resolve(own, self.tree.sysfs, self.tree.dev)
+        self.assertIsNone(found)
+        self.assertIn("slot 1-4", why)
         self.tree.unplug("1-4")
         self.tree.usb("1-5", ("1a86", "7523"), "other", serial="5B1F007437", tty="ttyUSB0", majmin="188:0")
         self.assertIsNone(self.resolve()[0])

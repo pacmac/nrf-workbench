@@ -161,9 +161,10 @@ def _run(rec, sha, path, info, bound_s, baud, units, sysfs, devroot, proc, runne
 
 
 def identify_target(rec, bound_s, units=None, sysfs="/sys", devroot="/dev", proc="/proc", lock_path=DEFAULT_PATH,
-                    runner=ff.default_runner, tool=None):
+                    runner=ff.default_runner, tool=None, after="hard-reset", message="the chip answered"):
     """Ask the chip what it is (`esptool chip-id`). This TOGGLES DTR/RTS to reset the board into its ROM, so it is only
-    ever run when someone asks, never by a listing."""
+    ever run when someone asks, never by a listing. `after` is what esptool does when it has the answer: `hard-reset` runs
+    the application, `no-reset` leaves the chip waiting in its ROM download mode."""
     if not _bound_ok(bound_s):
         return Result.refused("no_bound", "bound_s is required: a caller-supplied bound in seconds",
                               {"missing": "bound_s"})
@@ -175,7 +176,7 @@ def identify_target(rec, bound_s, units=None, sysfs="/sys", devroot="/dev", proc
         dev, node, refusal = _device(rec, units, sysfs, devroot, proc)
         if refusal is not None:
             return refusal
-        cmd = [tool, "--port", node, "--after", "hard-reset", "chip-id"]
+        cmd = [tool, "--port", node, "--before", "default-reset", "--after", after, "chip-id"]
         rc, out, secs, timed_out = runner(cmd, bound_s)
         facts = dict(_facts(out), duration_s=round(secs, 3), output=out, command=cmd, target=rec["name"])
         if timed_out:
@@ -185,6 +186,23 @@ def identify_target(rec, bound_s, units=None, sysfs="/sys", devroot="/dev", proc
             return Result.failed("flash_failed", "esptool could not read the chip (exit %s): is an ESP32 behind this "
                                  "adapter, and is it wired to reset?" % rc, facts)
         return Result.success({"chip": facts["chip"], "mac": facts["mac"], "duration_s": facts["duration_s"],
-                               "output": out}, "the chip answered")
+                               "output": out}, message)
 
-    return _locked(lock_path, "reading the chip behind ESP32 target %s" % rec["name"], work)
+    return _locked(lock_path, "resetting or reading the chip behind ESP32 target %s" % rec["name"], work)
+
+
+MODES = {"run": ("hard-reset", "the board was reset and is running its application"),
+         "bootloader": ("no-reset", "the board is in its ROM download mode and is waiting; reset it with mode run")}
+
+
+def reset_target(rec, mode, bound_s, **kw):
+    """Reset the board: `run` to its application, or `bootloader` to hold it in the ROM download mode. Both go through
+    esptool's own reset sequences, which know the bridge chips and the built-in USB-Serial/JTAG, and both prove the chip
+    answered. Never run by a listing, and never on a port someone holds."""
+    if mode not in MODES:
+        raise ValueError("mode is one of %s" % ", ".join(sorted(MODES)))      # the command turns it into a usage error
+    after, message = MODES[mode]
+    res = identify_target(rec, bound_s, after=after, message=message, **kw)
+    if res.ok:
+        res.data = dict(res.data, mode=mode)
+    return res

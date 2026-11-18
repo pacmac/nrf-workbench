@@ -69,10 +69,26 @@ bootloader can, because download mode is left by the same reset.
 
 ## Reset and the console (slice 2)
 
-`esp32.reset(target, mode)` with `mode` `run` or `bootloader`, over the adapter's DTR/RTS with the standard
-auto-reset sequences, taking the host lock and refusing when the port is held. The console opens an ESP32
-target's link with both lines left alone and records, per link, `dtr_rts_reach_dut: true` only through an
-ESP32 target. **[unknown]**: the exact effect of the kernel's DTR/RTS raise at open, per bridge chip.
+**Built.** `esp32.reset(target, mode, bound_s)`, `mode` `run` or `bootloader`, runs `esptool --before
+default-reset --after hard-reset|no-reset chip-id`: esptool's own reset sequences know the bridge chips and the
+built-in USB-Serial/JTAG, so this code never drives DTR/RTS itself. `run` ends with the application running;
+`bootloader` leaves the chip waiting in its ROM download mode. Both prove the chip answered, take the host lock,
+and refuse on a held port, a protected unit or a target with no single match. **[derived]**
+
+**The console.** Declaring a target also makes a console link named like it: the target's own USB bridge, found
+by serial or by slot, **receive-only** (`host_tx_to_dut` false), at the target's baud (default 115200). The link
+carries `own_bridge: true` and `dtr_rts_reach_dut: true`, and that pair is the ONE case the console accepts DTR or
+RTS reaching the device, because on an ESP32 dev board they reach EN and IO0 by design. The port code still never sets
+either line and still clears HUPCL. A target named like a wiring connection is listed with that problem and not
+opened. A wiring connection cannot take a declared target's adapter (`adapter_taken`).
+
+**The adapter is shared with esptool.** The console's port on a target's adapter is released (`Broker.suspend`) for
+the length of every `flash`, `identify` and `reset`, and retaken (`Broker.resume`) after it, whatever the outcome;
+the link keeps its byte offset, so the log carries on. In between the link reads `held`. Output printed before the
+console reopens is lost; esptool returns right after the reset and the reopen follows in milliseconds, but a board
+that boots faster than that has no guarantee. **[unknown]**: the exact effect of the kernel's DTR/RTS raise when the
+broker opens the port, per bridge chip. The kernel raises both in one request on cp210x, ch341 and cdc-acm, which
+leaves the usual auto-reset circuit idle, but no board has been measured.
 
 ## Crash decoding (slice 3)
 

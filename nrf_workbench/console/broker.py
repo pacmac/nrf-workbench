@@ -28,12 +28,13 @@ LINE_CAP_BYTES = 1024
 CALL_CEILING_S = 5.0
 
 ABSENT, OPEN, HELD, ERROR, UNUSABLE = "absent", "open", "held", "error", "unusable"
+SUSPENDED_WHY = "released so another tool can use the adapter; it reopens when that is done"
 
 
 def _wire(link):
     """What makes two links the SAME open port: a change in any of these closes the port and reopens it. The device it is
     associated with, and whether the bench may send, are only labels and permissions, so they do not."""
-    return (tuple(link.ids), link.serial, link.baud, link.eol, link.usable)
+    return (tuple(link.ids), link.serial, link.adapter_slot, link.baud, link.eol, link.usable)
 
 
 class LinkState(object):
@@ -64,6 +65,7 @@ class Broker(object):
         `bus` is a core.events.Bus; `open_uevents()` returns the kernel's uevent socket (OSError if none)."""
         self._states = dict((l.name, LinkState(l)) for l in links if l.name)
         self._unnamed = [l for l in links if not l.name]
+        self._suspended = set()                        # names of links whose port is released to another tool (esptool) for a while
         self._carry = {}                               # name -> the last offset of a link that was removed, so a new one continues
         self._resolve, self._open_port, self._bus, self._open_uevents, self._now = resolve, open_port, bus, open_uevents, now
         # `_lock` guards the link states and the port set, and NOTHING is called out while it is held: a state change is
@@ -223,6 +225,12 @@ class Broker(object):
                 if not st.link.usable:
                     self._set(st, UNUSABLE, "; ".join(p.message for p in st.link.problems))
                     continue
+                if st.link.name in self._suspended:
+                    if st.port is not None:
+                        self._close(st, HELD, SUSPENDED_WHY)
+                    else:
+                        self._set(st, HELD, SUSPENDED_WHY)
+                    continue
                 found, why = self._resolve(st.link)
                 if found is None:
                     if st.port is not None or st.state != ABSENT or st.reason != why:
@@ -265,6 +273,26 @@ class Broker(object):
                     else:
                         self._states[name] = LinkState(link, self._carry.get(name, 0))
                 self._unnamed = [l for l in links if not l.name]
+            self._refresh()
+        return self._call(work)
+
+    def suspend(self, name):
+        """Close this link's port and keep it closed (state `held`) until `resume`, so another tool can open the adapter. A
+        uevent or `refresh` in the meantime does not reopen it. False for an unknown link. Safe to call twice."""
+        def work():
+            with self._lock:
+                if name not in self._states:
+                    return False
+                self._suspended.add(name)
+            self._refresh()
+            return True
+        return self._call(work)
+
+    def resume(self, name):
+        """Let the link open its adapter again, now. Its byte offset carries on where it was."""
+        def work():
+            with self._lock:
+                self._suspended.discard(name)
             self._refresh()
         return self._call(work)
 

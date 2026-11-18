@@ -6,6 +6,7 @@ links, so a change takes effect at once. Every refusal is made here, by the serv
 from ..core.registry import Arg, Command, UsageError
 from ..core.result import Result
 from ..devices import commands as device_commands
+from ..esp32 import targets as esp_targets
 from . import detect
 from .store import BUILT, INTENTS, Invalid, Refused, StoreError, WiringStore, build_log, holder_of, to_link
 
@@ -23,7 +24,14 @@ def _failed(exc):
 def links_for(host, records):
     """The console Links for the stored connections (only the debug logs are links)."""
     ids = detect.board_ids(host.profiles)
-    return [to_link(r, ids) for r in records if r["intent"] == "log"]
+    links = [to_link(r, ids) for r in records if r["intent"] == "log"]
+    # The declared ESP32 targets each get the console link of their own USB bridge (docs/specs/esp32.md).
+    try:
+        taken = [l.name for l in links]
+        links += [esp_targets.to_link(r, taken) for r in esp_targets.TargetStore(host.config["paths"]["wiring"]).list()]
+    except esp_targets.jsonstore.StoreError:
+        pass            # esp32.targets reports an unreadable targets file; it must not take the wiring links down with it
+    return links
 
 
 def _apply(host, records):
@@ -32,6 +40,19 @@ def _apply(host, records):
     host.console_links = links
     if host.console is not None:
         host.console.set_links(links)
+
+
+def _esp_holder(host, serial):
+    """The name of the declared ESP32 target whose own bridge is this adapter, or None (docs/specs/esp32.md)."""
+    if not serial:
+        return None
+    try:
+        for r in esp_targets.TargetStore(host.config["paths"]["wiring"]).list():
+            if r["key_kind"] == "serial" and r["key"] == serial:
+                return r["name"]
+    except esp_targets.jsonstore.StoreError:
+        pass
+    return None
 
 
 def _show(ctx):
@@ -44,7 +65,7 @@ def _show(ctx):
     detected = detect.adapters(host.sysfs, host.devroot, ids)
     for a in detected:
         h = holder_of(records, a["serial"], a["ids"]) if a["serial"] else None
-        a["held_by"] = h["name"] if h else None
+        a["held_by"] = h["name"] if h else _esp_holder(host, a["serial"])
     devices = {}
     for b in device_commands.boards(host):
         if b["serial"] and b["serial"] not in devices:
@@ -72,6 +93,10 @@ def _connect(ctx, device, intent, adapter=None, baud=None, send=None, voltage_me
         store = _store(host)
         records = store.list()
         ids = detect.board_ids(host.profiles)
+        esp = _esp_holder(host, adapter)
+        if esp is not None:
+            raise Refused("adapter_taken", "that adapter is the USB bridge of the ESP32 target %s" % esp,
+                          {"adapter": adapter, "held_by": esp})
         record = build_log({"device": device, "name": name, "adapter": adapter, "baud": baud, "send": send,
                             "voltage_measured": voltage_measured},
                            detect.adapters(host.sysfs, host.devroot, ids), records, ids)

@@ -343,6 +343,62 @@ class Sending(Base):
             r.broker.send("dbg", "x")
 
 
+class Suspending(Base):
+    """The port is released to another tool (esptool) and taken back, with the log carrying on."""
+
+    def test_a_suspended_link_frees_the_port_stays_closed_through_a_uevent_and_reopens_on_resume(self):
+        r = self.rig()
+        self.assertEqual(r.broker.state("dbg")["state"], "open")
+        self.assertTrue(r.broker.suspend("dbg"))
+        st = r.broker.state("dbg")
+        self.assertEqual((st["state"], st["node"]), ("held", None))
+        self.assertIn("released", st["reason"])
+        other = Port(r.node, 115200)                                  # the adapter is really free: this would be refused if not
+        other.close()
+        r.kick()
+        r.broker.refresh()
+        self.assertEqual(r.broker.state("dbg")["state"], "held", "a uevent and a refresh do not reopen it")
+        r.broker.resume("dbg")
+        self.assertEqual(r.broker.state("dbg")["state"], "open")
+
+    def test_the_log_carries_on_at_the_same_offset_after_a_suspend(self):
+        r = self.rig()
+        r.say(b"before\n")
+        r.wait_lines(1)
+        r.broker.suspend("dbg")
+        r.broker.resume("dbg")
+        r.say(b"after\n")
+        r.wait_lines(2)
+        (first, second) = r.lines()
+        self.assertEqual((first[2], second[2]), ("before", "after"))
+        self.assertEqual(second[0], first[0] + first[1], "the second line starts where the first ended")
+
+    def test_an_unknown_link_cannot_be_suspended_and_resume_is_harmless(self):
+        r = self.rig()
+        self.assertFalse(r.broker.suspend("nope"))
+        r.broker.resume("nope")
+        self.assertEqual(r.broker.state("dbg")["state"], "open")
+
+    def test_changing_the_slot_an_adapter_is_found_by_closes_the_port_and_opens_it_again(self):
+        own = raw_link(own_bridge=True, dtr_rts_reach_dut=True, adapter={"ids": ["10c4:ea60"], "slot": "1-2"})
+        r = self.rig(raws=[own])
+        self.assertEqual(len(r.opened_on), 1)
+        moved = dict(own, adapter={"ids": ["10c4:ea60"], "slot": "1-3"})
+        (link,) = [links.build(moved)]
+        r.broker.set_links([link])
+        self.assertEqual(len(r.opened_on), 2, "a different slot is a different wire")
+        same = [links.build(dict(moved, host_tx_to_dut=False))]
+        r.broker.set_links(same)
+        self.assertEqual(len(r.opened_on), 2, "a permission change keeps the open port")
+
+    def test_suspending_twice_is_the_same_as_once(self):
+        r = self.rig()
+        r.broker.suspend("dbg")
+        r.broker.suspend("dbg")
+        r.broker.resume("dbg")
+        self.assertEqual(r.broker.state("dbg")["state"], "open")
+
+
 class Attaching(Base):
     def test_an_adapter_that_appears_later_is_opened_on_the_kernels_word(self):
         r = self.rig(start=False)

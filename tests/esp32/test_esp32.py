@@ -93,6 +93,7 @@ class Host(object):
         self.lock_path = os.path.join(tree.root, "lock")
         self.profiles, self.units, self.hooks = [], units or {}, hooks or {}
         self.services = {}
+        self.console, self.console_links = None, []
 
     def service(self, name, factory):
         if name not in self.services:
@@ -418,13 +419,144 @@ class Identify(Base):
         self.assertEqual(self.tool.calls, [])
 
 
+class Reset(Base):
+    def setUp(self):
+        Base.setUp(self)
+        self.declare()
+
+    def test_run_resets_to_the_application_and_bootloader_leaves_the_chip_waiting(self):
+        for mode, after in (("run", "hard-reset"), ("bootloader", "no-reset")):
+            self.tool.calls.clear()
+            res = self.call("esp32.reset", {"target": "bench-esp", "mode": mode, "bound_s": 10.0})
+            self.assertTrue(res.ok, res.message)
+            cmd = self.tool.calls[0][0]
+            self.assertEqual((cmd[cmd.index("--after") + 1], cmd[-1], res.data["mode"]), (after, "chip-id", mode))
+        self.assertIn("waiting", res.message)
+
+    def test_a_mode_that_is_not_one_is_a_usage_error_and_runs_nothing(self):
+        with self.assertRaises(UsageError):
+            self.call("esp32.reset", {"target": "bench-esp", "mode": "sideways", "bound_s": 10.0})
+        self.assertEqual(self.tool.calls, [])
+
+    def test_a_chip_that_does_not_answer_is_a_failure_not_a_reset(self):
+        self.tool.rc, self.tool.out = 2, "Failed to connect\n"
+        res = self.call("esp32.reset", {"target": "bench-esp", "mode": "run", "bound_s": 10.0})
+        self.assertEqual((res.cls, res.code), ("failed", "flash_failed"))
+
+    def test_an_unknown_target_a_held_port_and_a_held_lock_each_refuse_without_running(self):
+        self.assertEqual(self.call("esp32.reset", {"target": "no", "mode": "run", "bound_s": 5.0}).code, "target_unknown")
+        self.t.hold(4243, os.path.join(self.t.dev, "ttyUSB0"), "minicom")
+        self.assertEqual(self.call("esp32.reset", {"target": "bench-esp", "mode": "run", "bound_s": 5.0}).code, "port_held")
+        self.assertEqual(self.tool.calls, [])
+
+
+class FakeBroker(object):
+    """What the commands ask of the console: its links, and to release and retake a port."""
+
+    def __init__(self, log):
+        self.log, self.links = log, []
+
+    def set_links(self, links):
+        self.links = list(links)
+
+    def suspend(self, name):
+        self.log.append("suspend")
+        return True
+
+    def resume(self, name):
+        self.log.append("resume")
+
+    def state(self, name):
+        return None
+
+
+class Console(Base):
+    def setUp(self):
+        Base.setUp(self)
+        self.log = []
+        self.host.console = FakeBroker(self.log)
+        self.tool.calls = self.log                                     # one list, so the ORDER of tool and console shows
+        self.tool.seen = []
+
+    def test_a_declared_target_is_a_receive_only_console_link_of_its_own_bridge(self):
+        self.declare()
+        (link,) = self.host.console.links
+        self.assertEqual((link.name, link.device, link.own_bridge, link.dtr_rts_reach_dut, link.usable),
+                         ("bench-esp", "bench-esp", True, True, True))
+        self.assertEqual((link.serial, link.adapter_slot, link.baud, link.host_tx_to_dut), (SERIAL, None, 115200, False))
+        self.assertEqual(link.can_send()[1], "link_rx_only")
+        self.assertEqual(self.host.console_links, [link])
+
+    def test_a_slot_target_is_found_by_its_slot_and_a_baud_can_be_given(self):
+        self.call("esp32.declare", {"name": "p", "slot": "1-2", "baud": 921600})
+        (link,) = self.host.console.links
+        self.assertEqual((link.serial, link.adapter_slot, link.baud), (None, "1-2", 921600))
+
+    def test_a_baud_that_is_not_a_console_rate_is_a_usage_error(self):
+        for baud in (1200, 12345):
+            with self.assertRaises(UsageError, msg=str(baud)):
+                self.call("esp32.declare", {"name": "p", "slot": "1-2", "baud": baud})
+
+    def test_forgetting_a_target_takes_its_link_away(self):
+        self.declare()
+        self.call("esp32.forget", {"name": "bench-esp"})
+        self.assertEqual(self.host.console.links, [])
+
+    def test_the_console_is_released_before_esptool_runs_and_retaken_after_it_for_every_command(self):
+        self.declare()
+        fid = self.put(merged())
+        self.log[:] = []
+        self.call("esp32.flash", self.flash_args(fid))
+        self.assertEqual([x if isinstance(x, str) else "esptool" for x in self.log], ["suspend", "esptool", "resume"])
+        self.log[:] = []
+        self.call("esp32.identify", {"target": "bench-esp", "bound_s": 5.0})
+        self.call("esp32.reset", {"target": "bench-esp", "mode": "run", "bound_s": 5.0})
+        self.assertEqual([x if isinstance(x, str) else "esptool" for x in self.log],
+                         ["suspend", "esptool", "resume"] * 2)
+
+    def test_the_console_is_retaken_even_when_esptool_fails_or_the_flash_is_refused(self):
+        self.declare()
+        fid = self.put(merged())
+        self.log[:] = []
+        self.tool.rc, self.tool.out = 2, "Failed to connect\n"
+        self.assertEqual(self.call("esp32.flash", self.flash_args(fid)).code, "flash_failed")
+        self.assertEqual(self.call("esp32.flash", self.flash_args(fid, baud=1)).code, "baud_refused")
+        self.assertEqual([x for x in self.log if isinstance(x, str)], ["suspend", "resume"] * 2)
+
+    def test_a_target_that_does_not_exist_never_touches_the_console(self):
+        self.call("esp32.flash", self.flash_args("0" * 64, target="nope"))
+        self.assertEqual([x for x in self.log if isinstance(x, str)], [])
+
+    def test_a_target_named_like_a_wiring_connection_is_listed_with_the_problem_and_never_opened(self):
+        from nrf_workbench.wiring import commands as wiring_commands
+        self.declare()
+        record = {"name": "bench-esp", "intent": "log", "device": "RAK1", "adapter": {"ids": ["1a86:55d4"], "serial": "S9"},
+                  "baud": 115200, "send": False, "voltage_measured": None}
+        by_name = dict((l.name, l) for l in wiring_commands.links_for(self.host, [record]))
+        both = wiring_commands.links_for(self.host, [record])
+        self.assertEqual([l.name for l in both], ["bench-esp", "bench-esp"])
+        self.assertTrue(both[0].usable)
+        self.assertFalse(both[1].usable)
+        self.assertIn("used by another link", both[1].problems[0].message)
+        self.assertEqual(len(by_name), 1)
+
+    def test_the_wiring_page_is_told_the_adapter_belongs_to_a_target(self):
+        from nrf_workbench.wiring import commands as wiring_commands
+        self.declare()
+        self.assertEqual(wiring_commands._esp_holder(self.host, SERIAL), "bench-esp")
+        self.assertIsNone(wiring_commands._esp_holder(self.host, "OTHER"))
+        self.assertIsNone(wiring_commands._esp_holder(self.host, None))
+
+
 class Registration(Base):
     def test_commands_appear_only_with_what_they_need(self):
         names = lambda caps: [c.name for c in self.reg.commands(caps) if c.name.startswith("esp32.")]  # noqa: E731
         self.assertEqual(names(set()), [])
         self.assertEqual(names({"wiring"}), ["esp32.declare", "esp32.forget", "esp32.targets"])
-        self.assertEqual(names({"wiring", "esp32"}), ["esp32.declare", "esp32.forget", "esp32.identify", "esp32.targets"])
-        self.assertEqual(names(ALL), ["esp32.declare", "esp32.flash", "esp32.forget", "esp32.identify", "esp32.targets"])
+        self.assertEqual(names({"wiring", "esp32"}), ["esp32.declare", "esp32.forget", "esp32.identify", "esp32.reset",
+                                                       "esp32.targets"])
+        self.assertEqual(names(ALL), ["esp32.declare", "esp32.flash", "esp32.forget", "esp32.identify", "esp32.reset",
+                                      "esp32.targets"])
 
 
 if __name__ == "__main__":
