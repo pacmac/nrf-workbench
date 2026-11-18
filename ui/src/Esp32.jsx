@@ -38,6 +38,8 @@ export default function EspTargets({ commands, targets, native, error, onChanged
   const find = (name) => (commands || []).find((c) => c.name === name) || null;
   const declare = find("esp32.declare");
   const forget = find("esp32.forget");
+  const rename = find("esp32.rename");
+  const [renaming, setRenaming] = useState(null);                // {name, to}: the board whose name is being changed
   const identify = find("esp32.identify");
   const reset = find("esp32.reset");
   const wiring = find("wiring.show");
@@ -124,8 +126,28 @@ export default function EspTargets({ commands, targets, native, error, onChanged
                   {identify && <Button tone="quiet" disabled={pending || t.attached !== 1} title="Asks the chip what it is. This resets the board." onClick={() => act(identify, { target: t.name, bound_s: bound })} aria-label={`Identify ${t.name}`}>Identify</Button>}
                   {reset && <Button tone="quiet" disabled={pending || t.attached !== 1} title="Resets the board to run its application" onClick={() => act(reset, { target: t.name, mode: "run", bound_s: bound })} aria-label={`Reset ${t.name}`}>Reset</Button>}
                   {reset && <Button tone="quiet" disabled={pending || t.attached !== 1} title="Resets the board and holds it in its ROM download mode" onClick={() => act(reset, { target: t.name, mode: "bootloader", bound_s: bound })} aria-label={`Hold ${t.name} in bootloader`}>Hold in bootloader</Button>}
+                  {rename && <Button tone="quiet" disabled={pending} onClick={() => setRenaming({ name: t.name, to: t.name })} aria-label={`Rename ${t.name}`}>Rename</Button>}
                   {forget && <Button tone="quiet" disabled={pending} onClick={() => act(forget, { name: t.name })} aria-label={`Forget ${t.name}`}>Forget</Button>}
                 </div>
+                {renaming && renaming.name === t.name && (
+                  <form
+                    className="basis-full space-y-2 border-t border-slate-200 pt-2 dark:border-slate-800"
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      const r = await run(writeJson(rename.path, { name: t.name, new_name: renaming.to.trim() }));
+                      if (r && r.ok) setRenaming(null);
+                    }}
+                  >
+                    <Field label={`New name for ${t.name}`} hint="The board, its adapter and its settings stay as they are. Its console log is kept under the old name.">
+                      <input className={inputClass} type="text" value={renaming.to} onChange={(e) => setRenaming({ name: t.name, to: e.target.value.toLowerCase() })} aria-label={`New name for ${t.name}`} autoComplete="off" spellCheck="false" />
+                    </Field>
+                    <SlugNote value={renaming.to} />
+                    <div className="flex gap-2">
+                      <Button type="submit" disabled={pending || !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(renaming.to.trim()) || renaming.to.trim() === t.name}>Save name</Button>
+                      <Button tone="quiet" onClick={() => setRenaming(null)}>Cancel</Button>
+                    </div>
+                  </form>
+                )}
               </li>
             ))}
           </ul>

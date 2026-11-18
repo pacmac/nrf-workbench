@@ -497,6 +497,25 @@ class Console(Base):
             with self.assertRaises(UsageError, msg=str(baud)):
                 self.call("esp32.declare", {"name": "p", "slot": "1-2", "baud": baud})
 
+    def test_renaming_keeps_the_adapter_and_settings_and_moves_the_console_link_to_the_new_name(self):
+        self.call("esp32.declare", {"name": "bench-esp", "serial": SERIAL, "baud": 460800})
+        res = self.call("esp32.rename", {"name": "bench-esp", "new_name": "timercam"})
+        self.assertEqual((res.ok, res.data), (True, {"name": "timercam", "was": "bench-esp"}))
+        (t,) = self.call("esp32.targets").data["targets"]
+        self.assertEqual((t["name"], t["key"], t["key_kind"], t["baud"], t["attached"]), ("timercam", SERIAL, "serial", 460800, 1))
+        self.assertEqual([(l.name, l.baud, l.usable) for l in self.host.console.links], [("timercam", 460800, True)])
+        self.assertTrue(self.call("esp32.flash", self.flash_args(self.put(merged()), target="timercam")).ok, "the new name is the one a flash takes")
+        self.assertEqual(self.call("esp32.flash", self.flash_args(self.put(merged(seed=9)), target="bench-esp")).code, "target_unknown")
+
+    def test_a_rename_that_cannot_be_done_says_why_and_changes_nothing(self):
+        self.declare()
+        self.call("esp32.declare", {"name": "other", "slot": "1-2"})
+        self.assertEqual(self.call("esp32.rename", {"name": "nope", "new_name": "x"}).code, "target_unknown")
+        self.assertEqual(self.call("esp32.rename", {"name": "bench-esp", "new_name": "other"}).code, "name_taken")
+        with self.assertRaises(UsageError):
+            self.call("esp32.rename", {"name": "bench-esp", "new_name": "Bad Name"})
+        self.assertEqual([t["name"] for t in self.call("esp32.targets").data["targets"]], ["bench-esp", "other"])
+
     def test_forgetting_a_target_takes_its_link_away(self):
         self.declare()
         self.call("esp32.forget", {"name": "bench-esp"})
@@ -552,11 +571,11 @@ class Registration(Base):
     def test_commands_appear_only_with_what_they_need(self):
         names = lambda caps: [c.name for c in self.reg.commands(caps) if c.name.startswith("esp32.")]  # noqa: E731
         self.assertEqual(names(set()), [])
-        self.assertEqual(names({"wiring"}), ["esp32.declare", "esp32.forget", "esp32.targets"])
-        self.assertEqual(names({"wiring", "esp32"}), ["esp32.declare", "esp32.forget", "esp32.identify", "esp32.reset",
-                                                       "esp32.targets"])
+        self.assertEqual(names({"wiring"}), ["esp32.declare", "esp32.forget", "esp32.rename", "esp32.targets"])
+        self.assertEqual(names({"wiring", "esp32"}), ["esp32.declare", "esp32.forget", "esp32.identify", "esp32.rename",
+                                                       "esp32.reset", "esp32.targets"])
         self.assertEqual(names(ALL), ["esp32.declare", "esp32.decode", "esp32.flash", "esp32.forget", "esp32.identify",
-                                      "esp32.reset", "esp32.targets"])
+                                      "esp32.rename", "esp32.reset", "esp32.targets"])
         self.assertEqual(names({"firmware_store"}), ["esp32.decode"], "decoding needs the store and no esptool")
         rows = dict((c.name, c) for c in self.reg.commands(ALL))
         self.assertEqual(rows["esp32.decode"].effect, "write", "a 128 KiB dump cannot travel in a query string, so it is a POST")

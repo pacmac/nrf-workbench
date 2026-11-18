@@ -93,6 +93,23 @@ def _declare(ctx, name, serial=None, slot=None, baud=None):
     return Result.success({"name": name, "key": key, "key_kind": kind, "baud": baud}, "declared")
 
 
+def _rename(ctx, name, new_name):
+    host = ctx.host
+    if not targets.NAME.match(new_name or ""):
+        raise UsageError("a target name is 1 to 64 characters from a-z 0-9 . _ - starting with a letter or a digit", "new_name")
+    try:
+        outcome = _store(host).rename(name, new_name)
+        if outcome == "ok":
+            _apply(host)                 # the console link is named like the target: the old one goes and the new one is made
+    except (targets.jsonstore.StoreError, OSError) as exc:
+        return _failed(exc)
+    if outcome == "unknown":
+        return Result.refused("target_unknown", "no target has that name", {"name": name})
+    if outcome == "taken":
+        return Result.refused("name_taken", "a target already has the name %s" % new_name, {"name": new_name})
+    return Result.success({"name": new_name, "was": name}, "renamed")
+
+
 def _forget(ctx, name):
     host = ctx.host
     try:
@@ -227,6 +244,11 @@ def register(registry, host):
                       Arg("slot", required=False, doc="the adapter's sysfs port name, such as 1-1.3"),
                       Arg("baud", type="int", required=False, doc="the board's console rate; default 115200")),
                 requires=WIRING, effect="write", result="name, key, key_kind, baud"))
+    add(Command("esp32.rename", "Give a declared ESP32 target another name. Its adapter, baud and settings stay; its console link "
+                "takes the new name, and the log kept under the old name stays with the old name.", _rename,
+                args=(Arg("name", doc="the target's current name"),
+                      Arg("new_name", doc="1 to 64 characters from a-z 0-9 . _ - starting with a letter or a digit")),
+                requires=WIRING, effect="write", result="name (the new one), was"))
     add(Command("esp32.forget", "Forget a declared ESP32 target and its console link.", _forget,
                 args=(Arg("name", doc="the target's name"),), requires=WIRING, effect="write", result="name"))
     add(Command("esp32.flash", "Flash a stored ESP32 package to a declared target with esptool, verify every part, and "

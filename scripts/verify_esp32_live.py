@@ -194,6 +194,21 @@ def run(browser, theme, size, shots):
               console_during == "held" and bench.host.console.state("bench-esp")["state"] == "open", (console_during, bench.host.console.state("bench-esp")["state"]))
         shot("5-flashed")
 
+        # rename: the name is the person's label, changed in place, and the console link follows it
+        card.get_by_role("button", name="Rename bench-esp").click()
+        field = card.get_by_label("New name for bench-esp")
+        field.fill("TimerCam")
+        check("%s the new name is lower-cased as it is typed" % tag, field.input_value() == "timercam")
+        card.get_by_role("button", name="Save name").click()
+        card.get_by_role("list", name="ESP32 boards").get_by_text("timercam").wait_for()
+        names = [s["name"] for s in bench.host.console.states()]
+        check("%s renaming moved the console link to the new name and kept the adapter" % tag,
+              names == ["timercam"] and bench.host.console.state("timercam")["adapter"]["slot"] == "1-2", names)
+        card.get_by_role("button", name="Rename timercam").click()
+        card.get_by_label("New name for timercam").fill("bench-esp")
+        card.get_by_role("button", name="Save name").click()
+        card.get_by_role("list", name="ESP32 boards").get_by_text("bench-esp").wait_for()
+
         # identify and reset
         row = card.get_by_role("list", name="ESP32 boards")
         row.get_by_role("button", name="Identify bench-esp").click()

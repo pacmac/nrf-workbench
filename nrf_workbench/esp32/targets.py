@@ -47,6 +47,18 @@ class TargetStore(object):
         records[name] = {"key": key, "key_kind": key_kind, "ids": ids, "baud": baud}
         jsonstore.write_map(self.path, KEY, records)
 
+    def rename(self, name, new_name):
+        """'unknown' if `name` is not a target, 'taken' if `new_name` is, else 'ok'. One atomic write: the record keeps its
+        adapter, ids and baud, and only its key in the map changes."""
+        records = jsonstore.read_map(self.path, KEY)
+        if name not in records:
+            return "unknown"
+        if new_name in records and new_name != name:
+            return "taken"
+        records[new_name] = records.pop(name)
+        jsonstore.write_map(self.path, KEY, records)
+        return "ok"
+
     def remove(self, name):
         records = jsonstore.read_map(self.path, KEY)
         if name not in records:
