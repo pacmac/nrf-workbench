@@ -435,3 +435,20 @@ The `MEASURE` step in the `guards` task is what fills them in. **[derive rule]**
 - **Done 2026-11-16:** all 29 wheels resolve for aarch64 on CPython 3.10, 3.11 and 3.13.
 - **Still unrun:** the stack actually starting on a physical Pi (wheels resolving is not running),
   and the SDK's stdio and streamable-HTTP transports. **[unknown]** until run on the bench Pi.
+
+## TOOL published for a client that has never seen it (added 2026-11-18)
+
+Peter: "we do not publish the api and any connected agent has no idea how to use this workbench". The `device` session had
+`GET /api/capabilities` and nothing to say how to call anything: `/api/gpio`, `/api/openapi.json` and the rest 404ed, and
+nothing said the real routes are `/api/<area>/<command>`. The service now describes itself, **generated from the registry**
+(`nrf_workbench/api/docs.py`) so it cannot disagree with what it does:
+
+| route | what | access |
+|---|---|---|
+| `GET /api` and `/api/` | a small JSON map: how to call, where the rest is, the commands by area | as a read |
+| `GET /api/guide` | one markdown page for an agent reading cold: connect and auth, the three call shapes, the Result and what each class means, the rules that shape a call (serial identity, supplied bounds, one attempt, receive-only), every result code with its class and HTTP status, every command present with its route, effect, arguments (type, required, unit), returned data, a curl example, the CLI and MCP names, the commands this host lacks and what each needs, the live-data routes, and a first session | as a read |
+| `GET /api/openapi.json` | OpenAPI 3.1 for the present commands (query parameters for a read, a JSON body for a write, an octet-stream body for an upload) | as a read |
+| `GET /llms.txt` | a pointer to the guide, public, naming nothing of the host | none |
+
+An unknown `/api/...` path is a 404 whose body adds `see`, pointing at the guide. The result-code table is built from
+`core.status`, not copied. Tests: `tests/api/test_docs.py` (13 tests, 8 mutants caught).

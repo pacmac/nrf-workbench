@@ -22,13 +22,13 @@ import time
 import anyio
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Route, WebSocketRoute
 
 from ..core import status
 from ..core.events import Streams
 from ..core.registry import Context, UnknownCommand, UsageError, http_path
-from . import feed
+from . import docs, feed
 from .body import RequestBody
 
 log = logging.getLogger("nrf_workbench.api")
@@ -183,7 +183,38 @@ def build_app(registry, host, auth, capabilities, streams=None, extra_routes=())
                   for c in registry.commands() if registry.unmet(c, capabilities)]
         return JSONResponse({"present": sorted(capabilities), "absent": absent})
 
-    routes = [Route("/api/commands", list_commands, methods=["GET"]),
+    def _base(request):
+        return str(request.base_url).rstrip("/")
+
+    async def api_index(request):
+        allowed, _caller = auth.authorise(request.headers, "read")
+        if not allowed:
+            return _unauthorized()
+        return JSONResponse(docs.index(registry, capabilities))
+
+    async def api_openapi(request):
+        allowed, _caller = auth.authorise(request.headers, "read")
+        if not allowed:
+            return _unauthorized()
+        doc = docs.openapi(registry, capabilities)
+        doc["servers"] = [{"url": _base(request)}]
+        return JSONResponse(doc)
+
+    async def api_guide(request):
+        allowed, _caller = auth.authorise(request.headers, "read")
+        if not allowed:
+            return _unauthorized()
+        return PlainTextResponse(docs.guide(registry, capabilities, _base(request)), media_type="text/markdown; charset=utf-8")
+
+    async def llms_txt(request):
+        return PlainTextResponse(docs.LLMS_TXT, media_type="text/plain; charset=utf-8")     # a pointer: public, names nothing of the host
+
+    routes = [Route("/api", api_index, methods=["GET"]),
+              Route("/api/", api_index, methods=["GET"]),
+              Route("/api/guide", api_guide, methods=["GET"]),
+              Route("/api/openapi.json", api_openapi, methods=["GET"]),
+              Route("/llms.txt", llms_txt, methods=["GET"]),
+              Route("/api/commands", list_commands, methods=["GET"]),
               Route("/api/capabilities", list_capabilities, methods=["GET"]),
               Route("/api/streams", get_streams, methods=["GET"]),
               Route("/api/activity", get_activity, methods=["GET"])]
@@ -198,6 +229,10 @@ def build_app(registry, host, auth, capabilities, streams=None, extra_routes=())
         routes.append(Route(http_path(command.name), make_endpoint(command), methods=[method]))
 
     async def http_error(request, exc):
-        return _error(exc.status_code, "http", exc.detail)
+        extra = {}
+        if exc.status_code == 404 and request.url.path.startswith("/api"):
+            # a client that guessed a route is told where the real ones are listed, not left with a bare "Not Found"
+            extra["see"] = "GET /api/guide explains every call; GET /api/commands lists them; routes are /api/<area>/<command>"
+        return _error(exc.status_code, "http", exc.detail, **extra)
 
     return Starlette(routes=routes, exception_handlers={HTTPException: http_error})
