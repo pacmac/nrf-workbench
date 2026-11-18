@@ -129,7 +129,15 @@ chip with auto-reset may take longer, so the formula stays until a second board 
 first (`DEBUG_TEST_READY`): the port is reopened after esptool returns, and the board had already printed it. The log keeps its
 offsets, so nothing is mis-numbered; the opening lines are simply not there. Not fixed.
 
-**Still unmeasured:** a bridge-chip board (CP210x/CH340), whether opening the console resets one, and `addr2line` timing.
+**A bridge-chip board, the same day (n = 1):** an M5Stack TimerCam through an FTDI FT2232C/D adapter (`0403:6001`, product
+"M5stack", serial `5D52ADF916`, unique; `/dev/ttyUSB0`). It was "not recognised" until `identity._tty_entries` was fixed: a
+usb-serial adapter's class entry is `<dev>:1.0/ttyUSB0/tty/ttyUSB0`, four levels down, and the walk stopped at four.
+`esp32.identify` then read an ESP32-D0WDQ6-V3 revision v3.0, MAC `78:21:84:a6:dd:74`, so DTR/RTS reach EN and IO0 on this
+adapter and esptool's reset works. **Reopening the console three times did not reset the board** (its boot banner appeared
+once and the log did not grow), so the kernel's DTR/RTS raise at open is harmless on this adapter, as expected for a single
+request that raises both. Not flashed: it runs someone's firmware.
+
+**Still unmeasured:** CP210x and CH340 adapters, a flash through a bridge chip, and `addr2line` timing.
 
 ## Files this spec allows
 
