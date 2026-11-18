@@ -44,7 +44,7 @@ def merged(extra=0, seed=0):
     return bytes(data)
 
 
-def bundle(files=None, args=None, elf="app.elf", extra=None):
+def bundle(files=None, args=None, elf="app.elf", extra=None, elf_bytes=b"ELF"):
     files = files if files is not None else {"0x1000": "bootloader.bin", "0x8000": "partitions.bin", "0x10000": "app.bin"}
     body = {"flash_files": files, "extra_esptool_args": {"chip": "esp32"}}
     if elf:
@@ -56,7 +56,7 @@ def bundle(files=None, args=None, elf="app.elf", extra=None):
         for name in set(files.values()):
             z.writestr(zipfile.ZipInfo(name, (2020, 1, 1, 0, 0, 0)), b"\x01" * 64)
         if elf:
-            z.writestr(zipfile.ZipInfo(elf, (2020, 1, 1, 0, 0, 0)), b"ELF")
+            z.writestr(zipfile.ZipInfo(elf, (2020, 1, 1, 0, 0, 0)), elf_bytes)
         for name, data in (extra or {}).items():
             z.writestr(name, data)
     return buf.getvalue()
@@ -555,8 +555,9 @@ class Registration(Base):
         self.assertEqual(names({"wiring"}), ["esp32.declare", "esp32.forget", "esp32.targets"])
         self.assertEqual(names({"wiring", "esp32"}), ["esp32.declare", "esp32.forget", "esp32.identify", "esp32.reset",
                                                        "esp32.targets"])
-        self.assertEqual(names(ALL), ["esp32.declare", "esp32.flash", "esp32.forget", "esp32.identify", "esp32.reset",
-                                      "esp32.targets"])
+        self.assertEqual(names(ALL), ["esp32.declare", "esp32.decode", "esp32.flash", "esp32.forget", "esp32.identify",
+                                      "esp32.reset", "esp32.targets"])
+        self.assertEqual(names({"firmware_store"}), ["esp32.decode"], "decoding needs the store and no esptool")
 
 
 if __name__ == "__main__":

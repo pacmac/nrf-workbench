@@ -92,10 +92,21 @@ leaves the usual auto-reset circuit idle, but no board has been measured.
 
 ## Crash decoding (slice 3)
 
-`esp32.decode(firmware, text)` finds `Backtrace:` lines (and the `PC`/`EXCVADDR` forms) in `text`, runs the
-toolchain's `addr2line` against the ELF in the stored bundle, and returns each address with function, file
-and line. The toolchain is found from `chip`; missing is `capability_missing` naming it. The console page
-offers it on a selected block of lines.
+**Built.** `esp32.decode(firmware, text)` finds the addresses in `text`: the PC of each `PC:SP` pair on a
+`Backtrace:` line, and the `PC`, `MEPC` and `RA` of a panic header, in the order printed and once each, at most 128
+(`truncated` says so). It resolves each against the ELF in the stored bundle, from two sources:
+
+1. **the ELF's own symbol table**, read in pure Python (ELF32 little-endian, which is every ESP32 family): the function
+   and the offset into it. It needs no toolchain, which the bench Pi does not have. Checked against `nm` on a real
+   ESP32 ELF from the upstream debug-test build: 1064 functions parsed in 2 ms, addresses equal to `nm`'s.
+2. **`addr2line` of the chip's toolchain, when it is on the PATH** (`xtensa-esp32{,s2,s3}-elf-addr2line`, or
+   `riscv32-esp-elf-addr2line` for the C and H parts): the file and line. A run that fails or hangs is ignored whole,
+   and the symbol-table answers stand. **[unknown]**: nobody has timed it; the 10 s bound only catches a hang.
+
+A firmware with no ELF (an app-only image, an nRF package, a bundle whose `app_elf` is absent) is refused
+`bad_package`, as is a stripped ELF. `text` is at most 128 KiB (1024 bytes a console line times 128 frames) and the ELF
+at most 64 MiB. Addresses are used as printed: no return-address adjustment is made. The console page offers it on a
+selected block of lines (step 4).
 
 ## Files this spec allows
 

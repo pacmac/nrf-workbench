@@ -6,6 +6,10 @@ when asked; the console's port on that adapter is released for the run and reope
 one. `host.hooks`: `esp_runner` and `esp_tool` are the test seams, empty in production.
 """
 import contextlib
+import os
+import shutil
+import tempfile
+import zipfile
 
 from ..core.registry import Arg, Command, UsageError
 from ..core.result import Result
@@ -14,7 +18,7 @@ from ..guards.lock import DEFAULT_PATH
 from ..programmer import commands as programmer_commands
 from ..programmer import flash_file as ff
 from ..wiring import commands as wiring_commands
-from . import flash, targets
+from . import decode, flash, package, targets
 from .targets import Invalid, Refused
 
 WIRING = ("wiring",)
@@ -162,9 +166,53 @@ def _reset(ctx, target, mode, bound_s):
                                   proc=host.proc, lock_path=host.lock_path or DEFAULT_PATH, **_hooks(host))
 
 
+MAX_TEXT = 1024 * 128        # a console line is at most 1024 bytes (console.md) and a backtrace is at most 128 frames deep
+MAX_ELF_BYTES = 64 * 1024 * 1024    # four times the largest flash chip an ESP32 takes (16 MiB); a debug ELF is bigger than the image
+
+
+def _decode(ctx, firmware, text):
+    host = ctx.host
+    if not isinstance(text, str) or len(text) > MAX_TEXT:
+        raise UsageError("text is the crash dump, at most %d characters" % MAX_TEXT, "text")
+    store = programmer_commands._store(host)
+    verified = store.verify(firmware)
+    if not verified.ok:
+        return verified
+    sha, path, record = verified.data["id"], verified.data["path"], verified.data["record"]
+    if record.get("kind") != package.KIND_BUNDLE or not record.get("elf"):
+        return Result.refused("bad_package", "this firmware carries no ELF to decode against: upload a zip with "
+                              "flasher_args.json whose app_elf names it", {"firmware_id": sha})
+    info = package.inspect(path)
+    with zipfile.ZipFile(path) as z:
+        size = z.getinfo(info["elf_name"]).file_size
+        if size > MAX_ELF_BYTES:
+            return Result.refused("bad_package", "the ELF is %d bytes, over the %d this reads" % (size, MAX_ELF_BYTES),
+                                  {"firmware_id": sha})
+        work = tempfile.mkdtemp(prefix=".esp-decode-", dir=os.path.dirname(os.path.dirname(path)))
+        try:
+            elf = z.extract(info["elf_name"], work)
+            hooks = host.hooks or {}
+            out = decode.decode(text, elf, chip=record.get("chip"), runner=hooks.get("esp_runner", ff.default_runner),
+                                tool_hook=hooks.get("esp_addr2line"))
+        except decode.ElfError as exc:
+            return Result.refused("bad_package", "the ELF cannot be read: %s" % exc, {"firmware_id": sha})
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+    named = sum(1 for f in out["frames"] if f["function"])
+    return Result.success(dict(out, firmware_id=sha, chip=record.get("chip")),
+                          "%d address%s found, %d named" % (out["addresses"], "" if out["addresses"] == 1 else "es", named))
+
+
 def register(registry, host):
     def add(command):
         registry.add(command, module=__name__)
+
+    add(Command("esp32.decode", "Turn the addresses in a crash dump (a Backtrace line, or PC, MEPC and RA) into functions, "
+                "using the ELF in a stored bundle; file and line too when the chip's addr2line is on the PATH.", _decode,
+                args=(Arg("firmware", doc="the id of the stored bundle that was flashed"),
+                      Arg("text", doc="the crash dump as the console printed it")),
+                requires=("firmware_store",), result="frames (address, function, offset, file, line, source), "
+                "addresses, truncated, tool, chip"))
 
     add(Command("esp32.targets", "The declared ESP32 targets, where each is attached now, its console, and built-in-USB "
                 "ESP32 devices nobody has declared. Opens no port.", _targets, requires=WIRING,
