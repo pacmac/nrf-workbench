@@ -30,7 +30,10 @@ def _absent(n):
 
 
 def _gate(host, n):
-    """None if the pin map says the bus's pins are claimed for I2C with a measured voltage, else the refusal. (docs/specs/i2c.md)"""
+    """None if the pin map says the bus's pins are claimed for I2C, else the refusal. (docs/specs/i2c.md)
+
+    No MEASURED voltage is asked: the Pi header is 3.3 V by design (and the pin map refuses a signal above 3.3 V), and the bus's
+    pull-ups are the Pi's own, to 3.3 V. That is unlike a USB serial adapter, whose 3.3 or 5 V is a jumper nobody can read."""
     pins = BUS_PINS.get(n)
     if pins is None:
         return Result.refused("i2c_pins_unclaimed", "bus %d has no known pins, so there is no claim to check" % n, {"bus": n})
@@ -38,11 +41,10 @@ def _gate(host, n):
         held = dict((p["gpio"], p) for p in gpio_commands._store(host).list())
     except PinStoreError as exc:
         return _failed(exc)
-    # a pin record keeps the measured-voltage fact as voltage.verified (gpio/pinmap.py), whatever the argument was called
-    missing = [g for g in pins if not (held.get(g) and held[g]["service"] == SERVICE and held[g]["voltage"]["verified"] is True)]
+    missing = [g for g in pins if not (held.get(g) and held[g]["service"] == SERVICE)]
     if missing:
-        return Result.refused("i2c_pins_unclaimed", "bus %d uses BCM %s: each must be assigned (gpio.assign) with service %s and "
-                              "voltage_verified true before the bench talks on it; unclaimed: %s"
+        return Result.refused("i2c_pins_unclaimed", "bus %d uses BCM %s: each must be assigned (gpio.assign) with service %s "
+                              "before the bench talks on it; unclaimed: %s"
                               % (n, " and ".join(str(g) for g in pins), SERVICE, ", ".join(str(g) for g in missing)),
                               {"bus": n, "pins": list(pins), "unclaimed": missing})
     return None
@@ -128,7 +130,7 @@ def register(registry, host):
     add(Command("i2c.buses", "List the host's I2C buses (/dev/i2c-N) and the clock each runs at; says how to turn I2C on if there "
                 "are none. Opens nothing.", _buses, requires=I2C, result="buses (bus, node, name, clock_hz), i2c_enabled, to_enable"))
     add(Command("i2c.transfer", "One I2C transaction as master: write the bytes, then read N bytes after a repeated start. Either "
-                "part may be left out. Needs the bus's pins claimed for i2c with a measured voltage in the pin map.", _transfer,
+                "part may be left out. Needs the bus's pins assigned for i2c in the pin map.", _transfer,
                 args=(Arg("bus", type="int", doc="the bus number: 1 is the header's pins 3 (SDA) and 5 (SCL)"),
                       Arg("address", type="int", doc="the 7-bit device address, 8 to 119 (0x08 to 0x77)"),
                       Arg("write", required=False, doc="hex bytes to write, such as '0a ff'; at most 256"),

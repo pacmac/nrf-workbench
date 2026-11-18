@@ -120,7 +120,7 @@ returned, never a tail. **[brief]**
 | `intent_not_built` | refused | a wiring connection of a kind that is not built yet (only the debug log is) | the intent |
 | `connection_unknown` | refused | a wiring change or disconnect of a name that does not exist | the name |
 | `target_unknown` | refused | an ESP32 command naming a target that is not declared | the name |
-| `i2c_pins_unclaimed` | refused | an I2C transfer or scan on a bus whose pins the pin map does not hold with service `i2c` and a measured voltage (or a bus with no known pins) | the bus, its pins, the unclaimed ones |
+| `i2c_pins_unclaimed` | refused | an I2C transfer or scan on a bus whose pins the pin map does not hold with service `i2c` (or a bus with no known pins) | the bus, its pins, the unclaimed ones |
 | `pin_reserved` | refused | a GPIO assignment to BCM 0 or 1, the HAT ID EEPROM's bus (`gpio.md`) | the gpio |
 | `pin_not_on_header` | refused | a GPIO assignment to a number that is not on the 40-pin header (0 to 27) | the gpio |
 | `pin_taken` | refused | that GPIO is already assigned to another name | the gpio, who holds it |

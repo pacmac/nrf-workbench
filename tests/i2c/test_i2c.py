@@ -219,18 +219,24 @@ class Gate(Base):
         self.assertIn("gpio.assign", res.message)
         self.assertEqual(self.host.calls, [])
 
-    def test_one_pin_claimed_the_wrong_service_and_an_unmeasured_voltage_are_each_refused(self):
+    def test_one_pin_claimed_and_the_wrong_service_are_each_refused(self):
         self.claim(2)
         self.assertEqual(self.transfer(read=1).evidence["unclaimed"], [3])
         self.claim(3, service="power", name="three")
         self.assertEqual(self.transfer(read=1).evidence["unclaimed"], [3], "a pin claimed for another service is not the bus's")
-        self.claim(3, verified=False, name="three")                          # the same name replaces its own assignment
-        self.assertEqual(self.transfer(read=1).evidence["unclaimed"], [3], "a voltage nobody measured is not a claim")
         self.assertEqual(self.host.calls, [])
 
-    def test_both_claimed_with_a_measured_voltage_lets_it_through(self):
-        self.claim_bus()
+    def test_both_claimed_lets_it_through_without_a_measured_voltage(self):
+        """The Pi's pins are 3.3 V by design (Peter, 2026-11-18): a measurement is asked of an adapter with a 3.3/5 V jumper, not of this."""
+        self.claim(2, verified=False)
+        self.claim(3, verified=False)
         self.assertTrue(self.transfer(read=2).ok)
+
+    def test_a_signal_above_3v3_cannot_be_assigned_at_all_so_it_can_never_be_a_claim(self):
+        res = self.call("gpio.assign", {"name": "x", "gpio": 2, "direction": "input", "service": "i2c", "action": "bus",
+                                        "purpose": "p", "active_low": False, "voltage_v": 5.0, "voltage_verified": True, "pull": "up"})
+        self.assertEqual((res.cls, res.code), ("refused", "voltage_unsafe"))
+        self.assertEqual(self.transfer(read=1).code, "i2c_pins_unclaimed")
 
     def test_a_bus_with_no_known_pins_is_refused(self):
         open(os.path.join(self.host.devroot, "i2c-5"), "w").close()

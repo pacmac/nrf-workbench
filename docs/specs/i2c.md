@@ -28,8 +28,11 @@ I2C command, and the Wiring page's I2C intent is "not built". Tags: **[stated]**
 - `i2c.scan(bus, first, last)` tries each address in the range with a one-byte read and returns those that acknowledged.
 
 **The gate.** A transfer or scan on bus 1 is refused `i2c_pins_unclaimed` unless the pin map holds assignments for BCM 2 **and** BCM 3
-with service `i2c` and `voltage_verified: true`. That is the pin-claim rule for pins, applied to a bus: the bench does not talk
-on a bus nobody has said the voltage of. A bus with no known pins is refused the same way. **[derived from "sending needs measured voltage"]**
+with service `i2c`. That is the pin-claim rule applied to a bus: the pins are said to belong to I2C, so nothing else is given them. A
+bus with no known pins is refused the same way. **No measured voltage is asked** (Peter, 2026-11-18: the Pi's GPIOs are 3.3 V): the
+header is 3.3 V by design, the bus's pull-ups are the Pi's own, to 3.3 V, and the pin map already refuses any signal above 3.3 V. That
+differs from a USB serial adapter, whose 3.3 or 5 V is a jumper nobody can read, which is why *its* sending needs a measurement.
+The first version of this gate asked for one anyway; that was the rule applied where its reason does not hold. **[derived]**
 
 **Outcomes.** The device not acknowledging (`ENXIO`/`EREMOTEIO`) is `no_reply`, failed, with the address and which part (write or
 read) it was; it is a result, not an error. A missing `/dev/i2c-N` is `node_absent`. The kernel's transfer timeout is set to 200 ms
@@ -47,9 +50,7 @@ on bus 1 was refused `i2c_pins_unclaimed` with BCM 2 and 3 named: the gate works
 A miss the Pi caught: the first version read bus names from `/sys/class/i2c-adapter`, which the fake tree had and the Pi does not; the
 real place is `/sys/class/i2c-dev/i2c-N`.
 
-**Not done, and why:** no real transfer. The gate needs BCM 2 and 3 assigned with service `i2c` and a **measured** voltage, and
-nobody has measured the TimerCAM's SDA and SCL idle level (Peter's "3.3 V" is a stated value, not a measurement). The bench does not
-claim a measurement for a person.
+**Not done:** the persistent config has not been through a reboot, and no real device has answered yet.
 
 ## Files this spec allows
 
