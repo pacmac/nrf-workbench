@@ -36,6 +36,7 @@ import tempfile
 import time
 
 from ..core.result import Result
+from ..esp32 import package as esp_package
 from ..guards import checks
 from .flash_file import expected_packets
 
@@ -46,6 +47,7 @@ DEFAULT_PROJECT = "unsorted"        # where a put that names no project goes; an
 _HEX = re.compile(r"^[0-9a-f]+$")
 _ENTRY_RECORD = re.compile(r"^[0-9a-f]{64}\.json$")
 _ENTRY_IMAGE = re.compile(r"^[0-9a-f]{64}\.zip$")
+IMAGE_EXTS = (".zip", ".bin")       # a whole-flash ESP image is stored as .bin: it is not a zip (docs/specs/esp32.md)
 # 1 to 64 characters from a-z 0-9 . _ - and the first a letter or a digit (docs/specs/firmware.md, "projects")
 _PROJECT = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
 
@@ -82,11 +84,16 @@ class Store(object):
     def _project_dir(self, project):
         return os.path.join(self.root, project)
 
-    def image_path(self, sha, project=None):
+    def image_path(self, sha, project=None, ext=None):
         """Where the image is (or would be, in `project`). With no project, the project that holds it; an
-        id the store does not hold gives a path that does not exist."""
+        id the store does not hold gives a path that does not exist. The extension is the one the stored
+        file has (`.bin` for a whole-flash ESP image, `.zip` for the rest); `ext` names it for a file not yet
+        written."""
         project = project or self._locate(sha) or DEFAULT_PROJECT
-        return os.path.join(self._project_dir(project), sha + ".zip")
+        base = os.path.join(self._project_dir(project), sha)
+        if ext is None:
+            ext = next((e for e in IMAGE_EXTS if os.path.exists(base + e)), ".zip")
+        return base + ext
 
     def _record_path(self, sha, project):
         return os.path.join(self._project_dir(project), sha + ".json")
@@ -302,10 +309,20 @@ class Store(object):
             if sha256 is not None and sha256 != digest:
                 return Result.refused("checksum_mismatch", "the SHA-256 sent is not that of the bytes received",
                                       {"sent": sha256, "received": digest})
-            refusal, info = checks.dfu_package({}, tmp)         # shape only: the SoftDevice is checked at flash
-            if refusal is not None:
-                refusal.evidence = dict(refusal.evidence, package="the uploaded file")
-                return refusal
+            esp_kind = esp_package.kind_of(tmp)
+            if esp_kind is not None:
+                try:
+                    info = esp_package.inspect(tmp)
+                except esp_package.Bad as exc:
+                    return Result.refused("bad_package", str(exc), {"package": "the uploaded file"})
+            else:
+                why = esp_package.single_part_message(tmp)
+                if why is not None:
+                    return Result.refused("bad_package", why, {"package": "the uploaded file"})
+                refusal, info = checks.dfu_package({}, tmp)     # shape only: the SoftDevice is checked at flash
+                if refusal is not None:
+                    refusal.evidence = dict(refusal.evidence, package="the uploaded file")
+                    return refusal
             with self._exclusive():                             # decide where it lives, and put it there, as one act
                 holder = self._locate(digest)
                 if holder is not None:
@@ -319,10 +336,17 @@ class Store(object):
                 refusal = self._make_project(project)
                 if refusal is not None:
                     return refusal
-                os.replace(tmp, self.image_path(digest, project))   # atomic: the same filesystem
+                ext = ".bin" if esp_kind == esp_package.KIND_IMAGE else ".zip"
+                os.replace(tmp, self.image_path(digest, project, ext))   # atomic: the same filesystem
                 record = {"sha256": digest, "bytes": got, "name": name, "uploaded_at": _iso(self._now()),
-                          "uploaded_by": uploaded_by, "image_bytes": info["image_bytes"],
-                          "softdevice_req": info["softdevice_req"], "packets": expected_packets(info["image_bytes"])}
+                          "uploaded_by": uploaded_by, "image_bytes": info["image_bytes"]}
+                if esp_kind is None:
+                    record.update(softdevice_req=info["softdevice_req"], packets=expected_packets(info["image_bytes"]))
+                else:
+                    # An ESP package has no SoftDevice and no DFU packets; `kind` is only written for it, so a
+                    # record without one is an nRF DFU package, as every record before this was.
+                    record.update(softdevice_req=None, packets=None, kind=esp_kind, parts=len(info["parts"]),
+                                  chip=info["chip"], elf=info["elf"])
                 self._write_record(digest, record, project)
                 self._fsync_dir(self._project_dir(project))
             return Result.success(dict(record, project=project, new=True), "stored")
@@ -447,7 +471,7 @@ class Store(object):
             if refusal is not None:
                 return refusal
             try:
-                os.link(old_image, os.path.join(dest, sha + ".zip"))
+                os.link(old_image, os.path.join(dest, sha + os.path.splitext(old_image)[1]))
             except FileExistsError:
                 pass                                            # a link a crash left: the same file
             os.replace(self._record_path(sha, old), self._record_path(sha, project))

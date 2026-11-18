@@ -362,7 +362,7 @@ class PrefixRules(unittest.TestCase):
 class Manifest(unittest.TestCase):
     def test_features(self):
         m = features.load(ROOT)
-        self.assertEqual(features.resolve(m, m["default"]), ["core", "flash", "console"])
+        self.assertEqual(features.resolve(m, m["default"]), ["core", "flash", "esp32", "console"])
         self.assertEqual(features.resolve(m, ["flash"]), ["core", "flash"], "dependencies come first")
         with self.assertRaises(features.FeatureError):
             features.resolve(m, ["swd"])

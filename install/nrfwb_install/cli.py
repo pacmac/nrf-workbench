@@ -31,7 +31,7 @@ def make_parser():
     p.add_argument("--check", action="store_true", help="show the preflight and the plan, change nothing")
     p.add_argument("--yes", action="store_true", help="with no terminal, accept only the SAFE defaults")
     p.add_argument("--prefix", help="install into this folder (no folder is assumed; required with no terminal)")
-    p.add_argument("--features", help="comma-separated: core,flash,console,build (default: core,flash,console)")
+    p.add_argument("--features", help="comma-separated: core,flash,esp32,console,build (default: core,flash,esp32,console)")
     p.add_argument("--ref", default="main", help="the commit, tag or branch (install.sh resolves it)")
     p.add_argument("--git", action="store_true", help="make a developer git checkout at the prefix")
     p.add_argument("--wheelhouse", help="install packages from this folder with no network")

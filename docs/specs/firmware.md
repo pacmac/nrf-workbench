@@ -19,6 +19,13 @@ names: `docs/specs/core.md` (the new result codes), `docs/specs/api.md` and
 follows once Peter has agreed it**, in `nrf_workbench/programmer/firmware_store.py` and the registry
 rows, with `tests/programmer/test_firmware_store.py`.
 
+## ESP32 packages
+
+The store also holds ESP32 packages (`docs/specs/esp32.md`, "Packages"): a whole-flash image, stored as
+`<sha256>.bin`, and a zip with ESP-IDF's `flasher_args.json`, stored as `<sha256>.zip`. Their record has
+`kind`, `parts`, `chip` and `elf`, `softdevice_req` and `packets` are null, and a record without `kind` is an
+nRF DFU package, as every record was before. They are flashed by `esp32.flash`, never by `programmer.flash`.
+
 ## Status
 
 **Built and tested, 2026-11-16 (Peter: "go"):** the store library, `nrf_workbench/programmer/firmware_store.py`

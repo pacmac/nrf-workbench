@@ -37,6 +37,8 @@ from .dashboard import server as dashboard_server
 from .devices import commands as device_commands
 from .devices import profile as profilemod
 from .devices.monitor import DeviceMonitor
+from .esp32 import commands as esp32_commands
+from .esp32 import flash as esp32_flash
 from .gpio import commands as gpio_commands
 from .wiring import commands as wiring_commands
 from .wiring import detect as wiring_detect
@@ -120,6 +122,9 @@ def capabilities(host):
     # The wiring commands need only their folder: a USB adapter works on any host.
     if host.config["paths"]["wiring"]:
         caps.add("wiring")
+        # esptool is what writes an ESP32; declaring a target and listing them need only the folder.
+        if host.hooks.get("esp_tool") or esp32_flash.find_tool():
+            caps.add("esp32")
     # The pin map needs its folder AND a Raspberry Pi: a gpiochip is not evidence of a Pi header (core.md; the Proxmox
     # host has one and is not a Pi), so the device tree's own model decides. Elsewhere the commands are absent.
     if host.config["paths"]["gpio"] and is_raspberry_pi(host.proc):
@@ -150,6 +155,7 @@ def build_host(cfg, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
     console_commands.register(registry, host)
     gpio_commands.register(registry, host)
     wiring_commands.register(registry, host)
+    esp32_commands.register(registry, host)
     caps = capabilities(host)
     if "console" in caps:
         if cfg["paths"]["wiring"]:
