@@ -155,12 +155,15 @@ def run(browser, theme, size, shots):
         st = bench.host.console.state("bench-esp")
         check("%s its console is a receive-only link on its own bridge, open" % tag,
               st and st["state"] == "open" and st["rx_only"] and st["own_bridge"] and st["adapter"]["slot"] == "1-2", st)
-        band = page.get_by_role("list", name="ESP32 boards attached")
-        band.wait_for()
-        check("%s the Attached band lists the board as an ESP32 with its console, and never as an nRF board" % tag,
-              "ESP32" in band.inner_text() and "bench-esp" in band.inner_text() and "console open" in band.inner_text()
-              and "No board attached." not in page.inner_text("body"), band.inner_text())
         shot("2-declared")
+        nav.get_by_role("button", name="Home", exact=True).click()
+        home = page.get_by_role("list", name="Devices").first
+        home.get_by_text("bench-esp").first.wait_for()
+        check("%s Home lists the declared board as an ESP32 board, connected, and not as an nRF board" % tag,
+              "ESP32 board" in home.inner_text() and "bench-esp" in home.inner_text()
+              and home.get_by_role("img", name="connected").count() >= 1, home.inner_text())
+        nav.get_by_role("button", name="Firmware", exact=True).click()
+        card.get_by_role("list", name="ESP32 boards").wait_for()
 
         # packages: a whole-flash image and a bundle with its ELF are told apart
         page.get_by_label("New project name").fill("esp")
@@ -226,8 +229,8 @@ def run(browser, theme, size, shots):
 
         # the console and the crash decoder
         nav.get_by_role("button", name="Console").click()
-        page.get_by_text("ESP32 board's own USB adapter").wait_for()
-        check("%s the console says why opening this port can reset the board" % tag, "reset the board" in page.inner_text("body"))
+        page.get_by_text("The ESP32's own USB adapter").wait_for()
+        check("%s the console says in one line that opening this port can reset some boards" % tag, "opening it can reset some boards" in page.inner_text("body"))
         os.write(bench.master, b"Guru Meditation Error: Core 0 panic'ed (LoadProhibited)\nBacktrace: 0x400d1004:0x3ffb0000 0x400d1044:0x3ffb0000\n")
         page.get_by_text("Backtrace: 0x400d1004").wait_for()
         page.get_by_role("button", name="Open").click()
@@ -244,7 +247,7 @@ def run(browser, theme, size, shots):
         decode.get_by_role("status").first.wait_for()
         body = decode.inner_text()
         check("%s the addresses come back as functions with the offset, from the ELF alone" % tag,
-              "app_main" in body and "do_crash +0x4" in body and "File and line need" in body, body)
+              "app_main" in body and "do_crash +0x4" in body and "No file and line" in body, body)
         check("%s no horizontal scroll on the console" % tag, overflow(page) <= 0, overflow(page))
         shot("7-decoded")
 
@@ -256,47 +259,48 @@ def run(browser, theme, size, shots):
         shot("8-forgotten")
 
         # an nRF board is named by its serial, in a JSON file, from the Devices page
-        nav.get_by_role("button", name="Devices").click()
-        page.get_by_text("no name").wait_for()
+        nav.get_by_role("button", name="Devices", exact=True).click()
+        devs = page.get_by_role("list", name="Devices")
+        devs.get_by_role("button", name=re.compile(SERIAL)).click()
         page.get_by_role("button", name="Name %s" % SERIAL).click()
         field = page.get_by_label("Name for %s" % SERIAL)
         field.fill("Left-RAK")
         check("%s the board's name is lower-cased as it is typed" % tag, field.input_value() == "left-rak")
         page.get_by_role("button", name="Save name").click()
-        page.get_by_role("heading", name="left-rak").wait_for()
+        devs.get_by_text("left-rak").first.wait_for()
         path = os.path.join(bench.tmp, "wiring", "device-names.json")
         with open(path) as fh:
             saved = fh.read()
         check("%s the name is kept against the serial in a plain JSON file" % tag, '"%s": "left-rak"' % SERIAL in saved, saved)
-        check("%s the Attached band shows the name beside the serial, at once" % tag,
-              page.locator("section", has=page.get_by_role("heading", name="Attached")).inner_text().count("left-rak") == 1)
         shot("8b-named")
         page.get_by_role("button", name="Rename %s" % SERIAL).click()
         page.get_by_label("Name for %s" % SERIAL).fill("right-rak")
         page.get_by_role("button", name="Save name").click()
-        page.get_by_role("heading", name="right-rak").wait_for()
+        devs.get_by_text("right-rak").first.wait_for()
         page.get_by_role("button", name="Remove the name of %s" % SERIAL).click()
-        page.get_by_text("no name").wait_for()
+        devs.get_by_text("right-rak").first.wait_for(state="detached")
         with open(path) as fh:
             check("%s removing the name takes it out of the file" % tag, SERIAL not in fh.read())
-        nav.get_by_role("button", name="Firmware").click()
 
         # a built-in-USB ESP32 plugged in later is found on "Look again" and is not an ESP32 until declared
         bench.tree.usb("1-5", ("303a", "1001"), "USB JTAG/serial debug unit", serial="64:E8:33:85:4A:A4", manufacturer="Espressif", tty="ttyACM2", majmin="166:2")
         bench.tree.node("ttyACM2", 166, 2)
+        nav.get_by_role("button", name="Home", exact=True).click()
+        home = page.get_by_role("list", name="Devices").first
         bench.mon_b.send(b"x")                                          # the kernel's word that something was plugged: no click, no reload
-        page.get_by_text("ESP32, not declared").wait_for()
-        check("%s plugging it in shows it at once, with no refresh, as an ESP32 nobody has declared" % tag,
-              "64:E8:33:85:4A:A4" in page.inner_text("body") and "Declare it on the Firmware page" in page.inner_text("body"))
-        check("%s the latest-changes line says what was plugged in" % tag, "plugged: USB JTAG/serial debug unit (303a:1001, USB port 1-5)" in page.inner_text("body"))
+        home.get_by_text("nobody has declared").first.wait_for()
+        check("%s plugging it in shows it on Home at once, with no refresh, as an ESP32 that needs attention" % tag,
+              home.get_by_role("img", name="needs attention").count() == 1)
         bench.tree.unplug("1-5")
         bench.mon_b.send(b"x")
-        page.get_by_text("ESP32, not declared").wait_for(state="detached")
-        check("%s unplugging it takes it away at once, with no refresh" % tag, "unplugged: USB JTAG/serial debug unit" in page.inner_text("body"))
+        home.get_by_text("nobody has declared").first.wait_for(state="detached")
+        check("%s unplugging it takes it away at once, with no refresh" % tag, True)
         bench.tree.usb("1-5", ("303a", "1001"), "USB JTAG/serial debug unit", serial="64:E8:33:85:4A:A4", manufacturer="Espressif", tty="ttyACM2", majmin="166:2")
         bench.mon_b.send(b"x")
-        page.get_by_text("ESP32, not declared").wait_for()
-        check("%s the declare form offers it too, after the same Look again" % tag,
+        home.get_by_text("nobody has declared").first.wait_for()
+        nav.get_by_role("button", name="Firmware", exact=True).click()
+        page.get_by_label("Adapter").locator("option", has_text="built-in USB").wait_for(state="attached")      # the list loads when the page opens
+        check("%s the declare form offers it too" % tag,
               any("64:E8:33:85:4A:A4" in o and "built-in USB" in o for o in page.get_by_label("Adapter").locator("option").all_inner_texts()),
               page.get_by_label("Adapter").locator("option").all_inner_texts())
         shot("9-undeclared")

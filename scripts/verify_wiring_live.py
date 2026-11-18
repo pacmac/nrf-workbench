@@ -108,7 +108,8 @@ def run(browser, bench, theme, size, shots, first):
     nav.get_by_role("button", name="Wiring").click()
     page.get_by_role("group", name="Devices").wait_for()
     check("%s live: no sample banner, and it says what is built" % tag,
-          page.get_by_role("note").filter(has_text="Preview.").count() == 0 and "Built so far: read its debug log" in page.inner_text("body"))
+          page.get_by_role("note").filter(has_text="Preview.").count() == 0 and page.get_by_role("button", name="Help: Wiring").count() == 1
+          and "Built so far" not in page.inner_text("body"))
     cards = page.get_by_role("group", name="Devices").get_by_role("button")
     check("%s live: the real board is the one device card" % tag, cards.count() == 1 and SERIAL[:4] in cards.first.inner_text(), cards.all_inner_texts())
     box = page.get_by_role("group", name=re.compile("USB Single Serial is plugged in but not connected"))

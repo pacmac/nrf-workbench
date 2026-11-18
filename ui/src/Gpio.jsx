@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { readJson, writeJson } from "./api.js";
 import { PROJECT_NAME, PROJECT_RULE_TEXT } from "./format.js";
-import { Button, Card, Chip, Field, SlugNote, inputClass } from "./ui.jsx";
+import { Button, Card, Chip, Field, PageHeader, SlugNote, inputClass } from "./ui.jsx";
 import { ResultView } from "./Commands.jsx";
 
 // The GPIO pin map (docs/specs/dashboard.md, "The GPIO page"). It records which header pin is assigned to which
@@ -97,7 +97,7 @@ function PinCell({ row, selected, onPick }) {
   );
 }
 
-export default function Gpio({ commands, onDone }) {
+export default function Gpio({ commands, overview, onDone }) {
   const find = (name) => (commands || []).find((c) => c.name === name) || null;
   const headerCmd = find("gpio.header");
   const pinsCmd = find("gpio.pins");
@@ -170,21 +170,20 @@ export default function Gpio({ commands, onDone }) {
   }
 
   if (commands && !headerCmd) return null;
-  if (rows === null) return <Card title="GPIO"><p role="status" className="text-sm">Loading the header…</p></Card>;
+  if (rows === null) return <div className="space-y-4"><PageHeader title="GPIO" topic="pins" /><p role="status" className="text-[13px] text-slate-600 dark:text-slate-400">Loading the header…</p></div>;
 
   const held = new Map(pins.map((p) => [p.gpio, p.name]));
-  const table = rows.map((r) => ({ ...r, assigned: r.gpio !== null ? held.get(r.gpio) || null : null }));
+  // A pin a wiring connection holds (the Pi's serial port, say) is not free, even though the pin map has no assignment for it.
+  const wired = new Map(((overview && overview.data && overview.data.header) || []).filter((r) => r.holder_kind === "connection").map((r) => [r.gpio, r.holder]));
+  const table = rows.map((r) => ({ ...r, assigned: r.gpio !== null ? held.get(r.gpio) || wired.get(r.gpio) || null : null }));
   const left = table.filter((r) => r.pin % 2 === 1);
   const right = table.filter((r) => r.pin % 2 === 0);
 
   return (
     <div className="space-y-4">
-      <Card title="GPIO">
-        {error && <p role="note" className="mb-3 rounded-lg bg-amber-100 p-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">The pin map could not be read ({error}).</p>}
-        <p className="mb-3 text-sm text-slate-700 dark:text-slate-300">
-          The Pi&apos;s 40-pin header as it is on the board, pin 1 at the top. This records which pin is for which service and action;
-          it does not drive or read any pin.
-        </p>
+      <PageHeader title="GPIO" topic="pins" />
+      <Card>
+        {error && <p role="note" className="mb-3 rounded-md bg-amber-100 p-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">The pin map could not be read ({error}).</p>}
         <div className="grid grid-cols-2 gap-x-3 gap-y-1" role="group" aria-label="40-pin header">
           {left.map((l, i) => (
             <div key={l.pin} className="contents">

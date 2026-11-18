@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { readJson, writeFile, writeJson } from "./api.js";
-import { Button, Card, Chip, ClassBadge, Field, Json, inputClass } from "./ui.jsx";
+import { Button, Card, Chip, ClassBadge, Field, Json, PageHeader, cx, inputClass } from "./ui.jsx";
 
 // The Commands page is GENERATED from GET api/commands: one form per registry row, nothing written per
 // command. A new command appears here the moment the service registers it. Reads go to the row's path with a
@@ -30,9 +30,12 @@ function collect(command, values) {
   return sent;
 }
 
-function ArgInput({ arg, value, onChange }) {
+// An argument the bench can list gets quick picks under the box, one press to fill it. The typed value is still allowed, so a serial that is
+// not attached can still be sent and the service says why it refuses.
+function ArgInput({ arg, value, onChange, options }) {
   const label = arg.name + (arg.unit ? ` (${arg.unit})` : "") + (arg.required ? " *" : "");
   const hint = arg.doc + (!arg.required && arg.default !== null && arg.default !== undefined ? ` Default: ${arg.default}.` : "");
+  const picks = options && options.length ? options.slice(0, 12) : null;
   if (arg.type === "bool") {
     return (
       <label className="flex items-start gap-2 text-sm">
@@ -52,6 +55,16 @@ function ArgInput({ arg, value, onChange }) {
         onChange={(e) => onChange(e.target.value)}
         autoComplete="off"
       />
+      {picks && (
+        <span className="mt-1.5 flex flex-wrap gap-1.5" role="group" aria-label={`Choose ${arg.name}`}>
+          {picks.map((o) => (
+            <button key={o.value} type="button" onClick={(e) => { e.preventDefault(); onChange(o.value); }} aria-pressed={value === o.value} title={o.value}
+              className={cx("min-h-8 rounded-md px-2 text-[13px] font-medium", value === o.value
+                ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+                : "bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700")}>{o.label}</button>
+          ))}
+        </span>
+      )}
     </Field>
   );
 }
@@ -81,7 +94,7 @@ export function ResultView({ outcome, pendingText }) {
       {r.data != null && <Json value={r.data} />}
       {r.evidence != null && Object.keys(r.evidence).length > 0 && (
         <div>
-          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-600 dark:text-slate-400">Evidence</p>
+          <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-400">Evidence</p>
           <Json value={r.evidence} />
         </div>
       )}
@@ -89,7 +102,7 @@ export function ResultView({ outcome, pendingText }) {
   );
 }
 
-export function CommandForm({ command, preset, onDone }) {
+export function CommandForm({ command, preset, onDone, suggest }) {
   const [values, setValues] = useState(() => initial(command, preset));
   const [file, setFile] = useState(null);
   const [outcome, setOutcome] = useState(null);
@@ -116,7 +129,7 @@ export function CommandForm({ command, preset, onDone }) {
     <form onSubmit={run} className="space-y-3">
       <p className="text-sm">{command.summary}</p>
       {command.args.map((a) => (
-        <ArgInput key={a.name} arg={a} value={values[a.name]} onChange={(v) => setValues({ ...values, [a.name]: v })} />
+        <ArgInput key={a.name} arg={a} value={values[a.name]} onChange={(v) => setValues({ ...values, [a.name]: v })} options={suggest ? suggest(command, a) : null} />
       ))}
       {raw && (
         <Field label="File *" hint="The file itself is the request body; it is streamed, not copied through the page.">
@@ -135,40 +148,119 @@ export function CommandForm({ command, preset, onDone }) {
   );
 }
 
-export default function Commands({ commands, onDone }) {
-  const [open, setOpen] = useState(null);
+// Which values the bench can offer for an argument, from what it already knows (bench.overview) and, for a stored package, from
+// firmware.list. [] or null means a plain text box.
+function pickers(overview, packages) {
+  const data = overview && overview.data;
+  const devs = data ? data.devices : [];
+  const opt = (value, label) => ({ value, label: label && label !== value ? label : value });
+  const nrf = devs.filter((d) => d.kind === "nrf");
+  const esp = devs.filter((d) => d.kind === "esp32" && !d.undeclared);
+  const conns = data && data.connections ? data.connections : [];
+  const adapters = devs.filter((d) => d.kind === "adapter" && d.serial);
+  return (command, arg) => {
+    const area = command.name.split(".")[0];
+    switch (arg.name) {
+      case "serial":
+        return area === "esp32" ? null : nrf.filter((d) => d.state !== "absent").map((d) => opt(d.serial, d.label));
+      case "device":
+        return nrf.map((d) => opt(d.serial, d.label));
+      case "target":
+        return esp.map((d) => opt(d.name, d.product));
+      case "link":
+        return [...conns.map((c) => opt(c.name, c.device_name || c.device)), ...esp.map((d) => opt(d.name, d.product))];
+      case "adapter":
+        return adapters.map((d) => opt(d.serial, d.label));
+      case "name":
+        if (area === "esp32") return esp.map((d) => opt(d.name, d.product));
+        if (area === "wiring") return conns.map((c) => opt(c.name, c.device_name || c.device));
+        if (area === "devices") return nrf.map((d) => opt(d.name || "", d.label)).filter((o) => o.value);
+        return null;
+      case "firmware":
+      case "id":
+        return area === "firmware" || area === "programmer" || area === "esp32" ? packages.map((p) => opt(p.sha256, `${p.name || "unnamed"} (${p.project})`)) : null;
+      case "project":
+        return area === "firmware" || area === "programmer" ? [...new Set(packages.map((p) => p.project))].map((p) => opt(p, p)) : null;
+      default:
+        return null;
+    }
+  };
+}
+
+// The command list on the left, the form on the right. Search narrows the list; the form is generated from the registry row.
+export default function Commands({ commands, overview, onDone }) {
+  const [query, setQuery] = useState("");
+  const [kind, setKind] = useState("all");
+  const [chosen, setChosen] = useState(null);
+  const [packages, setPackages] = useState([]);
+  const form = useRef(null);
+  const list = (commands || []).find((c) => c.name === "firmware.list") || null;
+
+  // On a phone the form is below the list, so choosing a command brings it into view (on a wide screen it is already beside the list).
+  useEffect(() => {
+    if (chosen && form.current && form.current.scrollIntoView && window.matchMedia("(max-width: 767px)").matches) form.current.scrollIntoView({ block: "start" });
+  }, [chosen]);
+
+  useEffect(() => {
+    if (!list || !chosen) return undefined;
+    let live = true;
+    readJson(list.path).then((r) => { if (live && r.ok && r.body && r.body.data) setPackages(r.body.data.items || []); }).catch(() => {});
+    return () => { live = false; };
+  }, [list, chosen]);
+
   if (commands === null) return <Card title="Commands"><p className="text-sm text-slate-600 dark:text-slate-400">Loading…</p></Card>;
+  const q = query.trim().toLowerCase();
+  const shown = commands.filter((c) => (kind === "all" || (kind === "read") === (c.effect === "read")) && (!q || c.name.includes(q) || c.summary.toLowerCase().includes(q)));
   const areas = {};
-  commands.forEach((c) => {
-    const area = c.name.split(".")[0];
-    (areas[area] = areas[area] || []).push(c);
-  });
+  shown.forEach((c) => { (areas[c.name.split(".")[0]] = areas[c.name.split(".")[0]] || []).push(c); });
+  const current = commands.find((c) => c.name === chosen) || null;
+  const choose = (c) => setChosen(c.name);
+  const suggest = pickers(overview, packages);
   return (
     <div className="space-y-4">
-      <p className="text-sm text-slate-600 dark:text-slate-400">
-        Every command this service has on this host, generated from its registry. They run through the same API, the same guards and the
-        same activity log as the command line and the AI tools.
-      </p>
-      {Object.keys(areas).sort().map((area) => (
-        <Card key={area} title={area}>
-          <ul className="divide-y divide-slate-200 dark:divide-slate-800">
-            {areas[area].map((c) => (
-              <li key={c.name} className="py-2">
-                <button
-                  className="flex w-full flex-wrap items-center gap-2 text-left"
-                  aria-expanded={open === c.name}
-                  onClick={() => setOpen(open === c.name ? null : c.name)}
-                >
-                  <span className="font-mono text-sm font-medium">{c.name}</span>
-                  <Chip tone={c.effect === "read" ? "slate" : "amber"}>{c.effect}</Chip>
-                  {open !== c.name && <span className="text-sm text-slate-600 dark:text-slate-400">{c.summary}</span>}
-                </button>
-                {open === c.name && <div className="mt-3"><CommandForm command={c} onDone={onDone} /></div>}
-              </li>
+      <PageHeader title="Commands" topic="commands" aside={<span className="text-[13px] text-slate-600 dark:text-slate-400">{commands.length} on this host</span>} />
+      <div className="grid gap-4 md:grid-cols-[19rem_minmax(0,1fr)] md:items-start">
+        <Card className="space-y-3 md:sticky md:top-36">
+          <input className={inputClass} type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search commands" aria-label="Search commands" autoComplete="off" />
+          <div role="group" aria-label="Show" className="flex gap-1">
+            {[["all", "All"], ["read", "Reads"], ["write", "Changes"]].map(([id, label]) => (
+              <button key={id} type="button" aria-pressed={kind === id} onClick={() => setKind(id)}
+                className={cx("min-h-9 flex-1 rounded-md px-2 text-[13px] font-medium", kind === id
+                  ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700")}>{label}</button>
             ))}
-          </ul>
+          </div>
+          <div className="max-h-[60vh] space-y-3 overflow-y-auto" aria-label="Commands">
+            {Object.keys(areas).length === 0 && <p className="text-[13px] text-slate-600 dark:text-slate-400">No command matches.</p>}
+            {Object.keys(areas).sort().map((area) => (
+              <div key={area}>
+                <h3 className="px-1 pb-1 text-[13px] font-semibold text-slate-600 dark:text-slate-400">{area}</h3>
+                <ul>
+                  {areas[area].map((c) => (
+                    <li key={c.name}>
+                      <button type="button" onClick={() => choose(c)} aria-current={chosen === c.name ? "true" : undefined}
+                        className={cx("flex w-full min-h-10 items-center gap-2 rounded-md px-2 text-left", chosen === c.name
+                          ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900" : "hover:bg-slate-100 dark:hover:bg-slate-800")}>
+                        <span className="min-w-0 flex-1 truncate font-mono text-[13px]">{c.name.slice(area.length + 1)}</span>
+                        <span className="shrink-0 text-[12px] opacity-70">{c.effect === "read" ? "read" : "changes"}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         </Card>
-      ))}
+        <div ref={form}>
+          {current ? (
+            <Card title={current.name} aside={<Chip tone={current.effect === "read" ? "slate" : "amber"}>{current.effect === "read" ? "reads only" : "changes things"}</Chip>}>
+              <CommandForm key={current.name} command={current} onDone={onDone} suggest={suggest} />
+            </Card>
+          ) : (
+            <Card><p className="text-[15px] text-slate-600 dark:text-slate-400">Choose a command.</p></Card>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

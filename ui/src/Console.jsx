@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { readJson, writeJson } from "./api.js";
 import { PROJECT_NAME, PROJECT_RULE_TEXT, clock } from "./format.js";
 import { cannotSend, conversation, historyOf, sendsOf, walk } from "./consoleLog.js";
-import { Button, Card, Chip, ClassBadge, Field, SlugNote, Spinner, inputClass } from "./ui.jsx";
+import { Button, Card, Chip, ClassBadge, Field, PageHeader, SlugNote, Spinner, inputClass } from "./ui.jsx";
 
 // The serial console (docs/specs/dashboard.md, "The Console page"). Every action is a command the service listed,
 // sent to the path it listed, and the page adds no rule of its own: when the input is off the reason is the
@@ -35,15 +35,18 @@ function LinkInfo({ link }) {
         <Chip tone={stateTone[link.state] || "slate"} title={link.reason || ""}>{link.state}</Chip>
         {link.baud != null && <Chip>{link.baud} baud</Chip>}
         <Chip tone={link.rx_only ? "amber" : "blue"}>{link.rx_only ? "receive only" : "can send"}</Chip>
-        <Chip tone={link.voltage && link.voltage.verified ? "green" : "amber"}>
-          {link.voltage && link.voltage.verified ? "voltage verified" : "voltage NOT verified"}
-        </Chip>
+        {/* The voltage only matters for sending, so a receive-only link says nothing about it. */}
+        {!link.rx_only && (
+          <Chip tone={link.voltage && link.voltage.verified ? "green" : "amber"}>
+            {link.voltage && link.voltage.verified ? "voltage verified" : "voltage NOT verified"}
+          </Chip>
+        )}
         {link.node && <span className="font-mono text-xs text-slate-600 dark:text-slate-400">{link.node}</span>}
       </div>
       {link.reason && <p className="text-sm text-slate-700 dark:text-slate-300">{link.reason}</p>}
       {link.own_bridge && (
-        <p role="note" className="rounded-lg bg-slate-100 p-2 text-sm text-slate-800 dark:bg-slate-800 dark:text-slate-200">
-          This is the ESP32 board's own USB adapter. On most boards its DTR and RTS lines reach the reset pins, so opening the port can reset the board. The bench never drives either line itself, and lets the port go while a flash or reset runs.
+        <p role="note" className="rounded-md bg-slate-100 p-2 text-[13px] text-slate-800 dark:bg-slate-800 dark:text-slate-200">
+          The ESP32's own USB adapter: opening it can reset some boards.
         </p>
       )}
       {(link.problems || []).map((p) => (
@@ -255,7 +258,7 @@ function Macros({ commands, link, onDone }) {
   return (
     <Card title="Macros">
       {error && <p role="note" className="mb-3 rounded-lg bg-amber-100 p-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">The macros could not be listed ({error}).</p>}
-      {macros && macros.length === 0 && !error && <p className="mb-3 text-sm text-slate-600 dark:text-slate-400">No macros yet. A macro is a name and some lines to send, so a command used often is not typed again.</p>}
+      {macros && macros.length === 0 && !error && <p className="mb-3 text-[13px] text-slate-600 dark:text-slate-400">No macros yet.</p>}
       {macros && macros.length > 0 && (
         <ul className="mb-4 divide-y divide-slate-200 dark:divide-slate-800">
           {macros.map((m) => (
@@ -348,11 +351,11 @@ function Decode({ commands, link, recent, onDone }) {
   return (
     <Card title="Decode a crash" aside={<Button tone="quiet" onClick={toggle} aria-expanded={open}>{open ? "Close" : "Open"}</Button>}>
       {!open ? (
-        <p className="text-sm text-slate-600 dark:text-slate-400">Turn the addresses in a Backtrace or panic dump into function names.</p>
+        <p className="text-[13px] text-slate-600 dark:text-slate-400">Names the functions in a crash dump.</p>
       ) : (
         <form onSubmit={run} className="space-y-3">
           {bundles !== null && bundles.length === 0 ? (
-            <p className="text-sm">No stored bundle carries an ELF. Upload a zip with <span className="font-mono">flasher_args.json</span> and the ELF it names (<span className="font-mono">app_elf</span>) on the Firmware page.</p>
+            <p className="text-[13px]">No stored bundle has an ELF. Upload one on the Firmware page.</p>
           ) : (
             <Field label="Firmware that is running" hint="The bundle that was flashed: its ELF is what the addresses are looked up in.">
               <select className={inputClass} value={firmware} onChange={(e) => setFirmware(e.target.value)} aria-label="Firmware to decode against">
@@ -368,7 +371,7 @@ function Decode({ commands, link, recent, onDone }) {
           {outcome && !outcome.pending && (
             <div role="status" className="space-y-2">
               <Answer outcome={outcome} />
-              {data && data.frames && data.frames.length === 0 && <p className="text-sm">No address was found in that text. A dump has a <span className="font-mono">Backtrace:</span> line, or <span className="font-mono">PC</span> or <span className="font-mono">MEPC</span> in its register list.</p>}
+              {data && data.frames && data.frames.length === 0 && <p className="text-[13px]">No address found in that text.</p>}
               {data && data.frames && data.frames.length > 0 && (
                 <table className="w-full text-left text-xs">
                   <thead><tr><th className="py-1 pr-3 font-medium">Address</th><th className="py-1 pr-3 font-medium">Function</th><th className="py-1 font-medium">Source</th></tr></thead>
@@ -384,7 +387,7 @@ function Decode({ commands, link, recent, onDone }) {
                 </table>
               )}
               {data && data.truncated && <p className="text-xs text-slate-600 dark:text-slate-400">Only the first {data.frames.length} addresses are shown.</p>}
-              {data && !data.tool && data.frames.length > 0 && <p className="text-xs text-slate-600 dark:text-slate-400">File and line need the chip's addr2line on the bench's PATH; the function names come from the ELF alone.</p>}
+              {data && !data.tool && data.frames.length > 0 && <p className="text-xs text-slate-600 dark:text-slate-400">No file and line: the bench has no addr2line.</p>}
             </div>
           )}
         </form>
@@ -403,19 +406,20 @@ export default function Console({ commands, links, lines, activity, feed, onDone
   const items = useMemo(() => (link ? conversation(lines[link.name] || [], sends) : []), [lines, sends, link]);
   const history = useMemo(() => historyOf(sends), [sends]);
 
-  if (links === null) return <Card title="Console"><p role="status" className="text-sm">Loading the links…</p></Card>;
+  if (links === null) return <div className="space-y-4"><PageHeader title="Console" topic="console" /><p role="status" className="text-[13px] text-slate-600 dark:text-slate-400">Loading the links…</p></div>;
   if (list.length === 0) {
     return (
-      <Card title="Console">
-        <p className="text-sm">No debug link is declared. Declare the adapter that is wired to the device in <span className="font-mono">config/links.yaml</span> on the bench (the wiring, the baud and whether the voltage has been measured); a link appears here as soon as the service is restarted with it.</p>
-      </Card>
+      <div className="space-y-4">
+        <PageHeader title="Console" topic="console" />
+        <Card><p className="text-[13px] text-slate-600 dark:text-slate-400">No debug log is wired. Connect one on the Wiring page.</p></Card>
+      </div>
     );
   }
 
   return (
     <div className="space-y-4">
+      <PageHeader title="Console" topic="console" />
       <Card
-        title="Console"
         aside={
           <label className="flex items-center gap-2 text-sm">
             Link
@@ -428,11 +432,11 @@ export default function Console({ commands, links, lines, activity, feed, onDone
         <div className="space-y-3">
           <LinkInfo link={link} />
           {feed && feed.state !== "live" && (
-            <p role="note" className="rounded-lg bg-amber-100 p-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-              The live log is not connected ({feed.state}{feed.detail ? `: ${feed.detail}` : ""}). Lines that arrive meanwhile are kept by the service and appear when it reconnects.
+            <p role="note" className="rounded-md bg-amber-100 p-2 text-[13px] text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+              The live log is not connected ({feed.state}). Lines appear when it reconnects.
             </p>
           )}
-          <Log items={items} empty={link.state === "open" ? "Nothing has been received on this link yet. A quiet link is not a silent device: only a build with its debug output compiled in prints anything." : "Nothing has been received on this link."} />
+          <Log items={items} empty={link.state === "open" ? "Nothing received yet." : "Nothing received."} />
           <Input key={link.name} link={link} sendCommand={sendCommand} history={history} onDone={onDone} />
         </div>
       </Card>

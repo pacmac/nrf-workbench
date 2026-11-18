@@ -106,6 +106,15 @@ class AdapterRow(Base):
         (row,) = detect.pi_uarts(self.t.dev, self.t.proc, {14: "console", 15: "console"})
         self.assertEqual(row["problem"], "")
 
+    def test_an_esp32s_built_in_usb_is_never_offered_as_a_debug_adapter(self):
+        self.t.usb("1-4", ("303a", "1001"), "USB JTAG/serial debug unit", serial="64:E8", tty="ttyACM2", majmin="166:2")
+        self.t.node("ttyACM2", 166, 2)
+        self.t.usb("1-5", ("1a86", "55d4"), "USB Single Serial", serial="5B1F007437", tty="ttyACM1", majmin="166:1")
+        self.t.node("ttyACM1", 166, 1)
+        serials = [a["serial"] for a in self.call("wiring.show").data["adapters"]]
+        self.assertIn("5B1F007437", serials)
+        self.assertNotIn("64:E8", serials)
+
     def test_the_wiring_page_offers_it_with_the_usb_adapters(self):
         self.uart_on()
         self.t.usb("1-4", ("1a86", "55d4"), "USB Single Serial", serial="5B1F007437", tty="ttyACM1", majmin="166:1")

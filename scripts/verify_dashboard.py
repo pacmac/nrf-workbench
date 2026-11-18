@@ -54,7 +54,7 @@ BENCH = "verify-bench"
 OTHER = "SECONDSERIAL02"
 SIZES = (("phone", 390, 844), ("tablet", 768, 1024), ("desktop", 1280, 800))
 THEMES = ("light", "dark")
-PAGES = ("Bench", "Devices", "Firmware", "Wiring", "Console", "GPIO", "Activity", "Commands")
+PAGES = ("Home", "Devices", "Wiring", "Console", "Firmware", "GPIO", "Activity", "Commands", "Help")
 
 # How long a check waits for the fake device to hear a line the page sent. The bytes are written before the page's
 # request returns, so this is only the give-up for a FAILING check, never a wait.
@@ -213,11 +213,36 @@ def overflow(page):
     return page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
 
 
-def open_flash(page, band):
-    band.get_by_role("button", name="Flash…").first.click()
+def go(page, name):
+    page.get_by_role("navigation", name="Pages").get_by_role("button", name=name, exact=True).click()
+
+
+def device_row(page, serial=None):
+    """The row of an nRF board on the Devices page (the first one, or the one with this serial)."""
+    go(page, "Devices")
+    rows = page.get_by_role("list", name="Devices").get_by_role("button", name=re.compile(serial or "nRF board"))
+    rows.first.wait_for()
+    return rows.first
+
+
+def open_flash(page, band=None):
+    """The flash dialog opens from a board's row on the Devices page (the old 'Attached' band is gone)."""
+    row = device_row(page)
+    if row.get_attribute("aria-expanded") != "true":
+        row.click()
+    page.get_by_role("button", name="Flash…", exact=True).first.click()
     dialog = page.get_by_role("dialog")
     dialog.wait_for()
     return dialog
+
+
+def back_in_app(page, serial=SERIAL):
+    """The board is listed again and is running its application (not in its bootloader). Waits on the page, never on the clock."""
+    # Asked of the service from the page (its own session), so the caller's page is not left: leaving the Firmware page would lose
+    # the project it has open. The list on the Devices page is checked on its own, by the redesign script.
+    page.wait_for_function(
+        "async (s) => { const r = await fetch('api/devices/list'); const d = await r.json(); return d.data.boards.some((b) => b.serial === s && b.mode === 'app'); }",
+        arg=serial, timeout=20000)
 
 
 def wait_or_show(dialog, locator, what):
@@ -268,8 +293,8 @@ def flash_flows(page, bench, band, shot, tag):
     dialog.screenshot(path=os.path.join(bench.shots, "%s-9-flash-done.png" % tag))
     dialog.get_by_role("button", name="Close", exact=True).click()
     dialog.wait_for(state="hidden")
-    band.locator("ul").get_by_text(SERIAL).first.wait_for()
-    check("%s flash by upload: the board is back in the live band" % tag, band.locator("ul").get_by_text("app", exact=True).count() >= 1)
+    back_in_app(page)
+    check("%s flash by upload: the board is back in the live list, running its application" % tag, True)
 
     # 2. from the store: the folder the upload made is listed; nothing is preselected, not even a folder
     dialog = open_flash(page, band)
@@ -409,7 +434,7 @@ def in_progress(page, bench, band, shot, tag):
     check("%s in progress: the bar clears when the flash ends" % tag, True)
     check("%s in progress: the tab title returns" % tag, page.title() == base_title, page.title())
     check("%s in progress: the flash the other caller started succeeded" % tag, out and out[0].get("class") == "ok", out)
-    band.locator("ul").get_by_text("app", exact=True).first.wait_for()
+    back_in_app(page)
 
     # 4. started from this page's own dialog: the dialog spins, and the header shows it as the dashboard's
     dialog = open_flash(page, band)
@@ -429,7 +454,7 @@ def in_progress(page, bench, band, shot, tag):
     check("%s in progress: the bar clears after the dialog's flash too" % tag, True)
     dialog.get_by_role("button", name="Close", exact=True).click()
     dialog.wait_for(state="hidden")
-    band.locator("ul").get_by_text("app", exact=True).first.wait_for()
+    back_in_app(page)
 
 
 def firmware_page(page, bench, band, shot, tag):
@@ -501,7 +526,7 @@ def firmware_page(page, bench, band, shot, tag):
     dialog.get_by_role("status").filter(has_text="packets").first.wait_for(timeout=20000)
     dialog.get_by_role("button", name="Close", exact=True).click()
     dialog.wait_for(state="hidden")
-    band.locator("ul").get_by_text("app", exact=True).first.wait_for()
+    back_in_app(page)
 
     # more than one board: none is chosen for you, and the buttons wait
     bench.attach_second()
@@ -586,8 +611,8 @@ def console_page(page, bench, shot, tag):
     check("%s console: both declared links are offered with their state" % tag, options == ["dbg, open", "rxonly, open"], options)
     check("%s console: the sendable link says so, with its voltage" % tag,
           page.get_by_text("can send", exact=True).count() == 1 and page.get_by_text("voltage verified", exact=True).count() == 1)
-    check("%s console: nothing is received yet, and the page says a quiet link is not a silent device" % tag,
-          "not a silent device" in log.inner_text())
+    check("%s console: nothing is received yet, and the page says so in one line" % tag,
+          "Nothing received yet." in log.inner_text() and "silent device" not in log.inner_text())
 
     # what the device says appears, a reply line is drawn as a reply
     bench.device_says("dbg", b"boot 1\n< pong\n")
@@ -998,30 +1023,28 @@ def run_viewport(browser, bench, theme, size, shots, first):
     check("%s login: the token is not in the page" % tag, TOKEN not in page.content())
     check("%s login: the token field is gone" % tag, page.get_by_label("Service token").count() == 0)
 
-    # the band: the board attached at start, from the live feed
-    band = page.locator("section", has=page.get_by_role("heading", name="Attached"))
-    band.get_by_text(SERIAL).first.wait_for()
-    check("%s band: the attached board is shown" % tag, True)
-    band.get_by_text("live", exact=True).first.wait_for()
-    check("%s band: the feed says live" % tag, True)
-    check("%s band: it does not claim ready" % tag, "ready" not in band.inner_text().lower(), band.inner_text())
-    shot("3-band")
+    # Home: the board attached at start, from the live feed (the old "Attached" band is now Home's Devices list and the header lamp)
+    band = None
+    boards = page.get_by_role("list", name="Devices")
+    boards.get_by_text(SERIAL).first.wait_for()
+    check("%s home: the attached board is shown" % tag, True)
+    check("%s home: the header says the feed is live (no 'live updates' warning)" % tag, "live updates" not in page.locator("header").inner_text(), page.locator("header").inner_text())
+    check("%s home: it does not claim ready" % tag, "ready" not in page.get_by_role("status").first.inner_text().lower(), page.get_by_role("status").first.inner_text())
+    shot("3-home")
 
     # a board attached while the page is open: it must appear with no reload
-    boards = band.locator("ul")                  # the board list; the ticker is an <ol> and keeps history
     started = time.monotonic()
     bench.attach_second()
     boards.get_by_text(OTHER).first.wait_for(timeout=LIVE_CEILING_MS)
     took = (time.monotonic() - started) * 1000
     print("INFO  %s live attach took %.0f ms (ceiling %d ms)" % (tag, took, LIVE_CEILING_MS), flush=True)
     check("%s live: a board attached later appears without a reload" % tag, True)
-    check("%s live: the ticker names the change" % tag, band.get_by_text(re.compile("attached:.*" + OTHER)).count() >= 1)
     shot("4-live-attach")
     started = time.monotonic()
     bench.detach_second()
-    boards.get_by_text(OTHER).first.wait_for(state="detached", timeout=LIVE_CEILING_MS)
+    page.wait_for_function("(s) => !document.body.innerText.includes(s)", arg=OTHER, timeout=LIVE_CEILING_MS)
     print("INFO  %s live detach took %.0f ms" % (tag, (time.monotonic() - started) * 1000), flush=True)
-    check("%s live: a board removed disappears from the list" % tag, True)
+    check("%s live: a board removed leaves the list (it is not named, so the bench does not keep it)" % tag, True)
 
     # every page
     for name in PAGES:
@@ -1039,11 +1062,14 @@ def run_viewport(browser, bench, theme, size, shots, first):
 
     # a generated command, run from the page: a read, then a refused write
     page.get_by_role("navigation", name="Pages").get_by_role("button", name="Commands").click()
-    page.get_by_role("button", name=re.compile(r"^devices\.list")).click()
+    search = page.get_by_label("Search commands")
+    search.fill("devices.list")
+    page.locator("[aria-label=Commands]").get_by_role("button").first.click()
     page.get_by_role("button", name="Read", exact=True).click()
     page.get_by_role("status").filter(has_text="attached").first.wait_for()
     check("%s commands: devices.list ran and returned the boards" % tag, SERIAL in page.get_by_role("status").first.inner_text())
-    page.get_by_role("button", name=re.compile(r"^firmware\.delete")).click()
+    search.fill("firmware.delete")
+    page.locator("[aria-label=Commands]").get_by_role("button").first.click()
     page.get_by_label(re.compile(r"^id")).fill("deadbeef")
     page.get_by_role("button", name="Run", exact=True).click()
     page.get_by_role("status").filter(has_text="firmware_unknown").first.wait_for()

@@ -3,7 +3,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useEffect, useState } from "react";
 import { readJson, writeFile, writeJson } from "./api.js";
 import { DEFAULT_PROJECT, ESP_BAUDS, PROJECT_NAME, PROJECT_RULE_TEXT, bytesText, espFlashBoundS, when } from "./format.js";
-import { Button, Card, Chip, Field, SlugNote, inputClass } from "./ui.jsx";
+import { Button, Card, Chip, Field, PageHeader, SlugNote, inputClass } from "./ui.jsx";
 import { ResultView } from "./Commands.jsx";
 import EspTargets, { useEspTargets } from "./Esp32.jsx";
 
@@ -136,11 +136,12 @@ export default function Firmware({ commands, boards, onFlash, onDone, refreshKey
   });
 
   if (commands && !list) {
-    return <Card title="Firmware"><p className="text-sm">The package store is off on this host (<span className="font-mono">firmware.list</span> is absent; the Bench page says why).</p></Card>;
+    return <div className="space-y-4"><PageHeader title="Firmware" topic="flashing" /><Card><p className="text-[13px] text-slate-600 dark:text-slate-400">The package store is off on this host.</p></Card></div>;
   }
 
   return (
     <div className="space-y-4">
+      <PageHeader title="Firmware" topic="flashing" />
       {outcome && (
         <Card title="Last result">
           <ResultView outcome={outcome} pendingText="Working…" />
@@ -162,7 +163,7 @@ export default function Firmware({ commands, boards, onFlash, onDone, refreshKey
         <div className="grid gap-4 md:grid-cols-[18rem_minmax(0,1fr)]">
           <Card title="Projects">
             {projects.length === 0 ? (
-              <p className="mb-3 text-sm text-slate-600 dark:text-slate-400">No project yet. Make one below, then upload into it.</p>
+              <p className="mb-3 text-[13px] text-slate-600 dark:text-slate-400">No project yet.</p>
             ) : (
               <ul className="mb-3 space-y-1" aria-label="Projects">
                 {projects.map((p) => (
@@ -184,7 +185,7 @@ export default function Firmware({ commands, boards, onFlash, onDone, refreshKey
             )}
             {projNew && (
               <form onSubmit={createProject} className="space-y-2 border-t border-slate-200 pt-3 dark:border-slate-800">
-                <Field label="New project" hint={`${PROJECT_RULE_TEXT}.`}>
+                <Field label="New project">
                   <input className={inputClass} type="text" value={newName} onChange={(e) => setNewName(e.target.value.toLowerCase())} aria-label="New project name" autoComplete="off" spellCheck="false" />
                 </Field>
                 <SlugNote value={newName} />
@@ -205,10 +206,10 @@ export default function Firmware({ commands, boards, onFlash, onDone, refreshKey
                   <form onSubmit={upload} className="space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
                     <p className="text-sm font-medium">Upload into <span className="font-mono">{project}</span></p>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <Field label="Package file" hint="An nRF DFU .zip, an ESP32 whole-flash .bin, or an ESP32 .zip with flasher_args.json.">
+                      <Field label="Package file">
                         <input key={fileKey} className={inputClass} type="file" accept=".zip,.bin,application/zip,application/octet-stream" aria-label="Package file" onChange={(e) => setFile(e.target.files[0] || null)} />
                       </Field>
-                      <Field label="Name (optional)" hint="The file's name is used if this is empty.">
+                      <Field label="Name (optional)">
                         <input className={inputClass} type="text" value={label} onChange={(e) => setLabel(e.target.value)} aria-label="Package name" autoComplete="off" />
                       </Field>
                     </div>
@@ -217,7 +218,7 @@ export default function Firmware({ commands, boards, onFlash, onDone, refreshKey
                 )}
 
                 {boards && boards.length > 1 && (
-                  <Field label="Flash to board" hint="More than one board is attached, and none is chosen for you.">
+                  <Field label="Flash to board">
                     <select className={inputClass} value={flashBoard ? boardSerial : NONE} onChange={(e) => setBoardSerial(e.target.value)} aria-label="Flash to board">
                       <option value={NONE}>Choose a board…</option>
                       {boards.map((b) => <option key={`${b.serial}-${b.mode}`} value={b.serial}>{b.name ? `${b.name}, ` : ""}{b.serial} ({b.mode})</option>)}
@@ -226,7 +227,7 @@ export default function Firmware({ commands, boards, onFlash, onDone, refreshKey
                 )}
 
                 {espFlash && espTargets.length > 1 && inProject.some((s) => s.kind) && (
-                  <Field label="Flash to ESP32 board" hint="More than one ESP32 board is declared, and none is chosen for you.">
+                  <Field label="Flash to ESP32 board">
                     <select className={inputClass} value={espTarget ? espName : NONE} onChange={(e) => setEspName(e.target.value)} aria-label="Flash to ESP32 board">
                       <option value={NONE}>Choose a board…</option>
                       {espTargets.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
@@ -332,12 +333,12 @@ export default function Firmware({ commands, boards, onFlash, onDone, refreshKey
                 The board is reset when the write is done, and its console is let go for the length of the flash.
               </AlertDialog.Description>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <Field label="Speed" hint="115200 works everywhere; faster is quicker on a good cable.">
+                <Field label="Speed">
                   <select className={inputClass} value={espBaud} onChange={(e) => setEspBaud(Number(e.target.value))} aria-label="ESP32 flash speed">
                     {ESP_BAUDS.map((b) => <option key={b} value={b}>{b} baud</option>)}
                   </select>
                 </Field>
-                <Field label="Give up after (seconds)" hint="Worked out from the size and the speed. A write that outlasts it is stopped.">
+                <Field label="Give up after (seconds)">
                   <input className={inputClass} type="number" step="any" min="0" value={espBoundValue} onChange={(e) => setEspBound(e.target.value)} aria-label="ESP32 flash bound in seconds" />
                 </Field>
               </div>

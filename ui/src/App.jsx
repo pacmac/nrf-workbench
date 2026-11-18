@@ -3,11 +3,12 @@ import { loadSession, logout, readJson } from "./api.js";
 import { createFeed } from "./feed.js";
 import { TICKER_LINES, benchName } from "./format.js";
 import { applyTheme, currentTheme, nextTheme } from "./theme.js";
-import { Button, cx } from "./ui.jsx";
+import { Button, Lamp, NavContext, cx } from "./ui.jsx";
 import Login from "./Login.jsx";
-import Band from "./Band.jsx";
 import Working from "./Working.jsx";
-import Bench from "./Bench.jsx";
+import Home from "./Home.jsx";
+import Help from "./Help.jsx";
+import { useOverview } from "./overview.js";
 import Devices from "./Devices.jsx";
 import Firmware from "./Firmware.jsx";
 import Activity from "./Activity.jsx";
@@ -18,7 +19,8 @@ import Wiring from "./wiring/Wiring.jsx";
 import FlashDialog from "./FlashDialog.jsx";
 import { addLines } from "./consoleLog.js";
 
-const PAGES = [["bench", "Bench"], ["devices", "Devices"], ["firmware", "Firmware"], ["wiring", "Wiring"], ["console", "Console"], ["gpio", "GPIO"], ["activity", "Activity"], ["commands", "Commands"]];
+// The daily pages first, the reference last. The nav is one row that scrolls sideways, so it never wraps on a phone.
+const PAGES = [["home", "Home"], ["devices", "Devices"], ["wiring", "Wiring"], ["console", "Console"], ["firmware", "Firmware"], ["gpio", "GPIO"], ["activity", "Activity"], ["commands", "Commands"], ["help", "Help"]];
 
 // How many activity rows the browser keeps in memory. Same derivation as the draw limit: the server's retention
 // is the real bound, this only stops a tab that stays open for weeks from growing without limit. 5 x the
@@ -50,7 +52,13 @@ export default function App() {
   const [theme, setTheme] = useState(currentTheme);
   const [session, setSession] = useState(null);
   const [expired, setExpired] = useState(false);
-  const [page, setPage] = useState("bench");
+  const [page, setPage] = useState("home");
+  const [topic, setTopic] = useState("start");                   // the Help topic that is open
+  const [helpDirect, setHelpDirect] = useState(false);          // a ? opens its topic itself; the Help tab opens the list of topics
+  const go = useCallback((id) => { setHelpDirect(false); setPage(id); window.scrollTo(0, 0); }, []);
+  const openHelp = useCallback((id) => { setTopic(id || "start"); setHelpDirect(true); setPage("help"); window.scrollTo(0, 0); }, []);
+  const nav = useMemo(() => ({ go, help: openHelp }), [go, openHelp]);
+  const tabs = useRef(null);
 
   const [feed, setFeed] = useState({ state: "connecting", at: null, detail: "" });
   const [boards, setBoards] = useState(null);
@@ -175,26 +183,10 @@ export default function App() {
     return () => { live = false; };
   }, [consoleOn, linksPath, linksTick]);
 
-  // The ESP32 boards, for the band (they are not in the device feed): read when this page loads, when the nRF list changes, after
-  // any command, and on "Look again". Never on a timer.
-  const espPath = ((info.commands || []).find((c) => c.name === "esp32.targets") || {}).path || null;
-  const [esp, setEsp] = useState(null);                           // {targets, native, at} or null before it is read, or where there is none
+  // After any command, and after a name is saved (a file raises no kernel event), the bench is read again. Never on a timer.
   const [espTick, setEspTick] = useState(0);
-  useEffect(() => {
-    if (!authenticated || !espPath) return undefined;
-    let live = true;
-    readJson(espPath).then((r) => {
-      if (live && r.ok && r.body && r.body.data) setEsp({ targets: r.body.data.targets || [], native: r.body.data.undeclared_native || [], at: Date.now() / 1000 });
-    }).catch(() => {});
-    return () => { live = false; };
-  }, [authenticated, espPath, usbTick, espTick]);
-
-  // A name is saved in a file, which raises no kernel event, so after naming the boards are read again from the service.
-  const listPath = ((info.commands || []).find((c) => c.name === "devices.list") || {}).path || null;
-  const refreshBoards = useCallback(() => {
-    if (!listPath) return;
-    readJson(listPath).then((r) => { if (r.ok && r.body && r.body.data) { setBoards(r.body.data.boards || []); setBoardsAt(Date.now() / 1000); } }).catch(() => {});
-  }, [listPath]);
+  const overview = useOverview(authenticated ? info.commands : null, [usbTick, linksTick, espTick]);
+  const refresh = useCallback(() => setEspTick((n) => n + 1), []);
 
   // A write that came back 401 means the session ended (expiry, restart, another login): show the login again.
   const onCommandDone = useCallback((r) => {
@@ -202,65 +194,74 @@ export default function App() {
     if (r && r.status === 401) { setExpired(true); refreshSession(); }
   }, [refreshSession]);
 
+  // The current tab is kept in view when the row of tabs is wider than the screen.
+  useEffect(() => {
+    const el = tabs.current && tabs.current.querySelector("[aria-current='page']");
+    if (el && el.scrollIntoView) el.scrollIntoView({ inline: "center", block: "nearest" });
+  }, [page, authenticated]);
+
   if (session === null) return <p role="status" className="p-6 text-sm text-slate-600 dark:text-slate-400">Loading…</p>;
   if (!authenticated) {
     return <Login name={name} expired={expired} onDone={() => { setExpired(false); refreshSession(); }} />;
   }
 
+  const host = overview.data ? overview.data.host : null;
+  const live = feed.state === "live";
   return (
-    <div className="mx-auto max-w-6xl px-4 pb-12">
-      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 py-4">
-        <h1 className="text-xl font-semibold">{name}</h1>
-        <nav aria-label="Pages" className="flex flex-wrap gap-1">
-          {PAGES.filter(([id]) => (id !== "console" || consoleOn) && (id !== "gpio" || gpioOn)).map(([id, label]) => (
-            <button
-              key={id}
-              onClick={() => setPage(id)}
-              aria-current={page === id ? "page" : undefined}
-              className={cx(
-                "min-h-10 rounded-lg px-2 py-2 text-sm font-medium sm:px-3",
-                page === id
-                  ? "bg-blue-600 text-white dark:bg-blue-500 dark:text-slate-950"
-                  : "text-slate-700 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-800",
+    <NavContext.Provider value={nav}>
+      <div className="mx-auto max-w-5xl px-4 pb-12">
+        <header className="sticky top-0 z-20 -mx-4 bg-slate-100/95 px-4 pt-3 backdrop-blur dark:bg-slate-950/95">
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-semibold">{name}</h1>
+            <div className="ml-auto flex items-center gap-2">
+              <Button tone="quiet" onClick={() => setTheme(nextTheme(theme))} title="Light, dark, or follow the system" className="min-h-9! px-2!">Theme: {theme}</Button>
+              {session.login_required && (
+                <Button tone="quiet" className="min-h-9! px-2!" onClick={async () => { await logout(); setExpired(false); setBoards(null); setActivity({ rows: [], lost: 0, reset: false }); setRunning([]); setLinks(null); setConsoleLines({}); refreshSession(); }}>Log out</Button>
               )}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
-        <div className="ml-auto flex items-center gap-2">
-          <Button tone="quiet" onClick={() => setTheme(nextTheme(theme))} title="Light, dark, or follow the system">Theme: {theme}</Button>
-          {session.login_required && (
-            <Button tone="quiet" onClick={async () => { await logout(); setExpired(false); setBoards(null); setActivity({ rows: [], lost: 0, reset: false }); setRunning([]); setLinks(null); setConsoleLines({}); refreshSession(); }}>Log out</Button>
-          )}
+            </div>
+          </div>
+          <p className="mt-0.5 flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-400">
+            <Lamp state={live ? "connected" : "attention"} size={12} />
+            <span className="min-w-0 truncate">{host && host.model ? `${host.model}, ` : ""}{window.location.host}{live ? "" : `, live updates ${feed.state}`}</span>
+            {(feed.state === "dropped" || feed.state === "unavailable") && (
+              <button type="button" className="shrink-0 underline" onClick={() => feedRef.current && feedRef.current.reconnect()}>Reconnect</button>
+            )}
+          </p>
+          <nav aria-label="Pages" ref={tabs} className="-mx-4 mt-2 flex gap-1 overflow-x-auto px-4 pb-2 [scrollbar-width:none]">
+            {PAGES.filter(([id]) => (id !== "console" || consoleOn) && (id !== "gpio" || gpioOn)).map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => go(id)}
+                aria-current={page === id ? "page" : undefined}
+                className={cx(
+                  "min-h-11 shrink-0 rounded-md px-3 text-[15px] font-medium",
+                  page === id
+                    ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+                    : "text-slate-700 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-800",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+        </header>
+
+        <div className="mt-3 space-y-4">
+          <Working running={running} feedLive={live} />
+          {page === "home" && <Home overview={overview} session={session} feed={feed} activity={activity} info={info} />}
+          {page === "devices" && <Devices overview={overview} commands={info.commands} onFlash={openFlash} onChanged={refresh} onDone={onCommandDone} />}
+          {page === "firmware" && <Firmware commands={info.commands} boards={boards} onFlash={openFlash} onDone={onCommandDone} refreshKey={espTick + usbTick} />}
+          {page === "wiring" && <Wiring commands={info.commands} refreshKey={linksTick + usbTick} onOpenPage={go} />}
+          {page === "console" && consoleOn && <Console commands={info.commands} links={links} lines={consoleLines} activity={activity} feed={consoleFeed} onDone={onCommandDone} />}
+          {page === "gpio" && gpioOn && <Gpio commands={info.commands} overview={overview} onDone={onCommandDone} />}
+          {page === "activity" && <Activity activity={activity} />}
+          {page === "commands" && <Commands commands={info.commands} overview={overview} onDone={onCommandDone} />}
+          {page === "help" && <Help topic={topic} direct={helpDirect} onTopic={setTopic} onGo={go} />}
         </div>
-      </header>
 
-      <div className="space-y-4">
-        <Working running={running} feedLive={feed.state === "live"} />
-        <Band
-          feed={feed}
-          boards={boards}
-          boardsAt={boardsAt}
-          unavailable={unavailable}
-          ticker={ticker}
-          esp={esp}
-          onEspRefresh={() => setEspTick((n) => n + 1)}
-          onReconnect={() => feedRef.current && feedRef.current.reconnect()}
-          onFlash={openFlash}
-        />
-        {page === "bench" && <Bench name={name} session={session} info={info} feed={feed} />}
-        {page === "devices" && <Devices boards={boards} boardsAt={boardsAt} onFlash={openFlash} commands={info.commands} onNamed={refreshBoards} onDone={onCommandDone} />}
-        {page === "firmware" && <Firmware commands={info.commands} boards={boards} onFlash={openFlash} onDone={onCommandDone} refreshKey={espTick + usbTick} />}
-        {page === "wiring" && <Wiring commands={info.commands} refreshKey={linksTick + usbTick} onOpenPage={setPage} />}
-        {page === "console" && consoleOn && <Console commands={info.commands} links={links} lines={consoleLines} activity={activity} feed={consoleFeed} onDone={onCommandDone} />}
-        {page === "gpio" && gpioOn && <Gpio commands={info.commands} onDone={onCommandDone} />}
-        {page === "activity" && <Activity activity={activity} />}
-        {page === "commands" && <Commands commands={info.commands} onDone={onCommandDone} />}
+        {flashing && <FlashDialog board={flashing} commands={info.commands || []} initial={flashInitial} onDone={onCommandDone} onClose={() => setFlashing(null)} />}
       </div>
-
-      {flashing && <FlashDialog board={flashing} commands={info.commands || []} initial={flashInitial} onDone={onCommandDone} onClose={() => setFlashing(null)} />}
-    </div>
+    </NavContext.Provider>
   );
 }
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Card, ClassBadge, Chip, Details, Json, inputClass } from "./ui.jsx";
+import { Card, ClassBadge, Chip, Details, Json, PageHeader, inputClass } from "./ui.jsx";
 import { ROWS_AT_FIRST, ROWS_PER_STEP, seconds, when } from "./format.js";
 import { Button } from "./ui.jsx";
 
@@ -13,8 +13,9 @@ export default function Activity({ activity }) {
   const rows = activity.rows.filter((r) => filter === "all" || r.payload.class === filter).slice().reverse();
   const visible = rows.slice(0, shown);
   return (
+    <div className="space-y-4">
+    <PageHeader title="Activity" topic="commands" />
     <Card
-      title="Activity"
       aside={
         <label className="flex items-center gap-2 text-sm">
           Show
@@ -66,5 +67,6 @@ export default function Activity({ activity }) {
         </div>
       )}
     </Card>
+    </div>
   );
 }

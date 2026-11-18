@@ -109,7 +109,7 @@ export default function EspTargets({ commands, targets, native, error, onChanged
         {targets === null ? (
           <p className="text-sm text-slate-600 dark:text-slate-400">Loading the boards…</p>
         ) : targets.length === 0 ? (
-          <p className="text-sm text-slate-600 dark:text-slate-400">No ESP32 declared yet. Plug a board in, then declare it below: a USB adapter is only an ESP32 once you say so.</p>
+          <p className="text-[13px] text-slate-600 dark:text-slate-400">No ESP32 declared yet.</p>
         ) : (
           <ul className="space-y-2" aria-label="ESP32 boards">
             {targets.map((t) => (
@@ -138,7 +138,7 @@ export default function EspTargets({ commands, targets, native, error, onChanged
                       if (r && r.ok) setRenaming(null);
                     }}
                   >
-                    <Field label={`New name for ${t.name}`} hint="The board, its adapter and its settings stay as they are. Its console log is kept under the old name.">
+                    <Field label={`New name for ${t.name}`}>
                       <input className={inputClass} type="text" value={renaming.to} onChange={(e) => setRenaming({ name: t.name, to: e.target.value.toLowerCase() })} aria-label={`New name for ${t.name}`} autoComplete="off" spellCheck="false" />
                     </Field>
                     <SlugNote value={renaming.to} />
@@ -157,23 +157,23 @@ export default function EspTargets({ commands, targets, native, error, onChanged
           <form onSubmit={submit} className="space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
             <p className="text-sm font-medium">Declare an ESP32 board</p>
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Adapter" hint="The USB adapter the board is plugged into. A board plugged in appears here by itself. Not there? Press Look at ESP32 again in the Attached box at the top.">
+              <Field label="Adapter">
                 <select className={inputClass} value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Adapter">
                   <option value={NONE}>Choose an adapter…</option>
                   {choices.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
                 </select>
               </Field>
-              <Field label="Name" hint="What you will call this board.">
+              <Field label="Name">
                 <input className={inputClass} type="text" value={name} onChange={(e) => setName(e.target.value.toLowerCase())} aria-label="Board name" autoComplete="off" spellCheck="false" />
                 <SlugNote value={name} />
               </Field>
             </div>
             {pick.startsWith("slot:") && (
               <p className="text-xs text-slate-600 dark:text-slate-400">
-                This adapter has no serial of its own, or shares one with another, so it is found by the USB port it is in: moving the board to another port makes it a different board.
+                Found by its USB port: moving it to another port makes it a different board.
               </p>
             )}
-            {choices.length === 0 && <p className="text-xs text-slate-600 dark:text-slate-400">No free adapter is plugged in. Plug the board in, then press Look again on the Wiring page.</p>}
+            {choices.length === 0 && <p className="text-xs text-slate-600 dark:text-slate-400">No free adapter is plugged in.</p>}
             <Button type="submit" disabled={!canDeclare}>Declare board</Button>
           </form>
         )}

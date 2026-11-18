@@ -41,7 +41,8 @@ def _pin_services(host):
 
 def _detected(host, ids):
     """Every adapter a connection may use: the USB ones, and on a host with a pin map (a Pi) its own UART."""
-    rows = detect.adapters(host.sysfs, host.devroot, ids)
+    # An ESP32's built-in USB is its own console, not a debug adapter for another board, so it is never offered here.
+    rows = [a for a in detect.adapters(host.sysfs, host.devroot, ids) if a["ids"] not in esp_targets.NATIVE_IDS]
     if host.config["paths"].get("gpio"):
         rows += detect.pi_uarts(host.devroot, host.proc, _pin_services(host))
     return rows

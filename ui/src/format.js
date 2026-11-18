@@ -60,6 +60,13 @@ export function slugProblem(text) {
 export const PROJECT_RULE_TEXT ="1 to 64 characters: lower-case letters, digits, dot, underscore or hyphen, starting with a letter or a digit";
 export const DEFAULT_PROJECT = "unsorted";
 
+// Reads the dashboard itself makes in the background to draw its pages. They are in the activity log like every command, but they are not
+// something a person did, so Home's "Recent activity" leaves them out (the Activity page still lists everything).
+export const BACKGROUND_READS = new Set([
+  "bench.overview", "console.links", "console.since", "console.macro_list", "devices.list", "esp32.targets", "wiring.show",
+  "gpio.header", "gpio.pins", "firmware.list", "i2c.buses",
+]);
+
 export function flashBoundS(imageBytes) {
   return Math.ceil((FLASH_BOUND_FACTOR * imageBytes) / THROUGHPUT_SLOWEST_BPS * 10) / 10;   // one decimal, rounded up
 }

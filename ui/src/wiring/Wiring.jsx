@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Card, Chip } from "../ui.jsx";
+import { Button, Card, Chip, PageHeader } from "../ui.jsx";
 import { useWiring, wiringActions } from "./store.js";
 import { useLiveWiring } from "./live.js";
 import { INTENTS, claimsOf, hueFor, short } from "./model.js";
@@ -23,7 +23,7 @@ const sampleActions = {
 
 function Preview() {
   return (
-    <div role="note" className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+    <div role="note" className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
       <p><strong>Preview.</strong> These devices and wires are sample data, so you can try the page. Nothing here touches the bench yet.</p>
       <div className="flex flex-wrap gap-2">
         <Button tone="quiet" onClick={wiringActions.plugIn}>Simulate: plug in a USB adapter</Button>
@@ -33,15 +33,12 @@ function Preview() {
   );
 }
 
-function LiveNote({ built, error, onLookAgain }) {
+// The top of the live page: a title and the Help link. "Look again" is only for a host that cannot say when a USB device is plugged in.
+function LiveNote({ error, onLookAgain }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-      <span className="min-w-0 flex-1">
-        Built so far: {built.map((i) => (INTENTS.find((x) => x.value === i) || { label: i }).label.toLowerCase()).join(", ")}. The rest are listed and say so.
-        {" "}An adapter you plug in after this page opened appears when you look again.
-      </span>
-      <Button tone="quiet" onClick={onLookAgain}>Look again</Button>
-      {error && <span role="alert" className="w-full text-red-800 dark:text-red-300">The bench could not be read ({error}).</span>}
+    <div className="space-y-2">
+      <PageHeader title="Wiring" topic="wiring" aside={<Button tone="quiet" onClick={onLookAgain} className="min-h-9! px-2!">Look again</Button>} />
+      {error && <p role="alert" className="text-[13px] text-red-800 dark:text-red-300">The bench could not be read ({error}).</p>}
     </div>
   );
 }
@@ -54,7 +51,7 @@ function Inbox({ adapters, devices, onSetUp, onDismiss }) {
       {adapters.map((a) => (
         <div key={a.id} role="group" aria-label={`${a.name} is ${a.ids === "pi-uart" ? "available" : "plugged in"} but not connected`} className="space-y-2 rounded-xl border border-blue-300 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950">
           <p className="text-sm">
-            <strong>{a.name}</strong> <span className="font-mono text-xs">({a.ids}, {short(a.id)}, {a.node})</span> is {a.ids === "pi-uart" ? "built into the Pi" : "plugged in"} and is not connected to anything.
+            <strong>{a.name}</strong> <span className="font-mono text-xs">({a.ids}, {short(a.id)})</span> is {a.ids === "pi-uart" ? "built into the Pi" : "plugged in"}.
             Which device is it wired to?
           </p>
           <div className="flex flex-wrap items-center gap-2">
@@ -105,13 +102,14 @@ function Page({ w, actions, live, error, commands, onOpenPage }) {
   const device = w.devices.find((d) => d.serial === selected) || w.devices[0] || null;
   const base = { devices: w.devices, adapters: w.adapters, probes: w.probes, connections: w.connections, built: w.built };
   const claimed = new Set(w.connections.flatMap((c) => claimsOf(c.spec).exclusive));
-  const unconnected = w.adapters.filter((a) => !a.problem && !claimed.has(`adapter:${a.id}`) && !w.dismissed.includes(a.id));
+  // An adapter something already holds (a connection, or an ESP32 board's own) is not offered again.
+  const unconnected = w.adapters.filter((a) => !a.problem && !a.heldBy && !claimed.has(`adapter:${a.id}`) && !w.dismissed.includes(a.id));
 
   if (!device) {
     return (
       <div className="space-y-4">
-        {live ? <LiveNote built={w.built} error={error} onLookAgain={actions.refresh} /> : <Preview />}
-        <Card title="Wiring"><p className="text-sm">No device is attached. Plug in an nRF board and it appears here, ready to connect.</p></Card>
+        {live ? <LiveNote error={error} onLookAgain={actions.refresh} /> : <><PageHeader title="Wiring" topic="wiring" /><Preview /></>}
+        <Card><p className="text-[13px] text-slate-600 dark:text-slate-400">No nRF board is attached. Plug one in and it appears here.</p></Card>
       </div>
     );
   }
@@ -131,7 +129,7 @@ function Page({ w, actions, live, error, commands, onOpenPage }) {
 
   return (
     <div className="space-y-4">
-      {live ? <LiveNote built={w.built} error={error} onLookAgain={actions.refresh} /> : <Preview />}
+      {live ? <LiveNote error={error} onLookAgain={actions.refresh} /> : <><PageHeader title="Wiring" topic="wiring" /><Preview /></>}
       <Inbox adapters={unconnected} devices={w.devices} onSetUp={setUp} onDismiss={actions.dismiss} />
 
       <div role="group" aria-label="Devices" className="grid gap-2 sm:grid-cols-2">
@@ -152,9 +150,7 @@ function Page({ w, actions, live, error, commands, onOpenPage }) {
         aside={!sheet && <Button onClick={() => setSheet({ editingId: null, initial: {}, key: "new" })}>Connect something</Button>}
       >
         {mine.length === 0 && !sheet && (
-          <p className="text-sm text-slate-700 dark:text-slate-300">
-            Nothing is wired to this device yet. Plug a USB serial adapter into the Pi and it will appear above, or choose Connect something to start from a Pi pin.
-          </p>
+          <p className="text-[13px] text-slate-600 dark:text-slate-400">Nothing is wired to this device yet.</p>
         )}
         {mine.length > 0 && (
           <ul className="space-y-2" aria-label={`Connections of ${device.model} ${short(device.serial)}`}>
@@ -180,20 +176,14 @@ function Page({ w, actions, live, error, commands, onOpenPage }) {
         )}
       </Card>
 
-      <Card title="The Pi's header">
-        {live ? (
-          <div className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
-            <p>Connections that use Pi pins (reset and boot lines, buses) are not built yet, so there is nothing to colour here. The pins assigned so far are on the GPIO page.</p>
-            {(commands || []).some((c) => c.name === "gpio.header") && <Button tone="quiet" onClick={() => onOpenPage && onOpenPage("gpio")}>Open the GPIO page</Button>}
-          </div>
-        ) : (
+      {!live && (
+        <Card title="The Pi's header">
           <details open={wide}>
             <summary className="cursor-pointer text-sm font-medium">Which pin is wired to what</summary>
-            <p className="my-3 text-sm text-slate-700 dark:text-slate-300">Each pin takes the colour of the device it is wired to. Pins of the other devices are quieter. A pin used by a connection cannot be offered to another one.</p>
             <HeaderMap connections={w.connections} devices={w.devices} selected={device.serial} focusId={focusId} />
           </details>
-        )}
-      </Card>
+        </Card>
+      )}
     </div>
   );
 }
@@ -202,7 +192,7 @@ export default function Wiring({ commands, refreshKey, onOpenPage }) {
   const sample = useWiring();
   const live = useLiveWiring(commands, refreshKey);
   if (live.live) {
-    if (!live.state.loaded) return <Card title="Wiring"><p role="status" className="text-sm">Reading the bench…{live.error ? ` (${live.error})` : ""}</p></Card>;
+    if (!live.state.loaded) return <div className="space-y-4"><PageHeader title="Wiring" topic="wiring" /><p role="status" className="text-[13px] text-slate-600 dark:text-slate-400">Reading the bench…{live.error ? ` (${live.error})` : ""}</p></div>;
     return <Page key="live" w={live.state} actions={live.actions} live error={live.error} commands={commands} onOpenPage={onOpenPage} />;
   }
   return <Page key="sample" w={{ ...sample, built: SAMPLE_BUILT }} actions={sampleActions} live={false} error="" commands={commands} onOpenPage={onOpenPage} />;

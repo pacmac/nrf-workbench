@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
 import { slugProblem } from "./format.js";
 
 export const cx = (...parts) => parts.filter(Boolean).join(" ");
@@ -39,17 +39,63 @@ export function Spinner({ className }) {
   );
 }
 
+// A panel: a hairline and a flat fill, no shadow, no gradient (docs/specs/dashboard-redesign.md, "Tokens"). A page is a few of
+// these in a column, and the heading is the only emphasis.
 export function Card({ title, aside, children, className }) {
   return (
-    <section className={cx("rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900", className)}>
+    <section className={cx("rounded-md border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900", className)}>
       {(title || aside) && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          {title && <h2 className="text-base font-semibold">{title}</h2>}
+          {title && <h2 className="text-[17px] font-semibold">{title}</h2>}
           {aside}
         </div>
       )}
       {children}
     </section>
+  );
+}
+
+// The state of a thing, drawn so that the SHAPE says it before the colour does: a filled disc is connected or listening, a ring is
+// not attached, a diamond needs attention, a square is a fault. Colour repeats it. It is a labelled image, so a screen reader hears it.
+export const LAMPS = {
+  connected: { label: "connected", shape: "disc", tone: "text-emerald-600 dark:text-emerald-400" },
+  listening: { label: "listening", shape: "disc", tone: "text-emerald-600 dark:text-emerald-400" },
+  absent: { label: "not attached", shape: "ring", tone: "text-slate-400 dark:text-slate-500" },
+  attention: { label: "needs attention", shape: "diamond", tone: "text-amber-600 dark:text-amber-400" },
+  fault: { label: "fault", shape: "square", tone: "text-red-600 dark:text-red-400" },
+};
+
+export function Lamp({ state, size = 14, className }) {
+  const l = LAMPS[state] || LAMPS.absent;
+  return (
+    <svg role="img" aria-label={l.label} viewBox="0 0 16 16" width={size} height={size} className={cx("shrink-0", l.tone, className)}>
+      {l.shape === "disc" && <circle cx="8" cy="8" r="6" fill="currentColor" />}
+      {l.shape === "ring" && <circle cx="8" cy="8" r="5.25" fill="none" stroke="currentColor" strokeWidth="2" />}
+      {l.shape === "diamond" && <path d="M8 1.5 14.5 8 8 14.5 1.5 8Z" fill="currentColor" />}
+      {l.shape === "square" && <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" fill="currentColor" />}
+    </svg>
+  );
+}
+
+// Where "go to a page" and "open a help topic" come from, so a row or a ? anywhere can navigate without every page being handed App's setters.
+export const NavContext = createContext({ go: () => {}, help: () => {} });
+
+// The top of a working page: its title, what it holds in a word or two, and a ? that opens the Help topic for it. Nothing else is said here:
+// anything longer lives in Help (Peter, 2026-11-18).
+export function PageHeader({ title, topic, aside, children }) {
+  const nav = useContext(NavContext);
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <h2 className="text-2xl font-semibold">{title}</h2>
+      {children}
+      <div className="ml-auto flex items-center gap-2">
+        {aside}
+        {topic && (
+          <button type="button" onClick={() => nav.help(topic)} aria-label={`Help: ${title}`} title={`Help: ${title}`}
+            className="grid h-8 w-8 place-items-center rounded-full border border-slate-300 text-sm font-semibold text-slate-700 hover:bg-slate-200 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">?</button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -64,7 +110,7 @@ export function Button({ tone = "primary", type = "button", className, ...props 
   return (
     <button
       type={type}
-      className={cx("min-h-10 rounded-lg px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50", styles[tone], className)}
+      className={cx("min-h-10 rounded-md px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50", styles[tone], className)}
       {...props}
     />
   );

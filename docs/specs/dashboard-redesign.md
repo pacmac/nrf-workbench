@@ -7,6 +7,17 @@ glance I can see what is happening. clicking on one of those should take me to t
 these issues." This supersedes the page layouts in `dashboard.md`; its rules (no timers, no absolute URLs, writes only to server-listed
 paths, a `dark:` partner for every light colour, Radix on the Firmware page only, the built UI committed with its source stamp) stay.
 
+## Status (2026-11-18)
+
+**Built and proved in a real browser on a fake bench**, not yet seen by Peter on the real Pi's screen. `bench.overview` (22 tests, 18
+mutants caught), the shell (one-row scrolling nav), Home, Devices (Connected / Not attached / All), Commands (search, filter, one-press picks
+for serials, targets, links, packages), the Help section (9 topics as data, 12 tests) with a ? on every page, and the prose stripped from every
+working page. `scripts/verify_redesign.py` (116 checks, light and dark, phone and desktop); the four older scripts were rewritten for the new
+shell and pass (462, 124, 53 and 12 checks); 1324 unit tests pass. Deviations from the plan above: **nav order and tabs as built**; Recent
+activity sits under Connections (left) so the two columns balance; the dashboard's own background reads are left out of it; a receive-only link
+no longer shows a voltage chip. **Not done:** a bundled typeface (the system stack stands); the Wiring and Firmware pages keep their forms and
+their layouts, only their prose, headers and panels changed; field-level hints on a few forms (a macro name's rule) remain.
+
 ## What was wrong (read from the code and from Peter)
 
 1. **No home.** `Bench.jsx` is five cards of prose about the service. Nothing says what is attached or whether it works.
