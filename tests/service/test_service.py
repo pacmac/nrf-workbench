@@ -167,7 +167,8 @@ class Build(Base):
         client = TestClient(app)
         self.addCleanup(client.close)
         names = [c["name"] for c in client.get("/api/commands").json()["commands"]]
-        self.assertEqual(len(names), 10)
+        self.assertEqual(len(names), 11)            # the ten nRF ones and esp32.decode, which needs only the store
+        self.assertIn("esp32.decode", names)
         (b,) = client.get("/api/devices/list").json()["data"]["boards"]
         self.assertEqual((b["profile"], b["state"]), ("rak4631", "app"))
         self.assertEqual(client.get("/api/firmware/list").json()["data"]["items"], [])
