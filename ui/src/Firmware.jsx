@@ -18,7 +18,7 @@ const menuClass = "z-50 min-w-48 rounded-lg border border-slate-200 bg-white p-1
 const itemClass = "flex min-h-10 cursor-default select-none items-center rounded-md px-3 py-2 text-sm outline-none data-[highlighted]:bg-slate-100 dark:data-[highlighted]:bg-slate-800";
 const dangerItemClass = "flex min-h-10 cursor-default select-none items-center rounded-md px-3 py-2 text-sm text-red-700 outline-none data-[highlighted]:bg-red-50 dark:text-red-300 dark:data-[highlighted]:bg-red-950";
 
-export default function Firmware({ commands, boards, onFlash, onDone }) {
+export default function Firmware({ commands, boards, onFlash, onDone, refreshKey = 0 }) {
   const find = (name) => (commands || []).find((c) => c.name === name) || null;
   const list = find("firmware.list");
   const put = find("firmware.put");
@@ -42,7 +42,7 @@ export default function Firmware({ commands, boards, onFlash, onDone }) {
   // none is chosen for them, as with the nRF boards.
   const espList = find("esp32.targets");
   const espFlash = find("esp32.flash");
-  const esp = useEspTargets(espList, attempt);
+  const esp = useEspTargets(espList, attempt + refreshKey);              // refreshKey: "Look again" in the Attached box
   const [espName, setEspName] = useState(NONE);
   const [espAsk, setEspAsk] = useState(null);                     // the ESP32 package whose flash is being confirmed
   const [espBaud, setEspBaud] = useState(ESP_BAUDS[0]);

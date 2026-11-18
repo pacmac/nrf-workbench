@@ -135,7 +135,7 @@ export default function EspTargets({ commands, targets, native, error, onChanged
           <form onSubmit={submit} className="space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
             <p className="text-sm font-medium">Declare an ESP32 board</p>
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Adapter" hint="The USB adapter the board is plugged into. Plugged in just now and not listed? Use Look again on the Wiring page.">
+              <Field label="Adapter" hint="The USB adapter the board is plugged into. Plugged in just now and not listed? Press Look again in the Attached box at the top.">
                 <select className={inputClass} value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Adapter">
                   <option value={NONE}>Choose an adapter…</option>
                   {choices.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}

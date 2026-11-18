@@ -146,6 +146,11 @@ def run(browser, theme, size, shots):
         st = bench.host.console.state("bench-esp")
         check("%s its console is a receive-only link on its own bridge, open" % tag,
               st and st["state"] == "open" and st["rx_only"] and st["own_bridge"] and st["adapter"]["slot"] == "1-2", st)
+        band = page.get_by_role("list", name="ESP32 boards attached")
+        band.wait_for()
+        check("%s the Attached band lists the board as an ESP32 with its console, and never as an nRF board" % tag,
+              "ESP32" in band.inner_text() and "bench-esp" in band.inner_text() and "console open" in band.inner_text()
+              and "No board attached." not in page.inner_text("body"), band.inner_text())
         shot("2-declared")
 
         # packages: a whole-flash image and a bundle with its ELF are told apart
@@ -225,6 +230,18 @@ def run(browser, theme, size, shots):
         page.get_by_text("No ESP32 declared yet").wait_for()
         check("%s forgetting the board takes its console link with it" % tag, bench.host.console.states() == [], bench.host.console.states())
         shot("8-forgotten")
+
+        # a built-in-USB ESP32 plugged in later is found on "Look again" and is not an ESP32 until declared
+        bench.tree.usb("1-5", ("303a", "1001"), "USB JTAG/serial debug unit", serial="64:E8:33:85:4A:A4", manufacturer="Espressif", tty="ttyACM2", majmin="166:2")
+        bench.tree.node("ttyACM2", 166, 2)
+        page.get_by_role("button", name="Look again").click()
+        page.get_by_text("ESP32, not declared").wait_for()
+        check("%s an undeclared built-in-USB ESP32 is shown as such, with where to declare it" % tag,
+              "64:E8:33:85:4A:A4" in page.inner_text("body") and "Declare it on the Firmware page" in page.inner_text("body"))
+        check("%s the declare form offers it too, after the same Look again" % tag,
+              any("64:E8:33:85:4A:A4" in o and "built-in USB" in o for o in page.get_by_label("Adapter").locator("option").all_inner_texts()),
+              page.get_by_label("Adapter").locator("option").all_inner_texts())
+        shot("9-undeclared")
         check("%s no page or console errors" % tag, not errors, errors)
     finally:
         context.close()

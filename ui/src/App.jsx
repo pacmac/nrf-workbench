@@ -165,8 +165,25 @@ export default function App() {
     return () => { live = false; };
   }, [consoleOn, linksPath, linksTick]);
 
+  // The ESP32 boards, for the band (they are not in the device feed): read when this page loads, when the nRF list changes, after
+  // any command, and on "Look again". Never on a timer.
+  const espPath = ((info.commands || []).find((c) => c.name === "esp32.targets") || {}).path || null;
+  const [esp, setEsp] = useState(null);                           // {targets, native, at} or null before it is read, or where there is none
+  const [espTick, setEspTick] = useState(0);
+  useEffect(() => {
+    if (!authenticated || !espPath) return undefined;
+    let live = true;
+    readJson(espPath).then((r) => {
+      if (live && r.ok && r.body && r.body.data) setEsp({ targets: r.body.data.targets || [], native: r.body.data.undeclared_native || [], at: Date.now() / 1000 });
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [authenticated, espPath, boards, espTick]);
+
   // A write that came back 401 means the session ended (expiry, restart, another login): show the login again.
-  const onCommandDone = useCallback((r) => { if (r && r.status === 401) { setExpired(true); refreshSession(); } }, [refreshSession]);
+  const onCommandDone = useCallback((r) => {
+    setEspTick((n) => n + 1);
+    if (r && r.status === 401) { setExpired(true); refreshSession(); }
+  }, [refreshSession]);
 
   if (session === null) return <p role="status" className="p-6 text-sm text-slate-600 dark:text-slate-400">Loading…</p>;
   if (!authenticated) {
@@ -210,12 +227,14 @@ export default function App() {
           boardsAt={boardsAt}
           unavailable={unavailable}
           ticker={ticker}
+          esp={esp}
+          onEspRefresh={() => setEspTick((n) => n + 1)}
           onReconnect={() => feedRef.current && feedRef.current.reconnect()}
           onFlash={openFlash}
         />
         {page === "bench" && <Bench name={name} session={session} info={info} feed={feed} />}
         {page === "devices" && <Devices boards={boards} boardsAt={boardsAt} onFlash={openFlash} />}
-        {page === "firmware" && <Firmware commands={info.commands} boards={boards} onFlash={openFlash} onDone={onCommandDone} />}
+        {page === "firmware" && <Firmware commands={info.commands} boards={boards} onFlash={openFlash} onDone={onCommandDone} refreshKey={espTick} />}
         {page === "wiring" && <Wiring commands={info.commands} refreshKey={linksTick} onOpenPage={setPage} />}
         {page === "console" && consoleOn && <Console commands={info.commands} links={links} lines={consoleLines} activity={activity} feed={consoleFeed} onDone={onCommandDone} />}
         {page === "gpio" && gpioOn && <Gpio commands={info.commands} onDone={onCommandDone} />}
