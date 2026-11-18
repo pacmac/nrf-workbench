@@ -91,10 +91,8 @@ def _uart_status(ctx):
     except OSError:
         enabled = False
     holders = checks.holders(node, host.proc) if enabled else []
-    try:
-        serial0 = os.path.basename(os.path.realpath(os.path.join(host.devroot, "serial0")))
-    except OSError:
-        serial0 = None
+    link = os.path.join(host.devroot, "serial0")
+    serial0 = os.path.basename(os.path.realpath(link)) if os.path.islink(link) else None      # None: there is no /dev/serial0 at all
     cmdline = read("cmdline.txt")
     steps = _uart_steps(read("config.txt"), cmdline, holders, serial0)
     pins = linkmod.PI_UART_PINS[port]

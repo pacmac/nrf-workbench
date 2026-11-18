@@ -218,6 +218,10 @@ class UartStatus(Base):
         self.assertIn("not ready", res.message)
         self.assertEqual(res.data["pins"], {"tx_bcm": 14, "rx_bcm": 15, "tx_header": 8, "rx_header": 10})
 
+    def test_with_no_serial0_at_all_it_says_none_and_not_a_path(self):
+        self.write_boot()
+        self.assertIsNone(self.status().data["serial0_is"])
+
     def test_a_commented_line_is_not_a_done_step(self):
         self.write_boot(config="#enable_uart=1\n#dtoverlay=disable-bt\n")
         self.assertEqual(self.done(self.status())[:2], [False, False])

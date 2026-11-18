@@ -46,7 +46,16 @@ Reads, opens nothing: `{enabled, node, kernel_console, holders, bluetooth_on_it,
 
 ## Status (2026-11-18)
 
-**Built and tested, not yet proved on the real Pi**, which stopped answering on the network just before. 1289 tests (27 here, 12 mutants
+**Proved on the real Pi (n = 1 board, one run).** The four setup steps were applied (`enable_uart=1` and `dtoverlay=disable-bt` added to
+`config.txt`, `console=serial0,115200` removed from `cmdline.txt`, the serial gettys disabled; backups `*.bak-before-uart-20261118`) and
+the Pi rebooted. After it, `/dev/ttyAMA0` existed, `/dev/serial0 -> ttyAMA0`, nothing held it, and `wiring.uart_status` said ready (and
+`pinctrl` showed GPIO14 = TXD0, GPIO15 = RXD0). `rak-uart0` was moved onto it (disconnect, then connect with `adapter uart:ttyAMA0`,
+receive-only): the link was `pi-uart`, open, on `/dev/ttyAMA0`, and the RAK's debug output arrived on it ("i2c: NO DEVICES FOUND", "env
+sensor: NONE", "boots=13 ...", "site: HOME (configured) role=bench"). **The first lines took about 80 s** after the link opened, so the
+RAK prints in bursts or on an interval; the link was open and receiving throughout. The same reboot also proved that the I2C setting
+(i2c.md) survives a reboot.
+
+Before the real Pi, it was built and tested: 1289 tests (27 here, 12 mutants
 caught after two survivors were fixed), and a real browser run in light and dark (`scripts/verify_pi_uart_live.py`, 12 checks): the Pi's
 serial port is offered on the Wiring page, the sheet connects a board to it receive-only, the console has a `pi-uart` link that reads what the
 board prints, the pin map refuses BCM14 while the connection holds it, and removing the connection frees it. The Wiring page says the port
