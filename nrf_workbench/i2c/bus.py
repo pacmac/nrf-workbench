@@ -62,7 +62,7 @@ def buses(devroot="/dev", sysfs="/sys", proc="/proc"):
         if not m:
             continue
         n = int(m.group(1))
-        name = _read(os.path.join(sysfs, "class", "i2c-adapter", "i2c-%d" % n, "name"))
+        name = _read(os.path.join(sysfs, "class", "i2c-dev", "i2c-%d" % n, "name"))      # the layout the Pi showed, 2026-11-18
         out.append({"bus": n, "node": node, "name": name, "clock_hz": _clock(sysfs, n)})
     return out
 
@@ -77,7 +77,7 @@ def _read(path):
 
 def _clock(sysfs, n):
     """The bus clock from the adapter's device-tree node (a big-endian 32-bit number), or None."""
-    path = os.path.join(sysfs, "class", "i2c-adapter", "i2c-%d" % n, "device", "of_node", "clock-frequency")
+    path = os.path.join(sysfs, "class", "i2c-dev", "i2c-%d" % n, "device", "of_node", "clock-frequency")
     try:
         with open(path, "rb") as fh:
             raw = fh.read(4)

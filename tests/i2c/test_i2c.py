@@ -74,7 +74,7 @@ class Buses(unittest.TestCase):
 
     def adapter(self, n, name="bcm2835 (i2c@7e804000)", clock=100000):
         open(os.path.join(self.dev, "i2c-%d" % n), "w").close()
-        d = os.path.join(self.sys, "class", "i2c-adapter", "i2c-%d" % n)
+        d = os.path.join(self.sys, "class", "i2c-dev", "i2c-%d" % n)          # /sys/class/i2c-dev, as the Pi has it (not i2c-adapter)
         os.makedirs(os.path.join(d, "device", "of_node"))
         with open(os.path.join(d, "name"), "w") as fh:
             fh.write(name + "\n")
