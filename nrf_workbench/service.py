@@ -34,6 +34,7 @@ from .console import links as console_links
 from .console.broker import Broker
 from .console.port import Port
 from .dashboard import server as dashboard_server
+from .bench import commands as bench_commands
 from .devices import commands as device_commands
 from .devices import identity
 from .devices import profile as profilemod
@@ -167,7 +168,9 @@ def build_host(cfg, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
     wiring_commands.register(registry, host)
     esp32_commands.register(registry, host)
     i2c_commands.register(registry, host)
+    bench_commands.register(registry, host)
     caps = capabilities(host)
+    host.capabilities = caps                      # bench.overview reports sections by what the host has
     if "console" in caps:
         if cfg["paths"]["wiring"]:
             # The connections are the declaration. links.yaml is not read, and the start-up line says so.
