@@ -50,7 +50,18 @@ on bus 1 was refused `i2c_pins_unclaimed` with BCM 2 and 3 named: the gate works
 A miss the Pi caught: the first version read bus names from `/sys/class/i2c-adapter`, which the fake tree had and the Pi does not; the
 real place is `/sys/class/i2c-dev/i2c-N`.
 
-**Not done:** the persistent config has not been through a reboot, and no real device has answered yet.
+**A real device answered, the same day (n = 1 camera).** The `device` session flashed a TimerCAM X with its I2C-slave build through
+`esp32.flash` and, after the pin assignment, `i2c.scan` found `0x62` and `i2c.transfer` moved a whole JPEG (INFO, CAPTURE and 271
+SEEK pieces, 7,585 of 7,585 bytes, 0 retries, CRC32 equal to the camera's own). That is the first real I2C on this bench.
+
+**The EIO I first reported was the camera waking.** Every probe of a full-range scan answered EIO (errno 5) and I guessed the camera's
+old firmware was driving the lines. Wrong: the new firmware sleeps with its I2C slave ended and wakes on SCL going low, then takes
+about 1.1 s to boot, so its first probe fails with EIO while it boots and the next one finds it. Confirmed here: a scan of 0x62 alone
+failed, a full scan three seconds later failed, and a second scan of 0x62 found it. The driver's NAK is EREMOTEIO (121); EIO is a
+bus-level error. So **a bus error at one address no longer ends a scan** (`bus_errors` lists them and the message says to probe again);
+only every address erroring is a failure. A failed transfer says the same and is still one attempt, not retried.
+
+**Not done:** the persistent config has not been through a reboot.
 
 ## Files this spec allows
 

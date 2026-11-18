@@ -91,7 +91,9 @@ def _transfer(ctx, bus, address, write=None, read=None):
     except i2cbus.Nak as exc:
         return Result.failed("no_reply", str(exc), {"bus": bus, "address": address, "part": exc.part})
     except OSError as exc:
-        return Result.failed("write_failed", "the bus transfer failed: %s" % exc, {"bus": bus, "address": address})
+        return Result.failed("write_failed", "the bus transfer failed: %s. A device that sleeps and wakes on SCL going low can fail "
+                             "its first transaction while it boots: this was one attempt and is not retried; try again once it is up"
+                             % exc, {"bus": bus, "address": address, "errno": exc.errno})
     return Result.success({"bus": bus, "address": address, "written": data.hex(), "read": got.hex(), "bytes_written": len(data),
                            "bytes_read": len(got), "duration_s": round(secs, 4)}, "transferred")
 
@@ -109,18 +111,27 @@ def _scan(ctx, bus, first, last):
     if refusal is not None:
         return refusal
     do = (host.hooks or {}).get("i2c_transfer", i2cbus.transfer)
-    found = []
-    try:
-        for address in range(first, last + 1):
-            try:
-                do(node, address, b"", 1)
-                found.append(address)
-            except i2cbus.Nak:
-                continue
-    except OSError as exc:
-        return Result.failed("write_failed", "the scan stopped at a bus error: %s" % exc, {"bus": bus, "found": found})
-    return Result.success({"bus": bus, "first": first, "last": last, "found": found, "found_hex": ["0x%02x" % a for a in found]},
-                          "%d of %d addresses acknowledged" % (len(found), last - first + 1))
+    found, errors = [], []
+    for address in range(first, last + 1):
+        try:
+            do(node, address, b"", 1)
+            found.append(address)
+        except i2cbus.Nak:
+            continue
+        except OSError:
+            # A bus error at one address is not the end of the scan: a slave that sleeps and wakes on SCL going low (the TimerCAM does)
+            # answers its first probe with EIO while it boots, and the probes after it find it. It is recorded, not hidden.
+            errors.append(address)
+    total = last - first + 1
+    data = {"bus": bus, "first": first, "last": last, "found": found, "found_hex": ["0x%02x" % a for a in found],
+            "bus_errors": errors, "bus_errors_hex": ["0x%02x" % a for a in errors]}
+    if len(errors) == total:
+        return Result.failed("write_failed", "every address gave a bus error (EIO): the bus is stuck, or nothing is pulling it up",
+                             {"bus": bus, "bus_errors": errors})
+    note = ""
+    if errors:
+        note = "; %d gave a bus error (a device that was asleep and woke on the probe can do that: probe it again)" % len(errors)
+    return Result.success(data, "%d of %d addresses acknowledged%s" % (len(found), total, note))
 
 
 def register(registry, host):
