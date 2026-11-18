@@ -54,12 +54,15 @@ real place is `/sys/class/i2c-dev/i2c-N`.
 `esp32.flash` and, after the pin assignment, `i2c.scan` found `0x62` and `i2c.transfer` moved a whole JPEG (INFO, CAPTURE and 271
 SEEK pieces, 7,585 of 7,585 bytes, 0 retries, CRC32 equal to the camera's own). That is the first real I2C on this bench.
 
-**The EIO I first reported was the camera waking.** Every probe of a full-range scan answered EIO (errno 5) and I guessed the camera's
-old firmware was driving the lines. Wrong: the new firmware sleeps with its I2C slave ended and wakes on SCL going low, then takes
-about 1.1 s to boot, so its first probe fails with EIO while it boots and the next one finds it. Confirmed here: a scan of 0x62 alone
-failed, a full scan three seconds later failed, and a second scan of 0x62 found it. The driver's NAK is EREMOTEIO (121); EIO is a
-bus-level error. So **a bus error at one address no longer ends a scan** (`bus_errors` lists them and the message says to probe again);
-only every address erroring is a failure. A failed transfer says the same and is still one attempt, not retried.
+**EIO is what "nobody answered" looks like on this Pi, and I read it wrong twice.** The first full scan answered EIO (errno 5) at every
+address. I first called that a bus fault and guessed the camera's old firmware was driving the lines; `device` then explained that the
+new firmware sleeps with its I2C slave ended, wakes on SCL going low and needs about 1.1 s to boot, so its first probe is missed. A
+second run showed my other reading was wrong as well: a full scan found `0x62` and **111 of the other 112 addresses answered EIO too**,
+so EIO is simply the NAK on this driver (Pi 4B, kernel 6.18, bcm2835), not a fault. `bus.transfer` therefore treats ENXIO, EREMOTEIO
+**and EIO** as no-answer (`Nak`, a failed `no_reply`), and the message says what it cannot tell apart (nothing there, a device asleep or
+booting, a stuck bus). Any other kernel error (a timeout) is a bus error: a scan records it in `bus_errors` and carries on, and only every
+address erroring is a failure. A scan that finds nothing is an ok result that says a sleeping device misses its first probe. One attempt,
+never retried. **Sequence that works for a waking device:** probe it, wait for its boot time, probe again.
 
 **Not done:** the persistent config has not been through a reboot.
 

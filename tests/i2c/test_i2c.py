@@ -132,7 +132,8 @@ class Transfer(unittest.TestCase):
         self.assertEqual(open_fds(), before)
 
     def test_a_device_that_does_not_answer_is_a_nak_that_says_which_part_when_it_can(self):
-        for err in (errno.ENXIO, errno.EREMOTEIO):
+        # EIO is in the list because it was MEASURED on the bench Pi (kernel 6.18, bcm2835): 111 absent addresses of 112 answered EIO.
+        for err in (errno.ENXIO, errno.EREMOTEIO, errno.EIO):
             for write, read, part in ((b"\x01", 0, "write"), (b"", 1, "read"), (b"\x01", 1, "transaction")):
                 with self.assertRaises(bus.Nak, msg=(err, part)) as cm:
                     self.run_transfer(Ioctl(error=OSError(err, "x")), 0x42, write, read)
@@ -140,13 +141,13 @@ class Transfer(unittest.TestCase):
 
     def test_any_other_kernel_error_is_not_a_nak(self):
         with self.assertRaises(OSError) as cm:
-            self.run_transfer(Ioctl(error=OSError(errno.EIO, "bus error")), 0x42, b"\x01", 0)
+            self.run_transfer(Ioctl(error=OSError(errno.ETIMEDOUT, "transfer timed out")), 0x42, b"\x01", 0)
         self.assertNotIsInstance(cm.exception, bus.Nak)
 
     def test_the_node_is_closed_on_success_a_nak_and_an_error(self):
         before = open_fds()
         self.run_transfer(Ioctl(reply=b"\x01"), 0x42, b"", 1)
-        for err in (errno.ENXIO, errno.EIO):
+        for err in (errno.ENXIO, errno.ETIMEDOUT):
             with self.assertRaises((bus.Nak, OSError)):
                 self.run_transfer(Ioctl(error=OSError(err, "x")), 0x42, b"\x01", 0)
         self.assertEqual(open_fds(), before)
@@ -273,13 +274,18 @@ class Transferring(Base):
 
     def test_a_bus_error_is_a_failed_result_with_the_reason(self):
         def boom(node, address, write, read):
-            raise OSError(errno.EIO, "bus is wedged")
+            raise OSError(errno.ETIMEDOUT, "bus is wedged")
         self.host.hooks["i2c_transfer"] = boom
         res = self.transfer(read=1)
-        self.assertEqual((res.cls, res.code, res.evidence["errno"]), ("failed", "write_failed", errno.EIO))
+        self.assertEqual((res.cls, res.code, res.evidence["errno"]), ("failed", "write_failed", errno.ETIMEDOUT))
         self.assertIn("wedged", res.message)
+
+    def test_no_answer_says_it_is_one_attempt_and_that_a_sleeping_device_needs_a_second_try(self):
+        self.nak.add(0x42)
+        res = self.transfer(read=1)
+        self.assertEqual(res.code, "no_reply")
         self.assertIn("not retried", res.message)
-        self.assertEqual(len(self.host.calls), 0, "the failing fake is not the recorder: one call, no second")
+        self.assertIn("sleeps", res.message)
 
     def test_bad_arguments_are_usage_errors_and_nothing_is_sent(self):
         bad = [dict(address=0x07, read=1), dict(address=0x78, read=1), dict(address=-1, read=1), dict(read=257), dict(read=-1),
@@ -318,21 +324,27 @@ class Scanning(Base):
         self.assertEqual(self.host.calls, [])
 
     def test_a_bus_error_at_one_address_does_not_end_the_scan_and_is_reported(self):
-        """A slave that sleeps and wakes on SCL (the TimerCAM) answers its first probe with EIO and the next ones find it."""
+        """A kernel error other than no-answer (a timeout) at one address is recorded and the scan goes on."""
         def fake(node, address, write, read):
             if address == 0x12:
-                raise OSError(errno.EIO, "waking")
+                raise OSError(errno.ETIMEDOUT, "timed out")
             if address in (0x0a, 0x20):
                 return b"\x00", 0.0
             raise bus.Nak(address, "read")
         self.host.hooks["i2c_transfer"] = fake
         res = self.call("i2c.scan", {"bus": 1, "first": 0x08, "last": 0x20})
         self.assertEqual((res.ok, res.data["found"], res.data["bus_errors_hex"]), (True, [0x0a, 0x20], ["0x12"]))
-        self.assertIn("1 gave a bus error", res.message)
+        self.assertIn("1 addresses gave a bus error", res.message)
+
+    def test_nothing_answering_is_an_ok_result_that_says_a_sleeping_device_misses_its_first_probe(self):
+        self.nak = set(range(0x08, 0x0d))
+        res = self.call("i2c.scan", {"bus": 1, "first": 0x08, "last": 0x0c})
+        self.assertEqual((res.ok, res.data["found"], res.data["bus_errors"]), (True, [], []))
+        self.assertIn("Nothing answered", res.message)
 
     def test_every_address_giving_a_bus_error_is_a_failure_saying_the_bus_is_stuck(self):
         def boom(node, address, write, read):
-            raise OSError(errno.EIO, "stuck")
+            raise OSError(errno.ETIMEDOUT, "stuck")
         self.host.hooks["i2c_transfer"] = boom
         res = self.call("i2c.scan", {"bus": 1, "first": 0x08, "last": 0x0c})
         self.assertEqual((res.cls, res.code, res.evidence["bus_errors"]), ("failed", "write_failed", [8, 9, 10, 11, 12]))

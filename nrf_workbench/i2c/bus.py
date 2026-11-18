@@ -31,7 +31,8 @@ class Nak(Exception):
     error for the whole transaction and does not say which message was refused, and this does not guess."""
 
     def __init__(self, address, part):
-        Exception.__init__(self, "address 0x%02x did not acknowledge the %s" % (address, part))
+        Exception.__init__(self, "address 0x%02x did not acknowledge the %s (nothing there, a device asleep or still booting, or a "
+                           "stuck bus: this driver reports all three the same way)" % (address, part))
         self.address, self.part = address, part
 
 
@@ -111,7 +112,10 @@ def transfer(node, address, write=b"", read=0):
         try:
             fcntl.ioctl(fd, I2C_RDWR, data)
         except OSError as exc:
-            if exc.errno in (errno.ENXIO, errno.EREMOTEIO):
+            # What "nobody answered" looks like depends on the driver. MEASURED on the bench Pi (Pi 4B, kernel 6.18, bcm2835): 111 absent
+            # addresses of 112 answered EIO, and the one present device (0x62) answered. So EIO is a NAK here. It can also be a stuck bus,
+            # and errno cannot tell the two apart: the result says so rather than pretending.
+            if exc.errno in (errno.ENXIO, errno.EREMOTEIO, errno.EIO):
                 raise Nak(address, "transaction" if write and read else "write" if write else "read")
             raise
         return bytes(rbuf.raw[:read]), time.monotonic() - started

@@ -89,11 +89,10 @@ def _transfer(ctx, bus, address, write=None, read=None):
     try:
         got, secs = do(node, address, data, read)
     except i2cbus.Nak as exc:
-        return Result.failed("no_reply", str(exc), {"bus": bus, "address": address, "part": exc.part})
+        return Result.failed("no_reply", "%s. One attempt, not retried; a device that sleeps and wakes on SCL needs a second try once it is up"
+                             % exc, {"bus": bus, "address": address, "part": exc.part})
     except OSError as exc:
-        return Result.failed("write_failed", "the bus transfer failed: %s. A device that sleeps and wakes on SCL going low can fail "
-                             "its first transaction while it boots: this was one attempt and is not retried; try again once it is up"
-                             % exc, {"bus": bus, "address": address, "errno": exc.errno})
+        return Result.failed("write_failed", "the bus transfer failed: %s" % exc, {"bus": bus, "address": address, "errno": exc.errno})
     return Result.success({"bus": bus, "address": address, "written": data.hex(), "read": got.hex(), "bytes_written": len(data),
                            "bytes_read": len(got), "duration_s": round(secs, 4)}, "transferred")
 
@@ -117,20 +116,20 @@ def _scan(ctx, bus, first, last):
             do(node, address, b"", 1)
             found.append(address)
         except i2cbus.Nak:
-            continue
+            continue                                  # nobody answered: the normal outcome for almost every address
         except OSError:
-            # A bus error at one address is not the end of the scan: a slave that sleeps and wakes on SCL going low (the TimerCAM does)
-            # answers its first probe with EIO while it boots, and the probes after it find it. It is recorded, not hidden.
-            errors.append(address)
+            errors.append(address)                    # anything else the kernel says (a timeout, say): recorded, and the scan goes on
     total = last - first + 1
     data = {"bus": bus, "first": first, "last": last, "found": found, "found_hex": ["0x%02x" % a for a in found],
             "bus_errors": errors, "bus_errors_hex": ["0x%02x" % a for a in errors]}
     if len(errors) == total:
-        return Result.failed("write_failed", "every address gave a bus error (EIO): the bus is stuck, or nothing is pulling it up",
+        return Result.failed("write_failed", "every address gave a bus error (not a plain no-answer): the bus is stuck",
                              {"bus": bus, "bus_errors": errors})
     note = ""
+    if not found:
+        note = ". Nothing answered. A device that sleeps and wakes on SCL going low (the TimerCAM does) misses its first probe: probe its address again"
     if errors:
-        note = "; %d gave a bus error (a device that was asleep and woke on the probe can do that: probe it again)" % len(errors)
+        note += "; %d addresses gave a bus error other than no-answer" % len(errors)
     return Result.success(data, "%d of %d addresses acknowledged%s" % (len(found), total, note))
 
 
