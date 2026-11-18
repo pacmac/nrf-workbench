@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(ROOT, "tests", "esp32"))
 import uvicorn  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 
+from navhelp import go_to  # noqa: E402
 from nrf_workbench import service  # noqa: E402
 from nrf_workbench.core import config as cfgmod  # noqa: E402
 from nrf_workbench.devices import commands as device_commands  # noqa: E402
@@ -130,7 +131,7 @@ def run(browser, theme, size, shots):
         page.goto(bench.url)
         nav = page.get_by_role("navigation", name="Pages")
         nav.wait_for()
-        nav.get_by_role("button", name="Firmware").click()
+        go_to(page, "Firmware")
         card = page.locator("section", has=page.get_by_role("heading", name="ESP32 boards"))
         card.wait_for()
         card.get_by_text("No ESP32 declared yet").wait_for()
@@ -156,13 +157,13 @@ def run(browser, theme, size, shots):
         check("%s its console is a receive-only link on its own bridge, open" % tag,
               st and st["state"] == "open" and st["rx_only"] and st["own_bridge"] and st["adapter"]["slot"] == "1-2", st)
         shot("2-declared")
-        nav.get_by_role("button", name="Home", exact=True).click()
+        go_to(page, "Home")
         home = page.get_by_role("list", name="Devices").first
         home.get_by_text("bench-esp").first.wait_for()
         check("%s Home lists the declared board as an ESP32 board, connected, and not as an nRF board" % tag,
               "ESP32 board" in home.inner_text() and "bench-esp" in home.inner_text()
               and home.get_by_role("img", name="connected").count() >= 1, home.inner_text())
-        nav.get_by_role("button", name="Firmware", exact=True).click()
+        go_to(page, "Firmware")
         card.get_by_role("list", name="ESP32 boards").wait_for()
 
         # packages: a whole-flash image and a bundle with its ELF are told apart
@@ -228,7 +229,7 @@ def run(browser, theme, size, shots):
         check("%s Reset runs the application (--after hard-reset)" % tag, cmd[cmd.index("--after") + 1] == "hard-reset", cmd)
 
         # the console and the crash decoder
-        nav.get_by_role("button", name="Console").click()
+        go_to(page, "Console")
         page.get_by_text("The ESP32's own USB adapter").wait_for()
         check("%s the console says in one line that opening this port can reset some boards" % tag, "opening it can reset some boards" in page.inner_text("body"))
         os.write(bench.master, b"Guru Meditation Error: Core 0 panic'ed (LoadProhibited)\nBacktrace: 0x400d1004:0x3ffb0000 0x400d1044:0x3ffb0000\n")
@@ -252,14 +253,14 @@ def run(browser, theme, size, shots):
         shot("7-decoded")
 
         # forgetting takes the console link away
-        nav.get_by_role("button", name="Firmware").click()
+        go_to(page, "Firmware")
         page.locator("section", has=page.get_by_role("heading", name="ESP32 boards")).get_by_role("button", name="Forget bench-esp").click()
         page.get_by_text("No ESP32 declared yet").wait_for()
         check("%s forgetting the board takes its console link with it" % tag, bench.host.console.states() == [], bench.host.console.states())
         shot("8-forgotten")
 
         # an nRF board is named by its serial, in a JSON file, from the Devices page
-        nav.get_by_role("button", name="Devices", exact=True).click()
+        go_to(page, "Devices")
         devs = page.get_by_role("list", name="Devices")
         devs.get_by_role("button", name=re.compile(SERIAL)).click()
         page.get_by_role("button", name="Name %s" % SERIAL).click()
@@ -285,7 +286,7 @@ def run(browser, theme, size, shots):
         # a built-in-USB ESP32 plugged in later is found on "Look again" and is not an ESP32 until declared
         bench.tree.usb("1-5", ("303a", "1001"), "USB JTAG/serial debug unit", serial="64:E8:33:85:4A:A4", manufacturer="Espressif", tty="ttyACM2", majmin="166:2")
         bench.tree.node("ttyACM2", 166, 2)
-        nav.get_by_role("button", name="Home", exact=True).click()
+        go_to(page, "Home")
         home = page.get_by_role("list", name="Devices").first
         bench.mon_b.send(b"x")                                          # the kernel's word that something was plugged: no click, no reload
         home.get_by_text("nobody has declared").first.wait_for()
@@ -298,7 +299,7 @@ def run(browser, theme, size, shots):
         bench.tree.usb("1-5", ("303a", "1001"), "USB JTAG/serial debug unit", serial="64:E8:33:85:4A:A4", manufacturer="Espressif", tty="ttyACM2", majmin="166:2")
         bench.mon_b.send(b"x")
         home.get_by_text("nobody has declared").first.wait_for()
-        nav.get_by_role("button", name="Firmware", exact=True).click()
+        go_to(page, "Firmware")
         page.get_by_label("Adapter").locator("option", has_text="built-in USB").wait_for(state="attached")      # the list loads when the page opens
         check("%s the declare form offers it too" % tag,
               any("64:E8:33:85:4A:A4" in o and "built-in USB" in o for o in page.get_by_label("Adapter").locator("option").all_inner_texts()),

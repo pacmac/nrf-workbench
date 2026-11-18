@@ -58,6 +58,9 @@ their layouts, only their prose, headers and panels changed; field-level hints o
 
 ## The shell
 
+- **Superseded by `navigation.md` (2026-11-18):** the sticky header and the scrolling row of tabs below were rejected ("scrolling menus on a
+  phone is a bad design, and on desktop we are wasting a lot of vertical space"). Now: a bottom bar and a More list on a phone, a left
+  sidebar on a desktop. What this section first said:
 - A sticky header: the bench's name, a lamp and one line ("Raspberry Pi 4 Model B, 192.168.0.214, live"), the theme button.
 - **The nav is one `nav[aria-label=Pages]` that never wraps**: a single row of tabs that scrolls sideways when it is wider than the screen,
   the current tab scrolled into view, a fade at the clipped edge, 44 px tall touch targets. Home, Devices, Wiring, Console, Firmware, GPIO,

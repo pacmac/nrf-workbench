@@ -126,9 +126,50 @@ def overflow(page):
     return page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
 
 
-def nav_one_row(page):
-    tops = page.evaluate("[...document.querySelectorAll('nav[aria-label=Pages] button')].map(b => b.offsetTop)")
-    return len(set(tops)) == 1, tops
+def current_pages(page):
+    """The nav buttons marked as the current page, shown or not (a page under More is marked in its list and on More)."""
+    return page.evaluate("[...document.querySelectorAll('nav[aria-label=Pages] [aria-current=page]')].map((b) => b.textContent)")
+
+
+PAGE_ORDER = ["Home", "Devices", "Projects", "Console", "Firmware", "Wiring", "GPIO", "Activity", "Commands", "Help"]
+
+
+def nav_shape(page):
+    """What the nav looks like right now: which buttons are shown, whether anything in it scrolls, and where it sits."""
+    return page.evaluate("""() => {
+      const nav = document.querySelector('nav[aria-label=Pages]');
+      const shown = [...nav.querySelectorAll('button')].filter((b) => b.offsetParent !== null);
+      const r = nav.getBoundingClientRect();
+      const side = nav.parentElement.getBoundingClientRect();      // the sidebar column: the bench name, then the nav
+      const scrolls = [nav, ...nav.querySelectorAll('div')].some((e) => e.scrollWidth > e.clientWidth + 1);
+      return { shown: shown.map((b) => b.textContent), tops: shown.map((b) => Math.round(b.getBoundingClientRect().top)),
+               heights: shown.map((b) => Math.round(b.getBoundingClientRect().height)), scrolls, top: Math.round(r.top), bottom: Math.round(r.bottom),
+               left: Math.round(r.left), right: Math.round(r.right), side_top: Math.round(side.top), side_left: Math.round(side.left),
+               side_right: Math.round(side.right), vh: innerHeight };
+    }""")
+
+
+def check_nav(page, label, tag, open_more):
+    """docs/specs/navigation.md: nothing scrolls sideways; a phone has a bottom bar of four pages and More, a desktop a sidebar of all ten."""
+    s = nav_shape(page)
+    check("%s the nav does not scroll" % tag, not s["scrolls"], s)
+    check("%s every nav button is at least 44 px tall" % tag, all(h >= 44 for h in s["heights"]), s["heights"])
+    if label == "phone":
+        check("%s the phone bar is the four daily pages and More, in one row" % tag,
+              s["shown"] == ["Home", "Devices", "Projects", "Console", "More"] and len(set(s["tops"])) == 1, s)
+        check("%s the phone bar sits at the bottom edge" % tag, s["bottom"] == s["vh"], s)
+        open_more()
+        o = nav_shape(page)
+        check("%s More lists every other page and Theme" % tag, [t for t in o["shown"] if t in PAGE_ORDER] == PAGE_ORDER[:4] + PAGE_ORDER[4:] and
+              any(t.startswith("Theme:") for t in o["shown"]), o["shown"])
+        page.keyboard.press("Escape")
+        check("%s Escape closes More" % tag, nav_shape(page)["shown"] == s["shown"])
+    else:
+        check("%s the desktop sidebar lists all ten pages down the left, daily first" % tag,
+              [t for t in s["shown"] if t in PAGE_ORDER] == PAGE_ORDER and len(set(s["tops"])) == len(s["tops"]) and "More" not in s["shown"], s)
+        check("%s the sidebar is at the left edge and the window's top, taking no header band" % tag, s["side_top"] == 0 and s["side_left"] < 100 and s["side_right"] - s["side_left"] <= 220, s)
+        main_top = page.evaluate("document.querySelector('main').getBoundingClientRect().top")
+        check("%s the page starts within 40 px of the top of the window" % tag, main_top < 40, main_top)
 
 
 def project_flow(page, bench, nav, tag, shot, open_page):
@@ -214,19 +255,34 @@ def run(browser, bench, theme, size, shots):
         page.screenshot(path=os.path.join(shots, "%s-%s.png" % (tag, name)), full_page=True)
         page.evaluate("(y) => { window.scrollTo(0, y); return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); }", y)
 
+    def open_more():
+        nav.get_by_role("button", name="More", exact=True).click()
+        page.wait_for_timeout(100)
+
     def open_page(name):
-        nav.get_by_role("button", name=name, exact=True).click()
+        button = nav.get_by_role("button", name=name, exact=True)
+        if not button.is_visible():                       # on a phone the pages after the fourth are under More
+            open_more()
+        button.click()
         page.wait_for_timeout(250)
 
     try:
         page.goto(bench.url)
         nav.wait_for()
         # ---- the shell
-        one, tops = nav_one_row(page)
-        check("%s the nav is one row and never wraps" % tag, one, tops)
-        check("%s the nav has every page, daily ones first" % tag,
-              page.evaluate("[...document.querySelectorAll('nav[aria-label=Pages] button')].map(b => b.textContent)") ==
-              ["Home", "Devices", "Projects", "Wiring", "Console", "Firmware", "GPIO", "Activity", "Commands", "Help"])
+        check_nav(page, label, tag, open_more)
+        shot("00-nav")
+        if label == "phone":
+            open_more()
+            shot("00-more")
+            check("%s More is expanded while open" % tag, nav.get_by_role("button", name="More", exact=True).get_attribute("aria-expanded") == "true")
+            nav.get_by_role("button", name="Wiring", exact=True).click()
+            check("%s choosing a page closes More and More is the current item" % tag,
+                  "Wiring" not in nav_shape(page)["shown"] and "More" in current_pages(page), current_pages(page))
+            open_more()
+            nav.get_by_role("button", name="More", exact=True).click()
+            check("%s a second press of More closes it" % tag, "Wiring" not in nav_shape(page)["shown"])
+            open_page("Home")
         # ---- Home
         status = page.get_by_role("status").filter(has_text="devices connected")
         status.first.wait_for()
@@ -244,13 +300,13 @@ def run(browser, bench, theme, size, shots):
         shot("1-home")
         page.get_by_role("button", name="Connections: open the page").click()
         page.get_by_role("heading", name="Wiring").wait_for()
-        check("%s a Home heading opens its page" % tag, nav.get_by_role("button", name="Wiring").get_attribute("aria-current") == "page")
+        check("%s a Home heading opens its page" % tag, "Wiring" in current_pages(page), current_pages(page))
         open_page("Home")
         page.get_by_role("list", name="Devices").first.get_by_role("button", name=re.compile("left-rak")).click()
-        check("%s a Home nRF row opens Devices" % tag, nav.get_by_role("button", name="Devices").get_attribute("aria-current") == "page")
+        check("%s a Home nRF row opens Devices" % tag, "Devices" in current_pages(page), current_pages(page))
         open_page("Home")
         page.get_by_role("list", name="Devices").first.get_by_role("button", name=re.compile("nobody has declared")).click()
-        check("%s a Home ESP32 row opens Firmware, where it is declared" % tag, nav.get_by_role("button", name="Firmware").get_attribute("aria-current") == "page")
+        check("%s a Home ESP32 row opens Firmware, where it is declared" % tag, "Firmware" in current_pages(page), current_pages(page))
         open_page("Devices")
         # ---- Devices
         tabs = page.get_by_role("tablist", name="Show devices")
@@ -321,8 +377,12 @@ def run(browser, bench, theme, size, shots):
         open_page("Home")
         page.get_by_role("button", name="Help: Home").click()
         page.get_by_role("article", name="Start here").wait_for()
-        one, tops = nav_one_row(page)
-        check("%s the nav is still one row after moving about" % tag, one, tops)
+        check("%s the nav still does not scroll after moving about" % tag, not nav_shape(page)["scrolls"], nav_shape(page))
+        if label == "desktop":
+            open_page("Home")
+            page.evaluate("window.scrollTo(0, 100000)")
+            check("%s the sidebar stays in view while a long page scrolls" % tag,
+                  page.evaluate("window.scrollY") > 0 and nav_shape(page)["side_top"] == 0, (page.evaluate("window.scrollY"), nav_shape(page)))
         check("%s no page or console errors" % tag, not errors, errors)
         check("%s the only refused request was the bad manifest on purpose" % tag, refused == [("POST", "api/project/put", 422)], refused)
     finally:

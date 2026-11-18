@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.join(ROOT, "tests", "devices"))
 import uvicorn  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 
+from navhelp import go_to  # noqa: E402
 from nrf_workbench import service  # noqa: E402
 from nrf_workbench.core import config as cfgmod  # noqa: E402
 from fakes import SERIAL, Tree  # noqa: E402
@@ -98,7 +99,7 @@ def run(browser, theme, shots):
         page.goto(bench.url)
         nav = page.get_by_role("navigation", name="Pages")
         nav.wait_for()
-        nav.get_by_role("button", name="Wiring").click()
+        go_to(page, "Wiring")
         box = page.get_by_role("group", name=re.compile("Raspberry Pi serial port.*is available but not connected"))
         box.wait_for()
         check("%s the Pi's own serial port is offered on the Wiring page like an adapter" % theme, "Which device is it wired to?" in box.inner_text(), box.inner_text())
@@ -118,7 +119,7 @@ def run(browser, theme, shots):
         check("%s the console has a pi-uart link on ttyAMA0, open, receive-only, at 115200" % theme,
               (st["backend"], st["port"], st["state"], st["rx_only"], st["baud"]) == ("pi-uart", "ttyAMA0", "open", True, 115200), st)
         os.write(bench.master, b"HB up=12345 heap=88000\n")
-        nav.get_by_role("button", name="Console").click()
+        go_to(page, "Console")
         page.get_by_text("HB up=12345 heap=88000").wait_for()
         check("%s what the board prints on the Pi's UART shows on the Console page" % theme, True)
         page.screenshot(path=os.path.join(shots, "%s-3-console.png" % theme), full_page=True)

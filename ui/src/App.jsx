@@ -20,8 +20,10 @@ import Wiring from "./wiring/Wiring.jsx";
 import FlashDialog from "./FlashDialog.jsx";
 import { addLines } from "./consoleLog.js";
 
-// The daily pages first, the reference last. The nav is one row that scrolls sideways, so it never wraps on a phone.
-const PAGES = [["home", "Home"], ["devices", "Devices"], ["projects", "Projects"], ["wiring", "Wiring"], ["console", "Console"], ["firmware", "Firmware"], ["gpio", "GPIO"], ["activity", "Activity"], ["commands", "Commands"], ["help", "Help"]];
+// The daily pages first, the reference last (docs/specs/navigation.md). On a phone the first DAILY pages this host has are the bar and the
+// rest are under More; on a desktop all of them are a list down the left. Nothing scrolls sideways.
+const PAGES = [["home", "Home"], ["devices", "Devices"], ["projects", "Projects"], ["console", "Console"], ["firmware", "Firmware"], ["wiring", "Wiring"], ["gpio", "GPIO"], ["activity", "Activity"], ["commands", "Commands"], ["help", "Help"]];
+const DAILY = 4;      // the bar holds four pages and More: five equal cells at 390 px are 78 px each, past the 44 px touch target
 
 // How many activity rows the browser keeps in memory. Same derivation as the draw limit: the server's retention
 // is the real bound, this only stops a tab that stays open for weeks from growing without limit. 5 x the
@@ -56,10 +58,10 @@ export default function App() {
   const [page, setPage] = useState("home");
   const [topic, setTopic] = useState("start");                   // the Help topic that is open
   const [helpDirect, setHelpDirect] = useState(false);          // a ? opens its topic itself; the Help tab opens the list of topics
-  const go = useCallback((id) => { setHelpDirect(false); setPage(id); window.scrollTo(0, 0); }, []);
-  const openHelp = useCallback((id) => { setTopic(id || "start"); setHelpDirect(true); setPage("help"); window.scrollTo(0, 0); }, []);
+  const [more, setMore] = useState(false);                       // the phone's list of the other pages is open
+  const go = useCallback((id) => { setHelpDirect(false); setMore(false); setPage(id); window.scrollTo(0, 0); }, []);
+  const openHelp = useCallback((id) => { setTopic(id || "start"); setHelpDirect(true); setMore(false); setPage("help"); window.scrollTo(0, 0); }, []);
   const nav = useMemo(() => ({ go, help: openHelp }), [go, openHelp]);
-  const tabs = useRef(null);
 
   const [feed, setFeed] = useState({ state: "connecting", at: null, detail: "" });
   const [boards, setBoards] = useState(null);
@@ -196,11 +198,13 @@ export default function App() {
     if (r && r.status === 401) { setExpired(true); refreshSession(); }
   }, [refreshSession]);
 
-  // The current tab is kept in view when the row of tabs is wider than the screen.
+  // The phone's More list closes on Escape, as well as on choosing a page and on a second press of More.
   useEffect(() => {
-    const el = tabs.current && tabs.current.querySelector("[aria-current='page']");
-    if (el && el.scrollIntoView) el.scrollIntoView({ inline: "center", block: "nearest" });
-  }, [page, authenticated]);
+    if (!more) return undefined;
+    const onKey = (e) => { if (e.key === "Escape") setMore(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [more]);
 
   if (session === null) return <p role="status" className="p-6 text-sm text-slate-600 dark:text-slate-400">Loading…</p>;
   if (!authenticated) {
@@ -209,46 +213,59 @@ export default function App() {
 
   const host = overview.data ? overview.data.host : null;
   const live = feed.state === "live";
+  const pages = PAGES.filter(([id]) => (id !== "console" || consoleOn) && (id !== "gpio" || gpioOn) && (id !== "projects" || projectsOn));
+  const daily = pages.slice(0, DAILY);
+  const others = pages.slice(DAILY);
+  const underMore = others.some(([id]) => id === page);
+  const item = (current, extra) => cx(
+    "min-h-11 min-w-0 rounded-md px-1 text-[15px] font-medium md:w-full md:px-3 md:text-left",
+    current ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900" : "text-slate-700 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-800",
+    extra,
+  );
+  const pageButton = ([id, label], extra) => (
+    <button key={id} type="button" onClick={() => go(id)} aria-current={page === id ? "page" : undefined} className={item(page === id, extra)}>{label}</button>
+  );
+  const doLogout = async () => { await logout(); setExpired(false); setBoards(null); setActivity({ rows: [], lost: 0, reset: false }); setRunning([]); setLinks(null); setConsoleLines({}); refreshSession(); };
   return (
     <NavContext.Provider value={nav}>
-      <div className="mx-auto max-w-5xl px-4 pb-12">
-        <header className="sticky top-0 z-20 -mx-4 bg-slate-100/95 px-4 pt-3 backdrop-blur dark:bg-slate-950/95">
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold">{name}</h1>
-            <div className="ml-auto flex items-center gap-2">
-              <Button tone="quiet" onClick={() => setTheme(nextTheme(theme))} title="Light, dark, or follow the system" className="min-h-9! px-2!">Theme: {theme}</Button>
-              {session.login_required && (
-                <Button tone="quiet" className="min-h-9! px-2!" onClick={async () => { await logout(); setExpired(false); setBoards(null); setActivity({ rows: [], lost: 0, reset: false }); setRunning([]); setLinks(null); setConsoleLines({}); refreshSession(); }}>Log out</Button>
+      <div className="mx-auto max-w-6xl px-4 md:flex md:gap-6">
+        {/* The sidebar on a desktop: the bench and its pages, always in view, so the page gets the whole height. On a phone this is a slim strip. */}
+        <div className="md:sticky md:top-0 md:flex md:h-screen md:w-52 md:shrink-0 md:flex-col md:py-4">
+          <header className="py-2 md:pb-4 md:pt-0">
+            <div className="flex items-baseline gap-3 md:block">
+              <h1 className="text-xl font-semibold">{name}</h1>
+              <p className="flex min-w-0 flex-1 items-center gap-2 text-[13px] text-slate-600 dark:text-slate-400 md:mt-1 md:items-start">
+                <Lamp state={live ? "connected" : "attention"} size={12} className="md:mt-1" />
+                <span className="min-w-0 truncate md:whitespace-normal md:break-words">{host && host.model ? `${host.model}, ` : ""}{window.location.host}{live ? "" : `, live updates ${feed.state}`}</span>
+              </p>
+            </div>
+            {(feed.state === "dropped" || feed.state === "unavailable") && (
+              <button type="button" className="text-[13px] underline" onClick={() => feedRef.current && feedRef.current.reconnect()}>Reconnect</button>
+            )}
+          </header>
+          {more && <div aria-hidden="true" className="fixed inset-0 z-30 bg-slate-900/30 dark:bg-black/50 md:hidden" onClick={() => setMore(false)} />}
+          {/* DOM order is the reading and tab order on both layouts: the daily pages, then the rest. On a phone the column is reversed so the
+              list opens ABOVE the bar. */}
+          <nav aria-label="Pages" className="fixed inset-x-0 bottom-0 z-40 flex flex-col-reverse md:static md:min-h-0 md:flex-1 md:flex-col">
+            <div className="flex gap-1 border-t border-slate-200 bg-white px-2 pb-[max(0.25rem,env(safe-area-inset-bottom))] pt-1 dark:border-slate-700 dark:bg-slate-900 md:flex-col md:border-0 md:bg-transparent md:p-0 md:pb-1 md:dark:bg-transparent">
+              {daily.map((p) => pageButton(p, "flex-1 text-center"))}
+              {others.length > 0 && (
+                <button type="button" onClick={() => setMore(!more)} aria-expanded={more} aria-haspopup="true"
+                  aria-current={underMore && !more ? "page" : undefined}
+                  className={cx(item(underMore && !more, "flex-1 text-center"), "md:hidden")}>More</button>
               )}
             </div>
-          </div>
-          <p className="mt-0.5 flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-400">
-            <Lamp state={live ? "connected" : "attention"} size={12} />
-            <span className="min-w-0 truncate">{host && host.model ? `${host.model}, ` : ""}{window.location.host}{live ? "" : `, live updates ${feed.state}`}</span>
-            {(feed.state === "dropped" || feed.state === "unavailable") && (
-              <button type="button" className="shrink-0 underline" onClick={() => feedRef.current && feedRef.current.reconnect()}>Reconnect</button>
-            )}
-          </p>
-          <nav aria-label="Pages" ref={tabs} className="-mx-4 mt-2 flex gap-1 overflow-x-auto px-4 pb-2 [scrollbar-width:none]">
-            {PAGES.filter(([id]) => (id !== "console" || consoleOn) && (id !== "gpio" || gpioOn) && (id !== "projects" || projectsOn)).map(([id, label]) => (
-              <button
-                key={id}
-                onClick={() => go(id)}
-                aria-current={page === id ? "page" : undefined}
-                className={cx(
-                  "min-h-11 shrink-0 rounded-md px-3 text-[15px] font-medium",
-                  page === id
-                    ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
-                    : "text-slate-700 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-800",
-                )}
-              >
-                {label}
-              </button>
-            ))}
+            <div className={cx(more ? "flex" : "hidden", "max-h-[70vh] flex-col gap-1 overflow-y-auto rounded-t-xl border-t border-slate-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-900 md:flex md:max-h-none md:flex-1 md:rounded-none md:border-0 md:bg-transparent md:p-0 md:shadow-none md:dark:bg-transparent")}>
+              {others.map((p) => pageButton(p, "px-3! text-left"))}
+              <div className="mt-1 flex flex-col gap-1 border-t border-slate-200 pt-2 dark:border-slate-800 md:mt-auto">
+                <button type="button" onClick={() => setTheme(nextTheme(theme))} title="Light, dark, or follow the system" className={item(false, "px-3! text-left")}>Theme: {theme}</button>
+                {session.login_required && <button type="button" onClick={doLogout} className={item(false, "px-3! text-left")}>Log out</button>}
+              </div>
+            </div>
           </nav>
-        </header>
+        </div>
 
-        <div className="mt-3 space-y-4">
+        <main className="mt-1 min-w-0 flex-1 space-y-4 pb-24 md:mt-0 md:pb-12 md:pt-4">
           <Working running={running} feedLive={live} />
           {page === "home" && <Home overview={overview} session={session} feed={feed} activity={activity} info={info} />}
           {page === "devices" && <Devices overview={overview} commands={info.commands} onFlash={openFlash} onChanged={refresh} onDone={onCommandDone} />}
@@ -260,10 +277,9 @@ export default function App() {
           {page === "activity" && <Activity activity={activity} />}
           {page === "commands" && <Commands commands={info.commands} overview={overview} onDone={onCommandDone} />}
           {page === "help" && <Help topic={topic} direct={helpDirect} onTopic={setTopic} onGo={go} />}
-        </div>
-
-        {flashing && <FlashDialog board={flashing} commands={info.commands || []} initial={flashInitial} onDone={onCommandDone} onClose={() => setFlashing(null)} />}
+        </main>
       </div>
+      {flashing && <FlashDialog board={flashing} commands={info.commands || []} initial={flashInitial} onDone={onCommandDone} onClose={() => setFlashing(null)} />}
     </NavContext.Provider>
   );
 }

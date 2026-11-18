@@ -39,6 +39,7 @@ import uvicorn  # noqa: E402
 import yaml  # noqa: E402
 from playwright.sync_api import expect, sync_playwright  # noqa: E402
 
+from navhelp import current_pages, go_to, is_current, reveal  # noqa: E402
 from nrf_workbench import service  # noqa: E402
 from nrf_workbench.core import config as cfgmod  # noqa: E402
 from nrf_workbench.devices import commands as device_commands  # noqa: E402
@@ -214,7 +215,7 @@ def overflow(page):
 
 
 def go(page, name):
-    page.get_by_role("navigation", name="Pages").get_by_role("button", name=name, exact=True).click()
+    go_to(page, name)
 
 
 def device_row(page, serial=None):
@@ -463,7 +464,7 @@ def firmware_page(page, bench, band, shot, tag):
     flash_button = lambda d: d.get_by_role("button", name=re.compile("Erase and flash"))   # noqa: E731
     deletes = []
     page.on("request", lambda r: deletes.append(r.url) if r.method == "POST" and "/api/firmware/delete" in r.url else None)
-    page.get_by_role("navigation", name="Pages").get_by_role("button", name="Firmware").click()
+    go_to(page, "Firmware")
     projects = page.get_by_role("list", name="Projects")
     projects.wait_for(timeout=15000)
     result = page.locator("section", has=page.get_by_role("heading", name="Last result"))
@@ -597,7 +598,7 @@ def console_page(page, bench, shot, tag):
     reasons, a link's state changing live, following the end of the log, and macros. Every wait is for the thing
     itself; the only time constant is the give-up on a device that never hears (HEARD_CEILING_S)."""
     nav = page.get_by_role("navigation", name="Pages")
-    nav.get_by_role("button", name="Console").click()
+    go_to(page, "Console")
     select_link = page.get_by_label("Link")
     select_link.wait_for()
     log = page.get_by_role("log", name="Console log")
@@ -662,7 +663,7 @@ def console_page(page, bench, shot, tag):
     # the history belongs to the bench: a reload keeps it
     page.reload()
     nav.wait_for()
-    nav.get_by_role("button", name="Console").click()
+    go_to(page, "Console")
     page.get_by_label("Command to send").wait_for()
     page.get_by_role("log", name="Console log").locator("div[data-kind=tx]", has_text="> reboot").first.wait_for()
     cmd = page.get_by_label("Command to send")
@@ -751,7 +752,7 @@ def console_page(page, bench, shot, tag):
 def gpio_page(page, bench, shot, tag):
     """The GPIO page: the header as drawn on the board, a form that states every field, the service's refusals shown
     whole, an edit, and an unassign. It records assignments only; nothing here can drive a pin."""
-    page.get_by_role("navigation", name="Pages").get_by_role("button", name="GPIO").click()
+    go_to(page, "GPIO")
     header = page.get_by_role("group", name="40-pin header")
     header.wait_for()
     cells = header.get_by_role("button")
@@ -846,7 +847,7 @@ def wiring_page(page, bench, shot, tag):
     """The Wiring preview on sample data (docs/specs/wiring.md): devices as cards, connections as wire sentences, the
     collapsing add sheet, a plugged-in adapter noticed live, claimed things greyed with their holder, the coloured header."""
     nav = page.get_by_role("navigation", name="Pages")
-    nav.get_by_role("button", name="Wiring").click()
+    go_to(page, "Wiring")
     page.get_by_role("group", name="Devices").wait_for()
     check("%s wiring: it says plainly that this is a preview on sample data" % tag,
           page.get_by_role("note").filter(has_text="Preview.").count() == 1 and "Nothing here touches the bench" in page.get_by_role("note").first.inner_text())
@@ -964,7 +965,7 @@ def wiring_page(page, bench, shot, tag):
     check("%s wiring: the wire is gone after yes" % tag, wires.get_by_role("listitem").count() == before - 1)
     wires.get_by_role("button", name="Open console").first.click()
     check("%s wiring: Open console goes to the Console page" % tag,
-          nav.get_by_role("button", name="Console").get_attribute("aria-current") == "page")
+          is_current(page, "Console"))
 
 
 def run_viewport(browser, bench, theme, size, shots, first):
@@ -1048,9 +1049,8 @@ def run_viewport(browser, bench, theme, size, shots, first):
 
     # every page
     for name in PAGES:
-        page.get_by_role("navigation", name="Pages").get_by_role("button", name=name).click()
-        check("%s page %s: marked as current" % (tag, name),
-              page.get_by_role("navigation", name="Pages").get_by_role("button", name=name).get_attribute("aria-current") == "page")
+        go_to(page, name)
+        check("%s page %s: marked as current" % (tag, name), is_current(page, name), current_pages(page))
         if name == "Firmware":
             page.get_by_text("Loading the store…").wait_for(state="detached", timeout=15000)   # the list, not the spinner text
         if name == "Console":
@@ -1061,7 +1061,7 @@ def run_viewport(browser, bench, theme, size, shots, first):
         shot("5-" + name.lower())
 
     # a generated command, run from the page: a read, then a refused write
-    page.get_by_role("navigation", name="Pages").get_by_role("button", name="Commands").click()
+    go_to(page, "Commands")
     search = page.get_by_label("Search commands")
     search.fill("devices.list")
     page.locator("[aria-label=Commands]").get_by_role("button").first.click()
@@ -1102,7 +1102,7 @@ def run_viewport(browser, bench, theme, size, shots, first):
         wiring_page(page, bench, shot, tag)
 
     # the activity log names this caller
-    page.get_by_role("navigation", name="Pages").get_by_role("button", name="Activity").click()
+    go_to(page, "Activity")
     page.get_by_text("devices.list").first.wait_for()
     text = page.locator("main, #root").first.inner_text()
     check("%s activity: both commands are listed" % tag, "devices.list" in text and "firmware.delete" in text, text[:200])
@@ -1121,14 +1121,14 @@ def run_viewport(browser, bench, theme, size, shots, first):
         theme_button = page.get_by_role("button", name=re.compile(r"^Theme:"))
         seen = []
         for _ in range(3):
-            theme_button.click()
+            reveal(page, theme_button).click()
             seen.append(page.evaluate("document.documentElement.classList.contains('dark')"))
         check("%s theme button: system -> light -> dark -> system, and the page follows" % tag,
               seen == [False, True, theme == "dark"], seen)
         page.evaluate("localStorage.removeItem('nrfwb-theme')")
 
     # logout
-    page.get_by_role("button", name="Log out").click()
+    reveal(page, page.get_by_role("button", name="Log out")).click()
     page.get_by_label("Service token").wait_for()
     check("%s logout: the login page returns" % tag, True)
     r = page.request.get(bench.url + "api/devices/list")

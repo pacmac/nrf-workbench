@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.join(ROOT, "tests", "devices"))
 import uvicorn  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 
+from navhelp import go_to  # noqa: E402
 from nrf_workbench import service  # noqa: E402
 from nrf_workbench.core import config as cfgmod  # noqa: E402
 from fakes import SERIAL, Tree  # noqa: E402
@@ -105,7 +106,7 @@ def run(browser, bench, theme, size, shots, first):
     page.goto(bench.url)
     nav = page.get_by_role("navigation", name="Pages")
     nav.wait_for()
-    nav.get_by_role("button", name="Wiring").click()
+    go_to(page, "Wiring")
     page.get_by_role("group", name="Devices").wait_for()
     check("%s live: no sample banner, and it says what is built" % tag,
           page.get_by_role("note").filter(has_text="Preview.").count() == 0 and page.get_by_role("button", name="Help: Wiring").count() == 1
