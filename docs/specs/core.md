@@ -120,6 +120,10 @@ returned, never a tail. **[brief]**
 | `intent_not_built` | refused | a wiring connection of a kind that is not built yet (only the debug log is) | the intent |
 | `connection_unknown` | refused | a wiring change or disconnect of a name that does not exist | the name |
 | `target_unknown` | refused | an ESP32 command naming a target that is not declared | the name |
+| `bad_manifest` | refused | a project manifest that does not validate, or a manifest that asks a command for something it refuses | the field and the reason |
+| `project_conflict` | refused | applying a project would change something the project does not own: a name, pin, adapter or macro already used | the object and who has it |
+| `project_applied` | refused | deleting a project that is applied | the project |
+| `project_not_applied` | refused | releasing or flashing a project that has not been applied | the project |
 | `i2c_pins_unclaimed` | refused | an I2C transfer or scan on a bus whose pins the pin map does not hold with service `i2c` (or a bus with no known pins) | the bus, its pins, the unclaimed ones |
 | `pin_reserved` | refused | a GPIO assignment to BCM 0 or 1, the HAT ID EEPROM's bus (`gpio.md`) | the gpio |
 | `pin_not_on_header` | refused | a GPIO assignment to a number that is not on the 40-pin header (0 to 27) | the gpio |
@@ -161,7 +165,7 @@ One function maps a `Result` to both, so the CLI and API cannot disagree.
 | class | CLI exit | HTTP |
 |---|---|---|
 | ok | 0 | 200 |
-| refused | 1 | 409 for state, holder, lock, serial, protected and link-wiring refusals (`link_absent`, `link_rx_only`, `voltage_unverified`, `dtr_rts_unsafe`); 422 for `bad_package`, `wrong_softdevice`, `no_bound`, `baud_refused`, `not_a_declared_link`, `checksum_mismatch`, `bad_project`; 422 also for `pin_reserved`, `pin_not_on_header`, `voltage_unsafe`, `intent_not_built`; 404 for `firmware_unknown`, `project_unknown`, `macro_unknown`, `pin_unknown`, `connection_unknown`, `target_unknown`; 411 for `length_required`; 507 for `store_full`; 409 for `in_use` |
+| refused | 1 | 409 for state, holder, lock, serial, protected and link-wiring refusals (`link_absent`, `link_rx_only`, `voltage_unverified`, `dtr_rts_unsafe`); 422 for `bad_package`, `wrong_softdevice`, `no_bound`, `baud_refused`, `not_a_declared_link`, `checksum_mismatch`, `bad_project`; 422 also for `pin_reserved`, `pin_not_on_header`, `voltage_unsafe`, `intent_not_built`; 404 for `firmware_unknown`, `project_unknown`, `macro_unknown`, `pin_unknown`, `connection_unknown`, `target_unknown`; 422 also for `bad_manifest`; 411 for `length_required`; 507 for `store_full`; 409 for `in_use` |
 | (usage error: bad arguments) | 2 | 400 |
 | failed | 3 | 500 |
 | suspect | 4 | 500, `ok` false |

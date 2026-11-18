@@ -25,7 +25,8 @@ CODES = {
     "pin_reserved": REFUSED, "pin_not_on_header": REFUSED, "pin_taken": REFUSED, "pin_unknown": REFUSED,
     "voltage_unsafe": REFUSED, "adapter_absent": REFUSED, "adapter_taken": REFUSED, "name_taken": REFUSED,
     "intent_not_built": REFUSED, "connection_unknown": REFUSED, "target_unknown": REFUSED,
-    "i2c_pins_unclaimed": REFUSED,
+    "i2c_pins_unclaimed": REFUSED, "bad_manifest": REFUSED, "project_conflict": REFUSED, "project_applied": REFUSED,
+    "project_not_applied": REFUSED,
     # failed: it was attempted and went wrong
     "no_reply": FAILED, "touch_failed": FAILED, "bootloader_not_reached": FAILED, "flash_failed": FAILED,
     "run_node_not_returned": FAILED, "write_failed": FAILED,
@@ -42,7 +43,7 @@ REFUSED_HTTP = {
     "bad_package": 422, "wrong_softdevice": 422, "no_bound": 422, "baud_refused": 422,
     "not_a_declared_link": 422, "checksum_mismatch": 422, "bad_project": 422,
     "firmware_unknown": 404, "project_unknown": 404, "macro_unknown": 404, "pin_unknown": 404,
-    "target_unknown": 404,
+    "target_unknown": 404, "bad_manifest": 422,
     "pin_reserved": 422, "pin_not_on_header": 422, "voltage_unsafe": 422, "intent_not_built": 422, "connection_unknown": 404,
     "length_required": 411,
     "store_full": 507,

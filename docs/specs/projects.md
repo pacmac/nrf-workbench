@@ -42,6 +42,22 @@ are these boards, wired like this, with these pins, these macros and this firmwa
 7. **Flashing is destructive and slow**, and the bounds are derived per image. `apply` therefore **never flashes**. `project.flash` is its
    own call, one role at a time, with the bounds the underlying commands already require.
 
+## Built differently from the first draft (2026-11-18, slices 1 and 2)
+
+- **Ownership is kept in `state.json`, not as a tag in each store's records.** An apply writes `pending: true` and the names it is about to
+  create (an intent log) before it creates anything, and clears `pending` last. The plan only lists as `create` what did not exist, so a
+  release that follows a crash can only remove what the project made. This leaves the pin map, connections, targets and macros untouched, and
+  is why no store schema changed. Macros are still namespaced `<project>.<name>`.
+- **`project.probe` is its own command** (write). `project.check` stays a read that sends nothing, so it can run on every Home refresh;
+  the `expect.i2c` probe is `project.probe`, through `i2c.transfer`, so its pin-claim gate applies.
+- **An unseen `expect.console` line is reported (`not_seen`) and is not held against the project**: the log is in memory and empty after any
+  restart, so counting it would make every project "not ready" after one. `ready` means: applied, nothing missing or changed, every
+  requirement met, every role's board attached.
+- A manifest's `wiring` item that uses a USB adapter to send needs `voltage_measured` stated (as `wiring.connect` does); the Pi's UART does
+  not (3.3 V by design).
+- **Tests:** 71 (manifest 20, behaviour 51), 33 mutants of the plan, apply, release, check and the commands, all caught after five tests
+  were added for the survivors.
+
 ## Where it lives
 
 - `<paths.wiring>/projects/<name>/project.yaml`: the manifest (YAML, the project's own file; hand-editable). The folder is created with
