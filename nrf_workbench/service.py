@@ -41,6 +41,7 @@ from .devices.monitor import DeviceMonitor
 from .esp32 import commands as esp32_commands
 from .esp32 import flash as esp32_flash
 from .gpio import commands as gpio_commands
+from .i2c import commands as i2c_commands
 from .wiring import commands as wiring_commands
 from .wiring import detect as wiring_detect
 from .programmer import commands as programmer_commands
@@ -165,6 +166,7 @@ def build_host(cfg, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
     gpio_commands.register(registry, host)
     wiring_commands.register(registry, host)
     esp32_commands.register(registry, host)
+    i2c_commands.register(registry, host)
     caps = capabilities(host)
     if "console" in caps:
         if cfg["paths"]["wiring"]:

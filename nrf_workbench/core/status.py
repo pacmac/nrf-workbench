@@ -25,6 +25,7 @@ CODES = {
     "pin_reserved": REFUSED, "pin_not_on_header": REFUSED, "pin_taken": REFUSED, "pin_unknown": REFUSED,
     "voltage_unsafe": REFUSED, "adapter_absent": REFUSED, "adapter_taken": REFUSED, "name_taken": REFUSED,
     "intent_not_built": REFUSED, "connection_unknown": REFUSED, "target_unknown": REFUSED,
+    "i2c_pins_unclaimed": REFUSED,
     # failed: it was attempted and went wrong
     "no_reply": FAILED, "touch_failed": FAILED, "bootloader_not_reached": FAILED, "flash_failed": FAILED,
     "run_node_not_returned": FAILED, "write_failed": FAILED,
