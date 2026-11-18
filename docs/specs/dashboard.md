@@ -295,6 +295,31 @@ no rule of its own; every refusal (`pin_reserved`, `pin_taken`, `voltage_unsafe`
   checks again.
 - **Unassign asks inline** ("Unassign? Yes / No"), not in a dialog, and the answer is shown whole like every write.
 
+### The ESP32 parts (added 2026-11-18, Peter: "build the slices here, I dont want to have to run 2 PI's")
+
+Over `esp32.md`; each part appears only when its command is in the list. **Proved in a real browser on a fake `esptool`**
+(`scripts/verify_esp32_live.py`, 88 checks over light and dark at phone and desktop width); no ESP32 was attached.
+
+- **An "ESP32 boards" card on the Firmware page.** Nothing is an ESP32 until it is declared (a USB id says nothing about
+  what is behind a bridge chip), so the card lists the declared boards, each with where it is attached and its console, and
+  a form that offers the free USB adapters: **by serial when it has one nobody shares, otherwise by the USB port it is in**,
+  with the reason said under the field. Identify, Reset and Hold in bootloader reset the board, so each is a button
+  somebody presses; nothing is probed by looking. Names are lower-cased as typed, with the `SlugNote`.
+- **Packages say what they are**: "ESP32 whole-flash image", or "ESP32 bundle, 3 parts, esp32, with its ELF", and never
+  "packets" or "SoftDevice". An ESP32 package offers **Flash to ESP32…**, and an nRF package the nRF **Flash…**; neither
+  offers the other's. The board is the only one declared or the one the person chose; none is chosen for them.
+- **The ESP32 flash is a confirm dialog** (the page's own alert dialog, Radix stays on this page only): the speed, and the
+  give-up bound **derived** (`2 x bytes x 10 / baud + 12 s`, the 12 s being esptool's seven connect attempts at about 1.5 s
+  and the hash check; **unmeasured**, no ESP32 being attached) and editable. Opening it runs nothing.
+- **The Console page** shows an ESP32 board's link with a note that opening the port can reset the board, and a
+  **Decode a crash** card for such a link: choose the stored bundle that was flashed (those with an ELF), start from the
+  last 60 lines, and get the addresses back as functions. File and line appear only when the bench has the chip's
+  `addr2line`, and the page says so when it has not.
+- **A defect found and fixed on the way**: an unlayered `textarea { font: inherit }` in `index.css` beat the `font-mono`
+  utility, so the macro text box was never monospace. The two textareas now use `font-mono!`; the check asserts the computed
+  family. (The same rule also overrides `text-sm` on every input; that is left as it is, because changing it resizes the
+  whole UI.)
+
 ## Files for the UI (added 2026-11-16, Peter: "get this completed")
 
 `ui/` (React 19, Vite 8, Tailwind 4, **exact versions pinned**, `package-lock.json` committed), the **built

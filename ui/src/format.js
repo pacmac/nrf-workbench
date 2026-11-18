@@ -64,6 +64,19 @@ export function flashBoundS(imageBytes) {
   return Math.ceil((FLASH_BOUND_FACTOR * imageBytes) / THROUGHPUT_SLOWEST_BPS * 10) / 10;   // one decimal, rounded up
 }
 
+// An ESP32 write is judged by esptool itself, so the bound is a give-up ceiling for the whole run (docs/specs/esp32.md).
+// The wire time of the raw bytes is bytes x 10 bits / baud (start, 8 data, stop); esptool sends the image compressed, which is
+// faster, so twice the raw time is generous. ESP_CONNECT_S is the time to reach the chip: esptool tries to connect 7 times by
+// default, about 1.5 s each when the chip is silent, so 7 x 1.5 = 10.5 s, plus 1.5 s for the hash check and the reset.
+// [unknown]: none of this has been timed on this bench, because no ESP32 is attached to it yet.
+export const ESP_BAUDS = [115200, 230400, 460800, 921600];
+export const ESP_CONNECT_S = 12;
+export const ESP_BOUND_FACTOR = 2;
+
+export function espFlashBoundS(imageBytes, baud) {
+  return Math.ceil(ESP_BOUND_FACTOR * (imageBytes * 10) / baud + ESP_CONNECT_S);
+}
+
 // What a person should expect to wait: the measured range, fastest to slowest.
 export function expectedRangeS(imageBytes) {
   return [imageBytes / THROUGHPUT_FASTEST_BPS, imageBytes / THROUGHPUT_SLOWEST_BPS];

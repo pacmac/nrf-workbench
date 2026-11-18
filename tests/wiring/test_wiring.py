@@ -53,6 +53,7 @@ class Detect(unittest.TestCase):
         self.assertEqual([(a["serial"], a["ids"], a["node"], a["problem"]) for a in found],
                          [(ADAPTER, "1a86:55d4", os.path.join(self.t.dev, "ttyACM1"), "")])
         self.assertEqual(found[0]["name"], "USB Single Serial")
+        self.assertEqual(found[0]["slot"], "1-4", "where it is plugged, for a target that cannot be found by serial")
 
     def test_an_adapter_with_no_serial_is_listed_and_says_why_it_cannot_be_connected(self):
         self.t.usb("1-4", ("1a86", "55d4"), "USB Single Serial", serial=None, manufacturer="QinHeng", tty="ttyACM1", majmin="166:1")

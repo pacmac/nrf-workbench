@@ -2,9 +2,10 @@ import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useEffect, useState } from "react";
 import { readJson, writeFile, writeJson } from "./api.js";
-import { DEFAULT_PROJECT, PROJECT_NAME, PROJECT_RULE_TEXT, bytesText, when } from "./format.js";
+import { DEFAULT_PROJECT, ESP_BAUDS, PROJECT_NAME, PROJECT_RULE_TEXT, bytesText, espFlashBoundS, when } from "./format.js";
 import { Button, Card, Chip, Field, SlugNote, inputClass } from "./ui.jsx";
 import { ResultView } from "./Commands.jsx";
+import EspTargets, { useEspTargets } from "./Esp32.jsx";
 
 // The package store as folders (docs/specs/dashboard.md, "The Firmware page"). Every action is a command the
 // service listed, sent to the path it listed, and every answer is shown whole. The page adds no rule of its own:
@@ -37,6 +38,17 @@ export default function Firmware({ commands, boards, onFlash, onDone }) {
   const [outcome, setOutcome] = useState(null);                   // the whole Result of the last write
   const [ask, setAsk] = useState(null);                           // the delete being confirmed
   const [boardSerial, setBoardSerial] = useState(NONE);
+  // The ESP32 boards (docs/specs/esp32.md). A package is flashed to the one board there is, or the one the person chose:
+  // none is chosen for them, as with the nRF boards.
+  const espList = find("esp32.targets");
+  const espFlash = find("esp32.flash");
+  const esp = useEspTargets(espList, attempt);
+  const [espName, setEspName] = useState(NONE);
+  const [espAsk, setEspAsk] = useState(null);                     // the ESP32 package whose flash is being confirmed
+  const [espBaud, setEspBaud] = useState(ESP_BAUDS[0]);
+  const [espBound, setEspBound] = useState(null);                 // null = derived from the package and the baud
+  const espTargets = esp.targets || [];
+  const espTarget = espTargets.length === 1 ? espTargets[0] : espTargets.find((t) => t.name === espName) || null;
 
   useEffect(() => {
     if (!list) return undefined;
@@ -102,6 +114,14 @@ export default function Firmware({ commands, boards, onFlash, onDone }) {
     if (r && r.ok) setProject(NONE);
   }
 
+  const espImageBytes = espAsk ? espAsk.image_bytes || espAsk.bytes : 0;
+  const espBoundValue = espBound !== null ? espBound : espAsk ? String(espFlashBoundS(espImageBytes, Number(espBaud))) : "";
+  const espWhat = (s) => (s.kind === "esp-image" ? "ESP32 whole-flash image" : `ESP32 bundle, ${s.parts} parts${s.chip ? `, ${s.chip}` : ""}${s.elf ? ", with its ELF" : ""}`);
+  const openEspFlash = (s) => { setEspBound(null); setEspAsk(s); };
+  const runEspFlash = () => write(writeJson(espFlash.path, {
+    target: espTarget.name, firmware: espAsk.sha256, flash_bound_s: Number(espBoundValue), baud: Number(espBaud),
+  }));
+
   const askDeletePackage = (s) => setAsk({
     title: `Delete ${s.name || s.sha256.slice(0, 8)}?`,
     body: `${s.name || "This package"} (${s.sha256.slice(0, 8)}, ${bytesText(s.bytes)}) will be removed from the project ${project}. This cannot be undone: if it is the only copy, it is gone.`,
@@ -133,6 +153,8 @@ export default function Firmware({ commands, boards, onFlash, onDone }) {
           <Button onClick={() => setAttempt((n) => n + 1)}>Try again</Button>
         </div>
       )}
+
+      {espList && <EspTargets commands={commands} targets={esp.targets} native={esp.native} error={esp.error} onChanged={() => setAttempt((n) => n + 1)} onDone={onDone} />}
 
       {store === null ? (
         <Card title="Firmware"><p className="text-sm text-slate-600 dark:text-slate-400">Loading the store…</p></Card>
@@ -183,8 +205,8 @@ export default function Firmware({ commands, boards, onFlash, onDone }) {
                   <form onSubmit={upload} className="space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
                     <p className="text-sm font-medium">Upload into <span className="font-mono">{project}</span></p>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <Field label="Package file (.zip)">
-                        <input key={fileKey} className={inputClass} type="file" accept=".zip,application/zip" aria-label="Package file" onChange={(e) => setFile(e.target.files[0] || null)} />
+                      <Field label="Package file" hint="An nRF DFU .zip, an ESP32 whole-flash .bin, or an ESP32 .zip with flasher_args.json.">
+                        <input key={fileKey} className={inputClass} type="file" accept=".zip,.bin,application/zip,application/octet-stream" aria-label="Package file" onChange={(e) => setFile(e.target.files[0] || null)} />
                       </Field>
                       <Field label="Name (optional)" hint="The file's name is used if this is empty.">
                         <input className={inputClass} type="text" value={label} onChange={(e) => setLabel(e.target.value)} aria-label="Package name" autoComplete="off" />
@@ -203,6 +225,15 @@ export default function Firmware({ commands, boards, onFlash, onDone }) {
                   </Field>
                 )}
 
+                {espFlash && espTargets.length > 1 && inProject.some((s) => s.kind) && (
+                  <Field label="Flash to ESP32 board" hint="More than one ESP32 board is declared, and none is chosen for you.">
+                    <select className={inputClass} value={espTarget ? espName : NONE} onChange={(e) => setEspName(e.target.value)} aria-label="Flash to ESP32 board">
+                      <option value={NONE}>Choose a board…</option>
+                      {espTargets.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+                    </select>
+                  </Field>
+                )}
+
                 {inProject.length === 0 ? (
                   <p className="text-sm text-slate-600 dark:text-slate-400">This project is empty.</p>
                 ) : (
@@ -215,13 +246,24 @@ export default function Firmware({ commands, boards, onFlash, onDone }) {
                           <div className="min-w-0 flex-1">
                             <p className="break-words font-medium">{name}</p>
                             <p className="text-xs text-slate-600 dark:text-slate-400">
-                              <span className="font-mono" title={s.sha256}>{s.sha256.slice(0, 8)}</span> · {bytesText(s.image_bytes || s.bytes)} · {s.packets} packets · SoftDevice {(s.softdevice_req || []).join(", ") || "none"}
+                              <span className="font-mono" title={s.sha256}>{s.sha256.slice(0, 8)}</span> · {bytesText(s.image_bytes || s.bytes)} · {s.kind ? espWhat(s) : `${s.packets} packets · SoftDevice ${(s.softdevice_req || []).join(", ") || "none"}`}
                             </p>
                             <p className="text-xs text-slate-600 dark:text-slate-400">
                               uploaded {when(s.uploaded_at ? Date.parse(s.uploaded_at) / 1000 : null)}{s.uploaded_by ? ` by ${s.uploaded_by}` : ""}
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
+                            {s.kind ? (
+                              <Button
+                                tone="quiet"
+                                disabled={!espFlash || !espTarget || pending}
+                                title={!espFlash ? "Flashing an ESP32 is not available on this host" : espTargets.length === 0 ? "No ESP32 board is declared yet" : !espTarget ? "Choose a board first" : `Flash ${espTarget.name}`}
+                                onClick={() => openEspFlash(s)}
+                                aria-label={`Flash ${name} to an ESP32`}
+                              >
+                                Flash to ESP32…
+                              </Button>
+                            ) : (
                             <Button
                               tone="quiet"
                               disabled={!flashBoard || pending}
@@ -231,6 +273,7 @@ export default function Firmware({ commands, boards, onFlash, onDone }) {
                             >
                               Flash…
                             </Button>
+                            )}
                             <DropdownMenu.Root>
                               <DropdownMenu.Trigger asChild>
                                 <Button tone="quiet" disabled={pending} aria-label={`More actions for ${name}`}>
@@ -277,6 +320,35 @@ export default function Firmware({ commands, boards, onFlash, onDone }) {
           </Card>
         </div>
       )}
+
+      <AlertDialog.Root open={Boolean(espAsk && espTarget)} onOpenChange={(open) => { if (!open) setEspAsk(null); }}>
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className="fixed inset-0 bg-black/50" />
+          {espAsk && espTarget && (
+            <AlertDialog.Content className="fixed left-1/2 top-1/2 w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-300 bg-white p-4 text-slate-900 shadow-xl dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+              <AlertDialog.Title className="text-base font-semibold">Erase and flash {espTarget.name}?</AlertDialog.Title>
+              <AlertDialog.Description className="mt-2 text-sm">
+                {espAsk.name || "This package"} ({espAsk.sha256.slice(0, 8)}, {bytesText(espImageBytes)}) is written to <span className="font-mono">{espTarget.name}</span>, replacing what is on it.
+                The board is reset when the write is done, and its console is let go for the length of the flash.
+              </AlertDialog.Description>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <Field label="Speed" hint="115200 works everywhere; faster is quicker on a good cable.">
+                  <select className={inputClass} value={espBaud} onChange={(e) => setEspBaud(Number(e.target.value))} aria-label="ESP32 flash speed">
+                    {ESP_BAUDS.map((b) => <option key={b} value={b}>{b} baud</option>)}
+                  </select>
+                </Field>
+                <Field label="Give up after (seconds)" hint="Worked out from the size and the speed. A write that outlasts it is stopped.">
+                  <input className={inputClass} type="number" step="any" min="0" value={espBoundValue} onChange={(e) => setEspBound(e.target.value)} aria-label="ESP32 flash bound in seconds" />
+                </Field>
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <AlertDialog.Cancel asChild><Button tone="quiet">Cancel</Button></AlertDialog.Cancel>
+                <AlertDialog.Action asChild><Button tone="danger" disabled={!(Number(espBoundValue) > 0)} onClick={runEspFlash}>Erase and flash {espTarget.name}</Button></AlertDialog.Action>
+              </div>
+            </AlertDialog.Content>
+          )}
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
 
       <AlertDialog.Root open={Boolean(ask)} onOpenChange={(open) => { if (!open) setAsk(null); }}>
         <AlertDialog.Portal>

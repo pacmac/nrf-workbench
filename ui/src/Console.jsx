@@ -41,6 +41,11 @@ function LinkInfo({ link }) {
         {link.node && <span className="font-mono text-xs text-slate-600 dark:text-slate-400">{link.node}</span>}
       </div>
       {link.reason && <p className="text-sm text-slate-700 dark:text-slate-300">{link.reason}</p>}
+      {link.own_bridge && (
+        <p role="note" className="rounded-lg bg-slate-100 p-2 text-sm text-slate-800 dark:bg-slate-800 dark:text-slate-200">
+          This is the ESP32 board's own USB adapter. On most boards its DTR and RTS lines reach the reset pins, so opening the port can reset the board. The bench never drives either line itself, and lets the port go while a flash or reset runs.
+        </p>
+      )}
       {(link.problems || []).map((p) => (
         <p key={p.code + p.message} role="note" className="rounded-lg bg-red-100 p-2 text-sm text-red-900 dark:bg-red-950 dark:text-red-200">
           <span className="font-mono">{p.code}</span>: {p.message}
@@ -283,7 +288,7 @@ function Macros({ commands, link, onDone }) {
         </Field>
         <SlugNote value={name} />
         <Field label="Lines to send" hint="One command per line. Each is sent in order through the same guards as a typed line, and the run stops at the first refusal.">
-          <textarea className={inputClass + " font-mono"} rows={4} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />
+          <textarea className={inputClass + " font-mono!"} rows={4} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />
         </Field>
         <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" disabled={!set || !nameOk || !text.trim() || Boolean(outcome && outcome.pending)}>Save macro</Button>
@@ -294,6 +299,96 @@ function Macros({ commands, link, onDone }) {
           <Answer outcome={outcome} />
         </div>
       </form>
+    </Card>
+  );
+}
+
+// Turn the addresses in a crash dump into functions, using the ELF of a stored ESP32 bundle (docs/specs/esp32.md). Nothing runs
+// until the person presses Decode; the text starts as the last lines of this link's log and is theirs to change.
+const DECODE_LINES = 60;           // a panic dump is about 30 lines (header, registers, backtrace); 60 holds it with what led up to it
+
+function Decode({ commands, link, recent, onDone }) {
+  const decode = (commands || []).find((c) => c.name === "esp32.decode") || null;
+  const list = (commands || []).find((c) => c.name === "firmware.list") || null;
+  const [open, setOpen] = useState(false);
+  const [bundles, setBundles] = useState(null);
+  const [firmware, setFirmware] = useState("");
+  const [text, setText] = useState("");
+  const [outcome, setOutcome] = useState(null);
+
+  function toggle() {
+    if (!open) {
+      setText(recent.slice(-DECODE_LINES).join("\n"));
+      setOutcome(null);
+      if (list) {
+        readJson(list.path).then((r) => {
+          const items = r.ok && r.body && r.body.data ? r.body.data.items || [] : [];
+          setBundles(items.filter((i) => i.kind === "esp-bundle" && i.elf));
+        }).catch(() => setBundles([]));
+      }
+    }
+    setOpen(!open);
+  }
+
+  async function run(event) {
+    event.preventDefault();
+    if (!decode || !firmware || !text.trim()) return;
+    setOutcome({ pending: true });
+    try {
+      const r = await writeJson(decode.path, { firmware, text });
+      setOutcome(r);
+      if (onDone) onDone(r);
+    } catch (e) {
+      setOutcome({ status: 0, body: { message: "The request did not complete: " + String(e) } });
+    }
+  }
+
+  if (!decode) return null;
+  const data = outcome && outcome.body && outcome.body.data;
+  return (
+    <Card title="Decode a crash" aside={<Button tone="quiet" onClick={toggle} aria-expanded={open}>{open ? "Close" : "Open"}</Button>}>
+      {!open ? (
+        <p className="text-sm text-slate-600 dark:text-slate-400">Turn the addresses in a Backtrace or panic dump into function names.</p>
+      ) : (
+        <form onSubmit={run} className="space-y-3">
+          {bundles !== null && bundles.length === 0 ? (
+            <p className="text-sm">No stored bundle carries an ELF. Upload a zip with <span className="font-mono">flasher_args.json</span> and the ELF it names (<span className="font-mono">app_elf</span>) on the Firmware page.</p>
+          ) : (
+            <Field label="Firmware that is running" hint="The bundle that was flashed: its ELF is what the addresses are looked up in.">
+              <select className={inputClass} value={firmware} onChange={(e) => setFirmware(e.target.value)} aria-label="Firmware to decode against">
+                <option value="">Choose a bundle…</option>
+                {(bundles || []).map((b) => <option key={b.sha256} value={b.sha256}>{b.name || "unnamed"} ({b.sha256.slice(0, 8)}{b.chip ? `, ${b.chip}` : ""})</option>)}
+              </select>
+            </Field>
+          )}
+          <Field label="Crash dump" hint={`The last ${DECODE_LINES} lines of ${link.name}. Change it to paste another.`}>
+            <textarea className={inputClass + " h-40 font-mono! text-xs!"} value={text} onChange={(e) => setText(e.target.value)} aria-label="Crash dump" spellCheck="false" />
+          </Field>
+          <Button type="submit" disabled={!firmware || !text.trim() || Boolean(outcome && outcome.pending)}>Decode</Button>
+          {outcome && !outcome.pending && (
+            <div role="status" className="space-y-2">
+              <Answer outcome={outcome} />
+              {data && data.frames && data.frames.length === 0 && <p className="text-sm">No address was found in that text. A dump has a <span className="font-mono">Backtrace:</span> line, or <span className="font-mono">PC</span> or <span className="font-mono">MEPC</span> in its register list.</p>}
+              {data && data.frames && data.frames.length > 0 && (
+                <table className="w-full text-left text-xs">
+                  <thead><tr><th className="py-1 pr-3 font-medium">Address</th><th className="py-1 pr-3 font-medium">Function</th><th className="py-1 font-medium">Source</th></tr></thead>
+                  <tbody>
+                    {data.frames.map((f) => (
+                      <tr key={f.address} className="border-t border-slate-200 align-top dark:border-slate-800">
+                        <td className="py-1 pr-3 font-mono">{f.address}</td>
+                        <td className="py-1 pr-3 font-mono break-all">{f.function ? `${f.function}${f.offset ? ` +0x${f.offset.toString(16)}` : ""}` : "not in the ELF"}</td>
+                        <td className="py-1 font-mono break-all">{f.file ? `${f.file}:${f.line}` : ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {data && data.truncated && <p className="text-xs text-slate-600 dark:text-slate-400">Only the first {data.frames.length} addresses are shown.</p>}
+              {data && !data.tool && data.frames.length > 0 && <p className="text-xs text-slate-600 dark:text-slate-400">File and line need the chip's addr2line on the bench's PATH; the function names come from the ELF alone.</p>}
+            </div>
+          )}
+        </form>
+      )}
     </Card>
   );
 }
@@ -342,6 +437,7 @@ export default function Console({ commands, links, lines, activity, feed, onDone
         </div>
       </Card>
       <Macros commands={commands} link={link} onDone={onDone} />
+      {link.own_bridge && <Decode key={link.name} commands={commands} link={link} recent={(lines[link.name] || []).map((l) => l.text)} onDone={onDone} />}
     </div>
   );
 }

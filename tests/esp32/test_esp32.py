@@ -558,6 +558,9 @@ class Registration(Base):
         self.assertEqual(names(ALL), ["esp32.declare", "esp32.decode", "esp32.flash", "esp32.forget", "esp32.identify",
                                       "esp32.reset", "esp32.targets"])
         self.assertEqual(names({"firmware_store"}), ["esp32.decode"], "decoding needs the store and no esptool")
+        rows = dict((c.name, c) for c in self.reg.commands(ALL))
+        self.assertEqual(rows["esp32.decode"].effect, "write", "a 128 KiB dump cannot travel in a query string, so it is a POST")
+        self.assertEqual([rows[n].effect for n in ("esp32.targets",)], ["read"])
 
 
 if __name__ == "__main__":

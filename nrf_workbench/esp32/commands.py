@@ -211,8 +211,10 @@ def register(registry, host):
                 "using the ELF in a stored bundle; file and line too when the chip's addr2line is on the PATH.", _decode,
                 args=(Arg("firmware", doc="the id of the stored bundle that was flashed"),
                       Arg("text", doc="the crash dump as the console printed it")),
-                requires=("firmware_store",), result="frames (address, function, offset, file, line, source), "
-                "addresses, truncated, tool, chip"))
+                # A write only because of how it is called: the dump is up to 128 KiB, which no query string carries, so it
+                # is a POST with a body. It changes nothing that stays: its scratch folder is gone when it returns.
+                requires=("firmware_store",), effect="write", result="frames (address, function, offset, file, line, "
+                "source), addresses, truncated, tool, chip"))
 
     add(Command("esp32.targets", "The declared ESP32 targets, where each is attached now, its console, and built-in-USB "
                 "ESP32 devices nobody has declared. Opens no port.", _targets, requires=WIRING,

@@ -23,6 +23,7 @@ def adapters(sysfs, devroot, board_ids):
         if node is None and why.startswith("no tty interface"):
             continue                                   # a hub, a keyboard, a probe: not a serial adapter
         out.append({"serial": dev["serial"], "ids": dev["id"], "name": dev["product"] or dev["manufacturer"] or dev["id"],
+                    "slot": dev["name"],            # where it is plugged: how an ESP32 target is found when the serial is not unique
                     "node": node, "problem": "" if dev["serial"] else
                     "this adapter has no serial number, so it cannot be told from another one and cannot be connected"})
     out.sort(key=lambda a: (a["ids"], a["serial"] or ""))
