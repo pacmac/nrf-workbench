@@ -108,6 +108,29 @@ A firmware with no ELF (an app-only image, an nRF package, a bundle whose `app_e
 at most 64 MiB. Addresses are used as printed: no return-address adjustment is made. The console page offers it on a
 selected block of lines (step 4).
 
+## Measured on a real board (2026-11-18)
+
+Deployed to the bench Pi (esptool 5.4.0 installed by the installer's `esp32` feature, which pip resolved for aarch64) with
+a Seeed XIAO ESP32-C3 on the Pi's hub (`303a:1001`, serial = its MAC `64:e8:33:85:4a:a4`, `/dev/ttyACM0`, ESP32-C3 QFN32
+revision v0.4, 4 MB flash). **n = 1 board, n = 1 run each; one sample sets nothing.**
+
+| what | result |
+|---|---|
+| `esp32.identify` | chip and MAC read in 0.956 s |
+| `esp32.flash`, a 3-part bundle (193,536 bytes) at 460800 | **3.289 s**, 3 x `Hash of data verified.`, board reset and running; the console reopened and read `LOOP: n` |
+| `esp32.reset` bootloader, then run | 0.895 s and 0.95 s; the application restarted (its counter began again) |
+| `esp32.decode` of a C3 `MEPC`/`RA` against the stored ELF | `debug_loop +6`, correct (the symbol is at 0x4200716a); no file/line, the Pi having no `addr2line` |
+
+**The bound is generous.** The dialog's derived bound for that flash was 21 s (`2 x bytes x 10 / baud + 12`) against 3.289 s
+measured, about 6x, and the 12 s connect allowance was not needed: the chip answered in about 1 s over native USB. A bridge
+chip with auto-reset may take longer, so the formula stays until a second board class is measured.
+
+**The first line after a reset is lost.** After `reset run` the console showed the application's later lines but not its
+first (`DEBUG_TEST_READY`): the port is reopened after esptool returns, and the board had already printed it. The log keeps its
+offsets, so nothing is mis-numbered; the opening lines are simply not there. Not fixed.
+
+**Still unmeasured:** a bridge-chip board (CP210x/CH340), whether opening the console resets one, and `addr2line` timing.
+
 ## Files this spec allows
 
 `nrf_workbench/esp32/{__init__,package,targets,flash,commands}.py`; `nrf_workbench/programmer/firmware_store.py`
