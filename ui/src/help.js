@@ -44,7 +44,33 @@ export const TOPICS = [
       { symptom: "An ESP32 says it needs attention", cause: "A USB id cannot say what is behind an adapter, so an ESP32 is only one once you declare it.", fix: "Open it and choose Declare it, then pick a name." },
       { symptom: "A board is in both modes at once", cause: "Its application and its bootloader both show.", fix: "Unplug it and plug it in again." },
     ],
-    related: ["flashing", "esp32", "trouble"],
+    related: ["flashing", "esp32", "meter", "trouble"],
+  },
+  {
+    id: "meter",
+    title: "The multimeter",
+    pages: [],
+    summary: "A LAN multimeter the bench can ask for a reading: rail voltage, a board's current, a series of readings over time.",
+    points: [
+      "It appears at the bottom of Devices when the bench has a meter address set. Check the meter says what it is and how it is set.",
+      "The bench only asks. It never changes the meter's function or range, because in current mode the board is wired through the meter and switching would cut its supply.",
+      "Set the function at the meter's front panel and plug the leads into the matching jacks. The page says what it is set to.",
+      "Take readings gives a mean, a lowest and a highest, and a chart. The time of each reading is when it reached the bench.",
+    ],
+    steps: [
+      "To measure a board's current, put the meter in series with its supply, set current at the front panel, then Check the meter.",
+      "To check a rail, set DC volts, touch the rail and ground, and press Read once.",
+    ],
+    problems: [
+      { symptom: "The meter cannot be reached", cause: "It is off, on another address, or another program holds its one network session.", fix: "Check its power and its address in the bench configuration, then try again." },
+      { symptom: "The reading says overload", cause: "The meter's range is too small for what it measures.", fix: "Raise the range at the front panel. The bench will not do it for you." },
+    ],
+    codes: [
+      { code: "meter_function", fix: "The meter is set to a different function than the one asked for. Set it at the front panel." },
+      { code: "meter_unreachable", fix: "No answer from the meter's address. Check it is on and on the network." },
+      { code: "meter_overload", fix: "The range is too small to trust the number. Raise it at the front panel." },
+    ],
+    related: ["devices"],
   },
   {
     id: "wiring",

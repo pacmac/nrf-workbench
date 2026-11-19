@@ -4,6 +4,7 @@ import DeviceRow from "./DeviceRow.jsx";
 import { PROJECT_NAME } from "./format.js";
 import { Button, Card, Field, NavContext, PageHeader, SlugNote, cx, inputClass } from "./ui.jsx";
 import { ResultView } from "./Commands.jsx";
+import Meter from "./meter/Meter.jsx";
 
 // Every device in one list, connected or not, so what is here and what is not can be read at a glance. A row opens to its detail and its
 // actions; an ESP32 board or an adapter hands over to the page that owns its actions (docs/specs/dashboard-redesign.md, "Devices page").
@@ -127,6 +128,7 @@ export default function Devices({ overview, commands, onFlash, onChanged, onDone
           </ul>
         )}
       </Card>
+      <Meter commands={commands} onDone={onDone} />
     </div>
   );
 }

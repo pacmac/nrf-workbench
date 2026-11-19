@@ -81,11 +81,13 @@ slower setting then shows as `no_reply` and says so, which fails safe.
 
 ## Elsewhere in the bench
 
-- `bench.overview` lists the meter as **configured** (the address) and **never touches it**: a meter that is off would add a connect ceiling to every Home
-  load. Live state is an action on the Devices page.
-- **Devices page**: an *Instruments* section with the meter's address, a **Check** button (`meter.show`), a **Read** button and a **Sample** form (count), showing
-  function, range, NPLC and, in words, "set to current: in series if the leads are in the current jacks". No timers: a button asks, the answer is shown.
-- **Help**: a `meter` topic: what it can do, why it cannot change the function (the board loses power), what to set at the front panel for each measurement.
+- **`bench.overview` and Home do not show the meter** (decided while building: a meter that is off would add a connect ceiling to every Home load, and a static
+  "configured" line says nothing a person needs). Live state is an action on the Devices page. Nothing is added to the overview.
+- **Devices page**: a *Multimeter* card (present only when the commands are, so only with an address), with **Check the meter** (`meter.show`), **Read once**
+  (`meter.read`) and **Take N** (`meter.sample`). The answer is a sentence in words with SI prefixes ("1.717 mA"), the amber note that the meter is in series
+  when it is set to current, for a sample a chart (x is arrival time, spread evenly when every reading arrived inside the clock's resolution) with its range
+  stated, and the whole result one click away; a failure is shown as the whole result with its code and no headline. No timers: a button asks, the answer is shown.
+- **Help**: a `meter` topic (opened from Devices): what it can do, why it cannot change the function (the board loses power), what to set at the front panel.
 - **`project.probe`** gains `expect.meter: {function, min, max}` (slice 3): one `meter.read` with `expect_function`; the value inside `[min, max]` is met, outside is
   not met and says the number, a different function or no meter is `not_seen`. `project.check` stays read-only and does not touch the meter (it waits for nothing).
 

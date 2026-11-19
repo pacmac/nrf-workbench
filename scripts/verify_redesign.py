@@ -359,7 +359,7 @@ def run(browser, bench, theme, size, shots):
         # ---- Help
         open_page("Help")
         topics = page.get_by_role("navigation", name="Help topics")
-        check("%s Help is a list of short topics" % tag, topics.locator("button").count() == 10, topics.locator("button").count())
+        check("%s Help is a list of short topics" % tag, topics.locator("button").count() == 11, topics.locator("button").count())
         topics.get_by_role("button", name=re.compile("^Devices")).click()
         art = page.get_by_role("article", name="Devices")
         art.wait_for()
