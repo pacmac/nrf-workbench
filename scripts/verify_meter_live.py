@@ -131,8 +131,19 @@ def meter_page(page, fake, bench, tag, shot):
           text[0] == "t_s,wall,value,unit,function,range,nplc,overload" and len(text) >= 3 and text[1].split(",")[3] == "A"
           and float(text[2].split(",")[0]) > float(text[1].split(",")[0]), text[:3])
     check("%s the list no longer says recording now once it has stopped" % tag, page.get_by_text("recording now").count() == 0)
+    check("%s and the finished recording lists its readings, not zero" % tag, re.search(r"[1-9][0-9]* readings", page.get_by_label("Recordings").inner_text()) is not None,
+          page.get_by_label("Recordings").inner_text())
     check("%s no sideways scroll on the Meter page" % tag, no_sideways_scroll(page))
     shot("10-recorded")
+    # a current that reads negative says the leads are probably the wrong way round
+    fake.table["READ?"] = "-1.5E-03"
+    page.get_by_role("button", name="Watch", exact=True).click()
+    page.get_by_text(re.compile(r"The current reads negative")).wait_for()
+    page.get_by_role("button", name="Stop").click()
+    page.get_by_text(re.compile(r"^ended: stopped")).wait_for()
+    check("%s a negative current says the leads are probably the wrong way round" % tag, "-1.5 mA" in page.get_by_label("Figures").inner_text())
+    shot("10b-negative")
+    fake.table["READ?"] = CURRENT["READ?"]
     # a fault ends a session and says why
     del fake.table["READ?"]
     page.get_by_role("button", name="Watch", exact=True).click()

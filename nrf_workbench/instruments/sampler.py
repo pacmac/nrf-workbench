@@ -226,6 +226,9 @@ class Sampler(object):
                     meta = json.load(fh)
             except (OSError, ValueError):
                 pass
+            if f[:-4] == live:                                  # the sidecar of a running recording is as it was at the start: the session knows better
+                s = self._session
+                meta = dict(meta, started=s.started, function=s.function, unit=s.unit, stats=self._summary(s)["stats"])
             rows.append({"name": f[:-4], "bytes": os.path.getsize(path), "started": meta.get("started"), "ended": meta.get("ended"),
                          "reason": meta.get("reason", ""), "function": meta.get("function"), "unit": meta.get("unit"),
                          "stats": meta.get("stats"), "interrupted": meta.get("ended") is None and f[:-4] != live,

@@ -233,6 +233,11 @@ export default function MeterPage({ commands, onDone }) {
             {current && <Figure label="Charge used" value={`${Number(figures.charge_mah.toPrecision(4))} mAh`} />}
           </dl>
 
+          {current && figures.mean !== null && figures.mean < 0 && (
+            <p role="note" className="text-[13px] text-amber-800 dark:text-amber-300">
+              The current reads negative: it flows the other way through the meter, so the leads are probably the wrong way round. The numbers are right, only their sign is reversed.
+            </p>
+          )}
           {current && (
             <div className="flex flex-wrap items-end gap-3">
               <div className="w-44"><Field label="Battery capacity, mAh"><input className={inputClass} inputMode="decimal" value={capacity} onChange={(e) => setCapacity(e.target.value)} aria-label="Battery capacity in milliamp hours" /></Field></div>

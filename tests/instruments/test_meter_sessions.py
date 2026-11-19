@@ -267,6 +267,15 @@ class Recording(Base):
         rows = dict((r["name"], r) for r in self.sampler.recordings())
         self.assertEqual((rows["cut"]["interrupted"], rows["now"]["interrupted"], rows["now"]["recording"]), (True, False, True))
 
+    def test_a_recording_in_progress_lists_its_live_numbers_and_not_the_ones_from_its_start(self):
+        self.sampler.start("record", 60, name="going")
+        self.wait_readings(5)
+        row = [r for r in self.sampler.recordings() if r["name"] == "going"][0]
+        self.assertTrue(row["recording"])
+        self.assertGreaterEqual(row["stats"]["readings"], 5)
+        self.assertEqual((row["function"], row["unit"]), ("CURR", "A"))
+        self.assertIsNotNone(row["started"])
+
     def test_only_the_newest_ten_recordings_are_kept(self):
         for i in range(12):
             path = os.path.join(self.folder, "old-%02d" % i)
