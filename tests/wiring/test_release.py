@@ -19,7 +19,7 @@ from fakes import SERIAL  # noqa: E402
 from nrf_workbench import service  # noqa: E402
 from nrf_workbench.bench import overview  # noqa: E402
 from nrf_workbench.core import config as cfgmod  # noqa: E402
-from nrf_workbench.wiring import pinctrl  # noqa: E402
+from nrf_workbench.wiring import pinctrl, piuart  # noqa: E402
 from test_pi_uart import PI, Base  # noqa: E402
 
 REAL_OUTPUT = """14: a0    pn | hi // GPIO14 = TXD0
@@ -33,17 +33,27 @@ class FakePinctrl(object):
 
     def __init__(self, log):
         self.log = log
-        self.pins = {14: ["a0", "pn", "hi"], 15: ["a0", "pu", "hi"]}
+        self.pins = {14: ["a0", "pn", "hi"], 15: ["a0", "pu", "hi"],                  # uart0, as measured on the Pi 2026-11-18
+                     12: ["a4", "pn", "hi"], 13: ["a4", "pu", "hi"]}                  # uart5, as the overlay is expected to leave them
+        self.names = {}                   # gpio -> the name pinctrl prints, where a test wants it wrong
         self.ignore_set = set()           # a pin that will not change (the register write is lost)
         self.rc_for_set = 0               # nonzero: `pinctrl set` fails
         self.calls = []
+
+    def name_of(self, g):
+        """What `pinctrl get` calls the pin's function: `input` for ip, else the UART's own name when the function is the engaged one."""
+        if g in self.names:
+            return self.names[g]
+        want = piuart.ENGAGED[g]
+        return want[2] if self.pins[g][0] == want[0] else "input" if self.pins[g][0] == "ip" else "other"
 
     def __call__(self, args):
         self.calls.append(list(args))
         if args[0] == "get":
             wanted = [int(g) for g in args[1].split(",")]
             self.log.append(("get", wanted))
-            return 0, "".join("%d: %s    %s | %s // GPIO%d = x\n" % (g, self.pins[g][0], self.pins[g][1], self.pins[g][2], g) for g in wanted)
+            return 0, "".join("%d: %s    %s | %s // GPIO%d = %s\n" % (g, self.pins[g][0], self.pins[g][1], self.pins[g][2], g, self.name_of(g))
+                              for g in wanted)
         gpio = int(args[1])
         self.log.append(("set", gpio, args[2:]))
         if self.rc_for_set:
@@ -153,6 +163,33 @@ class Release(Base):
         for _ in range(2):
             self.assertEqual(self.call("wiring.engage", {"name": "rak-uart0"}).data["pin_state"]["state"], "driven")
 
+    def test_the_second_uart_is_released_and_engaged_on_its_own_pins_with_its_own_function(self):
+        """uart5 on GPIO12/13 (docs/specs/pi-uart-move.md): the pins and the function code come from the table, not from uart0's."""
+        self.t.node("ttyAMA1", 204, 65)
+        res = self.connect(name="rak-uart5", adapter="uart:ttyAMA1")
+        self.assertTrue(res.ok, res.message)
+        self.log[:] = []
+        res = self.call("wiring.release", {"name": "rak-uart5"})
+        self.assertTrue(res.ok, res.message)
+        self.assertEqual(self.sets(), [("set", 12, ["ip", "pn"]), ("set", 13, ["ip", "pn"])])
+        self.assertEqual(res.data["pin_state"]["state"], "floating")
+        self.log[:] = []
+        res = self.call("wiring.engage", {"name": "rak-uart5"})
+        self.assertTrue(res.ok, res.message)
+        self.assertEqual(self.sets(), [("set", 12, ["a4", "pn"]), ("set", 13, ["a4", "pu"])])
+        self.assertEqual(res.data["pin_state"]["state"], "driven")
+        self.assertEqual([p["name"] for p in res.data["pin_state"]["pins"]], ["TXD5", "RXD5"])
+
+    def test_an_engage_whose_pins_read_back_as_some_other_function_is_a_failure_and_the_link_stays_held(self):
+        """If the function code for a UART were wrong, the pin would answer with another name: that must be pins_not_set and never 'engaged'."""
+        self.t.node("ttyAMA1", 204, 65)
+        self.connect(name="rak-uart5", adapter="uart:ttyAMA1")
+        self.call("wiring.release", {"name": "rak-uart5"})
+        self.fake.names[12] = "SPI1_MOSI"                       # what pinctrl would say if a4 were not TXD5
+        res = self.call("wiring.engage", {"name": "rak-uart5"})
+        self.assertEqual((res.cls, res.code), ("failed", "pins_not_set"))
+        self.assertEqual(self.host.console.state("rak-uart5")["state"], "held")
+
     def test_a_usb_adapter_connection_is_refused_and_nothing_is_touched(self):
         self.t.usb("1-5", ("1a86", "55d4"), "USB Single Serial", serial="DONGLE1", tty="ttyACM1", majmin="166:1")
         self.t.node("ttyACM1", 166, 1)
@@ -242,18 +279,40 @@ class Release(Base):
 class Parsing(unittest.TestCase):
     def test_the_real_pinctrl_output_is_read_and_other_lines_are_ignored(self):
         pins = pinctrl.parse("warning: x\n" + REAL_OUTPUT + "\n")
-        self.assertEqual(pins[14], {"gpio": 14, "function": "a0", "pull": "pn", "level": "hi"})
-        self.assertEqual(pins[15], {"gpio": 15, "function": "a0", "pull": "pu", "level": "hi"})
+        self.assertEqual(pins[14], {"gpio": 14, "function": "a0", "pull": "pn", "level": "hi", "name": "TXD0"})
+        self.assertEqual(pins[15], {"gpio": 15, "function": "a0", "pull": "pu", "level": "hi", "name": "RXD0"})
+
+    def test_a_line_that_names_no_function_still_parses_with_no_name(self):
+        self.assertIsNone(pinctrl.parse("14: a0    pn | hi // x\n")[14]["name"])
 
     def test_the_state_word_is_derived_from_the_read_back_only(self):
-        drv = [{"function": "a0", "pull": "pn"}, {"function": "a0", "pull": "pu"}]
-        flo = [{"function": "ip", "pull": "pn"}, {"function": "ip", "pull": "pn"}]
+        drv = [{"gpio": 14, "function": "a0", "pull": "pn", "name": "TXD0"}, {"gpio": 15, "function": "a0", "pull": "pu", "name": "RXD0"}]
+        flo = [{"gpio": 14, "function": "ip", "pull": "pn"}, {"gpio": 15, "function": "ip", "pull": "pn"}]
         self.assertEqual((pinctrl.state_word(drv), pinctrl.state_word(flo)), ("driven", "floating"))
-        self.assertEqual(pinctrl.state_word([{"function": "ip", "pull": "pu"}, {"function": "ip", "pull": "pn"}]), "mixed", "an input with a pull is not floating")
+        self.assertEqual(pinctrl.state_word([{"gpio": 14, "function": "ip", "pull": "pu"}, {"gpio": 15, "function": "ip", "pull": "pn"}]), "mixed",
+                         "an input with a pull is not floating")
         self.assertEqual(pinctrl.state_word([flo[0], drv[0]]), "mixed")
 
-    def test_the_defaults_are_what_was_measured_on_the_pi(self):
-        self.assertEqual(pinctrl.PI_UART_DEFAULT, {14: "pn", 15: "pu"})
+    def test_driven_means_the_uarts_own_function_for_that_pin_and_its_name(self):
+        uart5 = [{"gpio": 12, "function": "a4", "pull": "pn", "name": "TXD5"}, {"gpio": 13, "function": "a4", "pull": "pu", "name": "RXD5"}]
+        self.assertEqual(pinctrl.state_word(uart5), "driven")
+        self.assertEqual(pinctrl.state_word([dict(uart5[0], name="SDA1"), uart5[1]]), "mixed", "the right code but some other function: not the UART")
+        self.assertEqual(pinctrl.state_word([dict(uart5[0], name=None), dict(uart5[1], name=None)]), "driven", "a line that names nothing is judged by its code")
+        self.assertEqual(pinctrl.state_word([dict(uart5[0], function="a0"), uart5[1]]), "mixed", "uart0's code on a uart5 pin is not engaged")
+        self.assertEqual(pinctrl.state_word([{"gpio": 22, "function": "a0", "pull": "pn", "name": "x"}]), "mixed", "GPIO22 is no UART's pin")
+
+    def test_every_uart_pin_has_one_engaged_state_with_tx_unpulled_and_rx_pulled_up(self):
+        for _addr, (name, tx, rx, alt) in piuart.UARTS.items():
+            n = name[-1]
+            self.assertEqual((piuart.ENGAGED[tx], piuart.ENGAGED[rx]), ((alt, "pn", "TXD" + n), (alt, "pu", "RXD" + n)), name)
+        self.assertEqual((piuart.ENGAGED[14], piuart.ENGAGED[15]), (("a0", "pn", "TXD0"), ("a0", "pu", "RXD0")), "what was measured on the Pi 2026-11-18")
+        self.assertEqual(sorted(piuart.ENGAGED), [0, 1, 4, 5, 8, 9, 12, 13, 14, 15])
+
+    def test_engage_refuses_a_pin_no_uart_uses(self):
+        class H(object):
+            hooks = {"pinctrl": lambda args: (0, "")}
+        with self.assertRaises(pinctrl.PinctrlError):
+            pinctrl.engage_pins(H(), [22])
 
     def test_a_missing_pin_in_the_output_is_an_error_not_a_guess(self):
         class H(object):

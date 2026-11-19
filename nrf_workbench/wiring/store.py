@@ -103,6 +103,9 @@ def build_log(fields, detected, others, board_ids, existing=None):
     mine = [a for a in detected if a["serial"] == adapter_serial]
     kept = existing is not None and existing["adapter"]["serial"] == adapter_serial
     if not mine and not kept:
+        if adapter_serial.startswith(detect.PI_PREFIX):
+            raise Refused("adapter_absent", "%s is not an enabled Pi UART the bench knows: wiring.uart_status says how to enable one, and wiring.show lists the ports"
+                          % adapter_serial[len(detect.PI_PREFIX):], {"adapter": adapter_serial})
         raise Refused("adapter_absent", "no USB adapter with serial %s is detected" % adapter_serial, {"adapter": adapter_serial})
     if len(mine) > 1:
         raise Refused("adapter_absent", "more than one USB adapter reports serial %s, so none can be chosen" % adapter_serial,
@@ -117,7 +120,9 @@ def build_log(fields, detected, others, board_ids, existing=None):
     record = {"name": name, "intent": "log", "device": device, "adapter": {"ids": [ids], "serial": adapter_serial},
               "baud": baud, "send": send, "voltage_measured": measured if send else None}
     if ids == detect.PI_IDS:
-        record["pins"] = list(linkmod.PI_UART_PINS.get(adapter_serial[len(detect.PI_PREFIX):], ()))     # held by this connection (gpio.assign refuses them)
+        # held by this connection (gpio.assign refuses them): the pins of the UART the row says it is, read from the hardware (piuart.py). A connection that is
+        # kept as it was while its UART is not enabled keeps the pins it already had.
+        record["pins"] = list(mine[0]["pins"]) if mine else list((existing or {}).get("pins") or ())
     link = to_link(record, board_ids)
     for problem in link.problems:                       # the console's own refusals: a board's own port, the touch baud, ...
         if problem.code in ("not_a_declared_link", "baud_refused", "dtr_rts_unsafe"):

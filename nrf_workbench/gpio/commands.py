@@ -25,7 +25,7 @@ def _header(ctx):
     except PinStoreError as exc:
         return _failed(exc)
     held = dict((p["gpio"], p["name"]) for p in pins)
-    rows = [dict(row, assigned=held.get(row["gpio"])) for row in header.table()]
+    rows = [dict(row, assigned=held.get(row["gpio"])) for row in header.table(ctx.host.config["pins"]["reserved"])]
     return Result.success({"header": rows}, "%d of the header's GPIOs are assigned" % len(held))
 
 
@@ -44,7 +44,7 @@ def _assign(ctx, **fields):
         return Result.refused("pin_taken", "BCM %d is held by the wiring connection %s: disconnect it first" % (fields["gpio"], held[fields["gpio"]]),
                               {"gpio": fields["gpio"], "held_by": held[fields["gpio"]]})
     try:
-        record, created = _store(ctx.host).assign(fields, by=ctx.caller)
+        record, created = _store(ctx.host).assign(fields, by=ctx.caller, reserved=ctx.host.config["pins"]["reserved"])
     except Invalid as exc:
         raise UsageError(str(exc), exc.arg)
     except Refused as exc:

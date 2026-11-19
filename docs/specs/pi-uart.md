@@ -4,6 +4,11 @@ Peter, 2026-11-18: "instead of the serial dongle plugged in, UART RX and TX on t
 **header pins 8 (TX, BCM14) and 10 (RX, BCM15)**. Until now the console's only backend was a USB adapter (`usb-adapter`); `pi-uart` was
 declared in `console/links.py` and refused as `backend_not_built`. Tags: **[stated]**, **[derived]**, **[unknown]**.
 
+> **Amended 2026-11-19 (`pi-uart-move.md`).** Peter overruled defect 2 below ("the bench does not use Bluetooth"): the nRF boards' only wireless link is BLE, so Bluetooth stays
+> on and the debug UART is a *second* PL011 (`dtoverlay=uart5`, header pins 32 and 33). Pins 8 and 10 are given up and reserved by configuration. Everything below that says "pins 8
+> and 10" or `ttyAMA0` describes the first arrangement; the port and its pins are now read from the hardware (`wiring/piuart.py`), and `wiring.uart_status` no longer says to add
+> `disable-bt`.
+
 ## GAP defects first
 
 1. **The Pi's login console owns that port by default.** Raspberry Pi OS can run a serial login (`serial-getty`, and `console=serial0,115200`

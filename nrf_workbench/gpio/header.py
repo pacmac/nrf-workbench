@@ -29,20 +29,28 @@ ALT = {0: "ID_SD (HAT EEPROM)", 1: "ID_SC (HAT EEPROM)", 2: "SDA1 (I2C)", 3: "SC
        14: "TXD0 (UART)", 15: "RXD0 (UART)", 18: "PCM CLK / PWM0", 19: "PCM FS / PWM1", 20: "PCM DIN", 21: "PCM DOUT"}
 
 
-def gpio_class(gpio):
-    """free, bus or reserved for a header GPIO; None for a number that is not on the header."""
+def physical(gpio):
+    """The physical pin number (1 to 40) of a header GPIO, or None."""
+    for pin, _label, bcm in _PINS:
+        if bcm == gpio:
+            return pin
+    return None
+
+
+def gpio_class(gpio, reserved=()):
+    """free, bus or reserved for a header GPIO; None for a number that is not on the header. `reserved` is the bench's own list (config `pins.reserved`)."""
     if gpio not in HEADER_GPIOS:
         return None
-    if gpio in RESERVED_GPIOS:
+    if gpio in RESERVED_GPIOS or gpio in reserved:
         return RESERVED
     return BUS if gpio in BUS_GPIOS else FREE
 
 
-def table():
-    """One row per physical pin, 1 to 40: {pin, label, kind (power|ground|gpio), gpio, class, alt}."""
+def table(reserved=()):
+    """One row per physical pin, 1 to 40: {pin, label, kind (power|ground|gpio), gpio, class, alt}. `reserved` is the bench's own list (config `pins.reserved`)."""
     rows = []
     for pin, label, gpio in _PINS:
         kind = "gpio" if gpio is not None else ("ground" if label == "GND" else "power")
         rows.append({"pin": pin, "label": label, "kind": kind, "gpio": gpio,
-                     "class": gpio_class(gpio) if gpio is not None else None, "alt": ALT.get(gpio, "") if gpio is not None else ""})
+                     "class": gpio_class(gpio, reserved) if gpio is not None else None, "alt": ALT.get(gpio, "") if gpio is not None else ""})
     return rows

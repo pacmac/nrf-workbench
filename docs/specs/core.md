@@ -130,7 +130,7 @@ returned, never a tail. **[brief]**
 | `meter_function` | refused | a meter read that named the function it expects (`expect_function`) while the meter is set to another; nothing was read (`meter.md`) | the function it is set to, the one expected |
 | `meter_unreachable` | failed | the multimeter did not accept a connection within the ceiling, or closed it (`meter.md`) | the address, the reason |
 | `meter_overload` | suspect | a meter reading at SCPI's overload value: the range is too small to trust any number (`meter.md`) | the raw reply, the range |
-| `pin_reserved` | refused | a GPIO assignment to BCM 0 or 1, the HAT ID EEPROM's bus (`gpio.md`) | the gpio |
+| `pin_reserved` | refused | a GPIO assignment to BCM 0 or 1, the HAT ID EEPROM's bus (`gpio.md`), or to a pin the bench's configuration reserves (`pins.reserved`, `pi-uart-move.md`) | the gpio, and `reserved_by: configuration` for a configured one |
 | `pin_not_on_header` | refused | a GPIO assignment to a number that is not on the 40-pin header (0 to 27) | the gpio |
 | `pin_taken` | refused | that GPIO is already assigned to another name | the gpio, who holds it |
 | `pin_unknown` | refused | an unassign of a name that is not assigned | the name |

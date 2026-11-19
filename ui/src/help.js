@@ -79,7 +79,7 @@ export const TOPICS = [
     pages: ["wiring"],
     summary: "Say which board a serial adapter is wired to, and its log appears on the Console.",
     steps: [
-      "Plug in a USB serial adapter, or use the Pi's own serial port (header pins 8 and 10). It appears under Wiring as waiting to be connected.",
+      "Plug in a USB serial adapter, or use the Pi's own serial port (its header pins are shown on the row). It appears under Wiring as waiting to be connected.",
       "Choose the board it is wired to, then Set up the connection.",
       "Pick the baud rate the board's firmware uses. 115200 is the usual one.",
       "Choose Receive only to watch, or let the bench send. Sending needs a wired TX line, and for a USB adapter someone must have measured its voltage.",
@@ -179,8 +179,9 @@ export const TOPICS = [
     steps: [
       "Assign a pin on the GPIO page: its name, what it is for and which service uses it. Nothing is driven or read by assigning.",
       "I2C: assign BCM 2 and BCM 3 (header pins 3 and 5) with service i2c. Then Commands can scan and transfer on bus 1.",
-      "The serial port on header pins 8 and 10 is a debug link once enabled. Its setup steps are listed by wiring uart_status on the Commands page.",
-      "Turning on I2C or the serial port changes the Pi's boot settings and needs a reboot. The bench never does that by itself.",
+      "A second serial port (uart5, header pins 32 and 33) is the debug link; the first one stays Bluetooth's so BLE works. Its setup steps are listed by wiring uart_status on the Commands page.",
+      "Pins the bench has given up (config pins.reserved, here 8 and 10) are refused and kept floating, so an old wire cannot drive a board.",
+      "Turning on I2C or a serial port changes the Pi's boot settings and needs a reboot. The bench never does that by itself.",
     ],
     problems: [
       { symptom: "A pin cannot be assigned", cause: "A wiring connection holds it, another service has it, or it is reserved.", fix: "The message names who holds it. Disconnect that first." },

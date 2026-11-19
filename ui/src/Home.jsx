@@ -24,6 +24,18 @@ function Section({ title, page, count, children }) {
   );
 }
 
+// Bluetooth as the kernel has it (docs/specs/pi-uart-move.md): an adapter is registered or it is not. Nothing here says a device is in range.
+function BluetoothRow({ bt }) {
+  if (!bt) return null;
+  const text = bt.present ? (bt.blocked ? `adapter ${bt.adapters.join(", ")}, blocked by rfkill` : `adapter ${bt.adapters.join(", ")}`) : "off, no adapter";
+  return (
+    <>
+      <dt className="text-slate-600 dark:text-slate-400">Bluetooth</dt>
+      <dd title={bt.why} className={bt.present && !bt.blocked ? "" : "text-amber-800 dark:text-amber-300"}>{text}</dd>
+    </>
+  );
+}
+
 function Empty({ children }) {
   return <p className="px-1 py-3 text-[13px] text-slate-600 dark:text-slate-400">{children}</p>;
 }
@@ -231,6 +243,7 @@ export default function Home({ overview, session, feed, activity, info }) {
                   <dt className="text-slate-600 dark:text-slate-400">Model</dt><dd>{host.model || "unknown"}</dd>
                   <dt className="text-slate-600 dark:text-slate-400">Address</dt><dd className="break-all font-mono">{window.location.host}</dd>
                   {host.uptime_s != null && (<><dt className="text-slate-600 dark:text-slate-400">Up</dt><dd>{ago(host.uptime_s)}</dd></>)}
+                  <BluetoothRow bt={data.bluetooth} />
                   <dt className="text-slate-600 dark:text-slate-400">Access</dt>
                   <dd>{session.access === "open" ? "open, no token" : session.access === "open-read" ? "reads open, writes need the token" : "token"}</dd>
                 </dl>

@@ -51,7 +51,7 @@ def _need(value, arg, what):
     return value
 
 
-def build(fields, others):
+def build(fields, others, reserved=()):
     """The record for a declaration, or an exception. `fields` are the declared values (None for a field not stated);
     `others` is {name: record} for every OTHER declared pin, so a name that is being replaced does not conflict with
     itself. Shape first (Invalid), then the rules (Refused)."""
@@ -107,13 +107,16 @@ def build(fields, others):
         raise Refused("pin_not_on_header", "GPIO %d is not on the 40-pin header (it is 0 to 27)" % gpio, {"gpio": gpio})
     if gpio in header.RESERVED_GPIOS:
         raise Refused("pin_reserved", "GPIO %d is the HAT ID EEPROM's bus and is never offered" % gpio, {"gpio": gpio})
+    if gpio in reserved:
+        raise Refused("pin_reserved", "GPIO %d is reserved on this bench (pins.reserved in its configuration): a wire to a board may still be on it, "
+                      "and the bench keeps it floating" % gpio, {"gpio": gpio, "reserved_by": "configuration"})
     if signal > SIGNAL_MAX_V:
         raise Refused("voltage_unsafe", "a header GPIO is 3.3 V and is not 5 V tolerant; a %s V signal would damage it" % signal,
                       {"gpio": gpio, "voltage": signal})
     for other in others.values():
         if other["gpio"] == gpio:
             raise Refused("pin_taken", "GPIO %d is already assigned to %s" % (gpio, other["name"]), {"gpio": gpio, "held_by": other["name"]})
-    record["class"] = header.gpio_class(gpio)
+    record["class"] = header.gpio_class(gpio, reserved)
     return record
 
 
@@ -132,13 +135,13 @@ class PinStore(object):
             pins = self._read()
         return sorted(pins.values(), key=lambda p: p["gpio"])
 
-    def assign(self, fields, by=None):
-        """(record, created). Raises Invalid or Refused; a name already declared is replaced."""
+    def assign(self, fields, by=None, reserved=()):
+        """(record, created). Raises Invalid or Refused; a name already declared is replaced. `reserved` is the bench's own list of pins it never hands out."""
         with self._lock:
             pins = self._read()
             name = fields.get("name")
             others = dict((n, p) for n, p in pins.items() if n != name)
-            record = build(fields, others)
+            record = build(fields, others, reserved)
             created = record["name"] not in pins
             record["updated_at"], record["updated_by"] = self._now(), by
             pins[record["name"]] = record

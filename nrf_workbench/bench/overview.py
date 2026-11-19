@@ -15,7 +15,8 @@ from ..gpio import header
 from ..i2c import bus as i2cbus
 from ..i2c import commands as i2c_commands
 from ..wiring import commands as wiring_commands
-from ..wiring import detect
+from ..wiring import detect, piuart
+from . import bluetooth
 
 CONNECTED, ABSENT, ATTENTION = "connected", "absent", "attention"
 LISTENING = "listening"
@@ -74,7 +75,9 @@ def _connections(host, errors):
             state, why = ATTENTION, "the Pi's lines are released (%s): engage them to read again" % pin_state["state"]
         serial = r["adapter"]["serial"]
         a = adapters.get(serial)
-        via = "Pi UART (header pins 8 and 10)" if r["adapter"]["ids"][0] == detect.PI_IDS else (a["name"] if a else serial)
+        pi_pins = r.get("pins") or ()
+        via = ("Pi UART (%s)" % piuart.header_text(*pi_pins[:2]) if len(pi_pins) >= 2 else "Pi UART") if r["adapter"]["ids"][0] == detect.PI_IDS \
+            else (a["name"] if a else serial)
         out.append({"name": r["name"], "device": r["device"], "device_name": labels.get(r["device"]), "via": via, "adapter_serial": serial,
                     "baud": r["baud"],
                     "state": state, "why": why,
@@ -166,7 +169,7 @@ def _header(host):
         assigned = {}
     held = wiring_commands.pins_held(host)
     rows = []
-    for r in header.table():
+    for r in header.table(host.config["pins"]["reserved"]):
         g = r["gpio"]
         row = dict(r, holder=None, holder_kind=None, service=None)
         if g in held:
@@ -207,4 +210,4 @@ def overview(host):
               "links_attention": sum(1 for c in connections or [] if c["state"] == ATTENTION),
               "projects": len(projects or []), "projects_attention": sum(1 for p in projects or [] if p["state"] == ATTENTION)}
     return {"host": host_facts(host), "devices": devices, "connections": connections, "projects": projects, "i2c": i2c, "header": hdr,
-            "counts": counts, "absent": absent, "errors": errors}
+            "bluetooth": bluetooth.status(host), "counts": counts, "absent": absent, "errors": errors}

@@ -13,7 +13,6 @@ An item is `blocking` when apply must refuse because of it. A role whose board i
 """
 from ..console import commands as console_commands
 from ..console import macros as macromod
-from ..console.links import PI_UART_PINS
 from ..devices import commands as device_commands
 from ..devices import identity
 from ..esp32 import targets as esp_targets
@@ -22,7 +21,7 @@ from ..gpio import pinmap
 from ..i2c import bus as i2cbus
 from ..programmer import commands as programmer_commands
 from ..wiring import commands as wiring_commands
-from ..wiring import detect
+from ..wiring import detect, piuart
 from . import manifest as mf
 
 SECTION_ORDER = ("requires", "esp32", "wiring", "pins", "macros", "firmware")
@@ -62,7 +61,7 @@ def requires_items(host, call, wanted):
         elif need == "pi-uart":
             res = call("wiring.uart_status", {})
             d = res.data if res.ok else {}
-            ok = bool(d.get("enabled") and d.get("on_header_pins") and not d.get("holders") and not d.get("kernel_console_on_it"))
+            ok = bool(d.get("enabled") and not any(u["holders"] for u in d.get("uarts", [])) and not d.get("kernel_console_on_it"))
             why = "" if ok else (res.message if not res.ok else "the Pi's UART is not ready: run wiring.uart_status for the steps")
         else:
             ok = caps is None or need in caps
@@ -164,7 +163,7 @@ def make_plan(host, call, m, owners, own_state):
         existing = state["connections"].get(w["name"])
         pi = w["adapter"].startswith(mf.PI_PREFIX)
         if pi:
-            pi_claimed.update(PI_UART_PINS.get(w["adapter"][len(mf.PI_PREFIX):], ()))
+            pi_claimed.update(piuart.pins_of(host.sysfs, w["adapter"][len(mf.PI_PREFIX):]))      # from the hardware, not the name
         if existing is not None:
             same = (existing["device"], existing["adapter"]["serial"], existing["baud"], bool(existing["send"])) == (serial, w["adapter"], w["baud"], w["send"])
             owner = owners.get(("connections", w["name"]))
@@ -196,7 +195,7 @@ def make_plan(host, call, m, owners, own_state):
             items.append(item("pins", p["name"], "unresolved", "this host has no pin map (a Raspberry Pi with paths.gpio)", True, "capability_missing"))
             continue
         try:
-            pinmap.build(dict(p), {})
+            pinmap.build(dict(p), {}, host.config["pins"]["reserved"])
         except pinmap.Invalid as exc:
             items.append(item("pins", p["name"], "unresolved", "%s: %s" % (exc.arg, exc), True, "bad_manifest"))
             continue

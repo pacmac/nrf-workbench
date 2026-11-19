@@ -7,15 +7,17 @@ import os
 import re
 import stat
 
+from ..bench import bluetooth
 from ..console import links as linkmod
 from ..core.registry import Arg, Command, UsageError
 from ..core.result import Result
 from ..devices import commands as device_commands
 from ..esp32 import targets as esp_targets
 from ..gpio import commands as gpio_commands
+from ..gpio import header
 from ..gpio.pinmap import PinStoreError
 from ..guards import checks
-from . import detect, pinctrl
+from . import detect, pinctrl, piuart
 from .store import BUILT, INTENTS, Invalid, Refused, StoreError, WiringStore, build_log, holder_of, to_link
 
 WIRING = ("wiring",)
@@ -44,7 +46,7 @@ def _detected(host, ids):
     # An ESP32's built-in USB is its own console, not a debug adapter for another board, so it is never offered here.
     rows = [a for a in detect.adapters(host.sysfs, host.devroot, ids) if a["ids"] not in esp_targets.NATIVE_IDS]
     if host.config["paths"].get("gpio"):
-        rows += detect.pi_uarts(host.devroot, host.proc, _pin_services(host))
+        rows += detect.pi_uarts(host.sysfs, host.devroot, host.proc, _pin_services(host))
     return rows
 
 
@@ -62,23 +64,32 @@ def pins_held(host):
     return held
 
 
-def _uart_steps(boot, cmdline, holders, serial0):
-    cfg = [line.strip() for line in boot.splitlines()]            # a step is done only by the exact line, so a commented one is not
-    return [
-        {"step": "add enable_uart=1 to /boot/firmware/config.txt", "done": "enable_uart=1" in cfg},
-        {"step": "add dtoverlay=disable-bt to /boot/firmware/config.txt (the good UART on pins 8 and 10 is Bluetooth's until then)",
-         "done": "dtoverlay=disable-bt" in cfg or serial0 == "ttyAMA0"},
-        {"step": "remove console=serial0,115200 (and any console=ttyAMA0,...) from /boot/firmware/cmdline.txt",
-         "done": not re.search(r"console=(serial0|ttyAMA0)", cmdline)},
+RECOMMENDED_OVERLAY = "uart5"     # a PL011 on header pins 32 and 33 (GPIO12/13): free, adjacent, and not Bluetooth's (docs/specs/pi-uart-move.md)
+
+
+def _uart_steps(boot, cmdline, holders, any_uart, reserved):
+    """What is left to do in the boot configuration for a Pi UART that does not take Bluetooth's. A step is done only by the exact line, so a commented one is not."""
+    cfg = [line.strip() for line in boot.splitlines()]
+    steps = [
+        {"step": "add dtoverlay=%s to /boot/firmware/config.txt: a second PL011 on header pins 32 and 33, so Bluetooth keeps the first" % RECOMMENDED_OVERLAY,
+         "done": ("dtoverlay=%s" % RECOMMENDED_OVERLAY) in cfg or any_uart},
+        {"step": "remove dtoverlay=disable-bt from /boot/firmware/config.txt: it switches Bluetooth off, and BLE needs it", "done": "dtoverlay=disable-bt" not in cfg},
+        {"step": "remove enable_uart=1 from /boot/firmware/config.txt: with Bluetooth on it makes the firmware drive header pin 8 with the mini-UART",
+         "done": "enable_uart=1" not in cfg},
+    ]
+    if reserved:
+        steps.append({"step": "add gpio=%s=ip,pn to /boot/firmware/config.txt so the reserved pins are inputs with no pull from the first instant of every boot"
+                      % ",".join(str(g) for g in reserved), "done": ("gpio=%s=ip,pn" % ",".join(str(g) for g in reserved)) in cfg})
+    steps += [
+        {"step": "remove console=serial0,115200 (and any console=ttyAMA...) from /boot/firmware/cmdline.txt", "done": not re.search(r"console=(serial0|ttyAMA)", cmdline)},
         {"step": "stop the serial login: systemctl disable --now serial-getty@ttyAMA0.service serial-getty@serial0.service",
          "done": not any("getty" in cmd for _pid, cmd in holders)},
     ]
+    return steps
 
 
 def _uart_status(ctx):
     host = ctx.host
-    port = "ttyAMA0"
-    node = os.path.join(host.devroot, port)
     boot_dir = getattr(host, "bootdir", "/boot/firmware")
 
     def read(name):
@@ -87,26 +98,29 @@ def _uart_status(ctx):
                 return fh.read()
         except OSError:
             return ""
-    try:
-        enabled = stat.S_ISCHR(os.stat(node).st_mode)
-    except OSError:
-        enabled = False
-    holders = checks.holders(node, host.proc) if enabled else []
-    link = os.path.join(host.devroot, "serial0")
-    serial0 = os.path.basename(os.path.realpath(link)) if os.path.islink(link) else None      # None: there is no /dev/serial0 at all
-    cmdline = read("cmdline.txt")
-    steps = _uart_steps(read("config.txt"), cmdline, holders, serial0)
-    pins = linkmod.PI_UART_PINS[port]
     services, held = _pin_services(host), pins_held(host)
-    data = {"port": port, "node": node if enabled else None, "enabled": enabled, "serial0_is": serial0,
-            "on_header_pins": serial0 == "ttyAMA0", "kernel_console_on_it": bool(re.search(r"console=(serial0|ttyAMA0)", cmdline)),
-            "holders": [{"pid": p, "cmdline": c} for p, c in holders], "pins": {"tx_bcm": pins[0], "rx_bcm": pins[1],
-                                                                                "tx_header": 8, "rx_header": 10},
-            "pin_map": dict((str(g), services.get(g)) for g in pins), "held_by_connection": dict((str(g), held.get(g)) for g in pins),
-            "steps": steps, "reboot_needed": not all(s["done"] for s in steps[:3])}
-    ready = enabled and data["on_header_pins"] and not holders and not data["kernel_console_on_it"]
-    return Result.success(data, "the Pi's UART on header pins 8 and 10 is ready" if ready else
-                          "the Pi's UART is not ready: %d of %d setup steps are not done" % (sum(1 for s in steps if not s["done"]), len(steps)))
+    uarts, holders = [], []
+    for port in detect.pi_ports(host.sysfs, host.devroot):
+        u = piuart.uart_of(host.sysfs, port)
+        node = os.path.join(host.devroot, port)
+        h = checks.holders(node, host.proc)
+        holders += h
+        pins = (u["tx"], u["rx"])
+        uarts.append({"port": port, "uart": u["name"], "node": node, "holders": [{"pid": p, "cmdline": c} for p, c in h],
+                      "pins": {"tx_bcm": pins[0], "rx_bcm": pins[1], "tx_header": header.physical(pins[0]), "rx_header": header.physical(pins[1])},
+                      "pin_map": dict((str(g), services.get(g)) for g in pins), "held_by_connection": dict((str(g), held.get(g)) for g in pins)})
+    reserved = sorted(host.config["pins"]["reserved"])
+    cmdline = read("cmdline.txt")
+    steps = _uart_steps(read("config.txt"), cmdline, holders, bool(uarts), reserved)
+    bt = bluetooth.status(host)
+    console_on_it = bool(re.search(r"console=(serial0|ttyAMA)", cmdline))
+    data = {"enabled": bool(uarts), "uarts": uarts, "recommended_overlay": RECOMMENDED_OVERLAY, "bluetooth": bt, "reserved_pins": reserved,
+            "kernel_console_on_it": console_on_it, "steps": steps, "reboot_needed": not all(s["done"] for s in steps[:-1])}      # every step but the last (the getty) is a boot file
+    ready = bool(uarts) and not holders and not console_on_it and bt["present"]
+    if ready:
+        return Result.success(data, "a Pi UART is enabled (%s) and Bluetooth has its own adapter" % ", ".join("%s on %s" % (u["uart"], piuart.header_text(
+            u["pins"]["tx_bcm"], u["pins"]["rx_bcm"])) for u in uarts))
+    return Result.success(data, "the Pi's UART and Bluetooth are not both ready: %d of %d setup steps are not done" % (sum(1 for s in steps if not s["done"]), len(steps)))
 
 
 def links_for(host, records):
@@ -322,17 +336,17 @@ def register(registry, host):
 
     add(Command("wiring.show", "The devices, the detected USB adapters, and the connections between them.", _show,
                 requires=WIRING, result="devices, adapters (with who holds each), connections (with their live state), intents"))
-    add(Command("wiring.uart_status", "Is the Pi's own UART (header pins 8 and 10) ready to be a debug link, and what is left to set up? "
-                "Reads boot files and /proc; changes and opens nothing.", _uart_status, requires=("wiring", "gpio"),
-                result="enabled, node, serial0_is, on_header_pins, kernel_console_on_it, holders, pins, pin_map, held_by_connection, "
-                       "steps (step, done), reboot_needed"))
+    add(Command("wiring.uart_status", "Which of the Pi's own UARTs are enabled (and on which header pins), does Bluetooth have its adapter, and what is left to set up? "
+                "Reads boot files, sysfs and /proc; changes and opens nothing.", _uart_status, requires=("wiring", "gpio"),
+                result="enabled, uarts (port, uart, node, pins, holders, pin_map, held_by_connection), recommended_overlay, bluetooth, reserved_pins, "
+                       "kernel_console_on_it, steps (step, done), reboot_needed"))
     add(Command(
         "wiring.connect", "Connect a device to something and say what for. Built so far: the debug log, through a USB serial adapter or "
-        "the Pi's own UART (adapter uart:ttyAMA0, header pins 8 and 10).",
+        "the Pi's own UART (adapter uart:<port>, such as uart:ttyAMA1; wiring.show lists the ports and their header pins).",
         _connect,
         args=(Arg("device", doc="the nRF's USB serial number (see wiring.show)"),
               Arg("intent", doc="what the connection is for: log (built); control, bus, swd, analog (not built yet)"),
-              Arg("adapter", required=False, doc="log: the serial number of a detected USB adapter, or uart:ttyAMA0 for the Pi's own "
+              Arg("adapter", required=False, doc="log: the serial number of a detected USB adapter, or uart:<port> for the Pi's own "
                   "UART (see wiring.show adapters)"),
               Arg("baud", type="int", required=False, unit="baud", doc="log: the rate the device's firmware uses; the bootloader-touch rate is always refused"),
               Arg("send", type="bool", required=False, doc="log: true to let the bench send to the device, false to only read"),

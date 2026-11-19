@@ -575,6 +575,29 @@ class Checking(Base):
         self.assertEqual(self.targets(), [])
 
 
+class UartPins(Base):
+    """The pins a project's Pi UART connection claims come from the hardware behind the port (docs/specs/pi-uart-move.md), not from its name."""
+
+    def action(self, manifest, pin_name="demo-gpio4"):
+        self.put(manifest)
+        items = dict(((i["section"], i["name"]), i) for i in self.call("project.plan", {"project": "demo"}).data["items"])
+        return items[("pins", pin_name)]["action"]
+
+    def test_a_pin_on_the_second_uarts_pins_conflicts_with_the_project_connection_and_uart0s_pins_do_not(self):
+        self.t.node("ttyAMA1", 204, 65)                                   # uart5: GPIO12/13
+        on_uart5 = MANIFEST.replace("uart:ttyAMA0", "uart:ttyAMA1")
+        self.assertEqual(self.action(on_uart5.replace("gpio: 4", "gpio: 12")), "conflict")
+        self.assertEqual(self.action(on_uart5.replace("gpio: 4", "gpio: 14")), "create", "uart0's pins are nobody's now")
+
+    def test_the_same_pins_on_uart0_are_the_other_way_round(self):
+        self.assertEqual(self.action(MANIFEST.replace("gpio: 4", "gpio: 14")), "conflict")
+        self.assertEqual(self.action(MANIFEST.replace("gpio: 4", "gpio: 12")), "create")
+
+    def test_a_manifest_pin_on_a_reserved_gpio_is_unresolved(self):
+        self.host.config["pins"]["reserved"] = [14, 15]
+        self.assertEqual(self.action(MANIFEST.replace("gpio: 4", "gpio: 14")), "unresolved")
+
+
 class Probe(Base):
     def test_the_probe_sends_one_byte_read_at_the_expected_address_through_the_gated_command(self):
         self.put(MANIFEST + "  i2c: {bus: 1, address: 0x62}\n")

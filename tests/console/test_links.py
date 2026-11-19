@@ -86,7 +86,7 @@ class Validation(Files):
         (link,) = self.load([raws])
         return link
 
-    def test_the_backend_is_known_and_pi_uart_needs_a_port_the_bench_knows_the_pins_of(self):
+    def test_the_backend_is_known_and_pi_uart_needs_a_pl011_port_name(self):
         self.assertIn("invalid", self.codes(backend="rtt"))
         self.assertEqual(self.pi().problems, [])
         self.assertTrue(self.pi().usable)
@@ -96,8 +96,8 @@ class Validation(Files):
         self.assertEqual([p.code for p in link.problems], ["invalid"])
         for port in ("ttyS0", "ttyUSB0", "/dev/ttyAMA0", "ttyAMA", 7, ""):
             self.assertIn("invalid", [p.code for p in self.pi(port=port).problems], repr(port))
-        self.assertEqual([p.code for p in self.pi(port="ttyAMA3").problems], ["not_a_declared_link"],
-                         "a Pi UART whose header pins are not known is listed with the reason and never opened")
+        for port in ("ttyAMA1", "ttyAMA3"):
+            self.assertEqual(self.pi(port=port).problems, [], "which header pins a port is on is the wiring store's business (it reads the hardware), not the link's")
 
     def test_a_pi_uart_link_never_reaches_a_modem_line_and_still_refuses_dtr_rts(self):
         self.assertEqual([p.code for p in self.pi(dtr_rts_reach_dut=True).problems], ["dtr_rts_unsafe"])

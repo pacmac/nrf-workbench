@@ -130,7 +130,7 @@ def _wiring(raw, roles, errors):
             errors.append("%s.device: %r is not an nrf role in devices (a debug log is wired to an nRF board)" % (where, item["device"]))
             ok = False
         if not (isinstance(item["adapter"], str) and item["adapter"]):
-            errors.append("%s.adapter: a USB adapter's serial, or uart:ttyAMA0 for the Pi's own UART" % where)
+            errors.append("%s.adapter: a USB adapter's serial, or uart:<port> for the Pi's own UART, such as uart:ttyAMA1" % where)
             ok = False
         if item["baud"] not in BAUDS:
             errors.append("%s.baud: one of %s" % (where, ", ".join(str(b) for b in BAUDS)))

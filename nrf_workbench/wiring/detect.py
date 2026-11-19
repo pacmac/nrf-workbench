@@ -6,6 +6,7 @@ import stat
 from ..console import links as linkmod
 from ..devices import identity
 from ..guards import checks
+from . import piuart
 
 
 def board_ids(profiles):
@@ -39,32 +40,46 @@ PI_IDS = "pi-uart"
 PI_PREFIX = "uart:"
 
 
-def pi_uarts(devroot, proc, pin_services=None):
-    """The Pi's own UARTs as adapter rows (docs/specs/pi-uart.md), so the Wiring page offers them like any adapter. `pin_services` is
-    {BCM number: the service the pin map gives it}. READ-ONLY: it stat()s the node and reads /proc, and opens nothing. A `problem` says why
-    a row cannot be connected: the UART is not enabled (no node), something else holds it (the login console), or its pins belong to
-    another service."""
-    pin_services = pin_services or {}
-    rows = []
-    for port, pins in sorted(linkmod.PI_UART_PINS.items()):
-        node = os.path.join(devroot, port)
-        problem, code = "", None
+def pi_ports(sysfs, devroot):
+    """[port] for each `ttyAMAn` character node whose PL011 the bench knows (wiring/piuart.py), in name order. A PL011 that is not a header UART (or a node
+    sysfs cannot place) is not listed: the bench never guesses which pins a port is on."""
+    try:
+        names = sorted(n for n in os.listdir(devroot) if linkmod.PI_PORT.match(n))
+    except OSError:
+        return []
+    ports = []
+    for port in names:
         try:
-            is_char = stat.S_ISCHR(os.stat(node).st_mode)
+            is_char = stat.S_ISCHR(os.stat(os.path.join(devroot, port)).st_mode)
         except OSError:
             is_char = False
-        if not is_char:
-            node, problem, code = None, "the Pi's UART is not enabled (wiring.uart_status says how)", "adapter_absent"
-        else:
-            held = checks.holders(node, proc)
-            other = sorted(set(pin_services.get(g) for g in pins if pin_services.get(g) not in (None, "console")))
-            if held:
-                problem = "it is held by %s (is the serial login on it? wiring.uart_status says what to switch off)" % "; ".join(
-                    "pid %d (%s)" % h for h in held)
-                code = "port_held"
-            elif other:
-                problem = "its header pins are assigned to another service in the pin map: %s" % ", ".join(other)
-                code = "pin_taken"
-        rows.append({"serial": PI_PREFIX + port, "ids": PI_IDS, "name": "Raspberry Pi serial port (header pins 8 and 10)",
-                     "slot": "pins 8, 10", "node": node, "problem": problem, "problem_code": code})
+        if is_char and piuart.uart_of(sysfs, port):
+            ports.append(port)
+    return ports
+
+
+def pi_uarts(sysfs, devroot, proc, pin_services=None):
+    """The Pi's own UARTs as adapter rows (docs/specs/pi-uart.md, pi-uart-move.md), so the Wiring page offers them like any adapter. One row per UART that is
+    enabled and known (no node, no row: `wiring.uart_status` says how to enable one). `pin_services` is {BCM number: the service the pin map gives it}. Each row
+    carries its `pins` (TX, RX in BCM numbers). READ-ONLY: it stat()s nodes, reads sysfs and /proc, and opens nothing. A `problem` says why a row cannot be
+    connected: something else holds the node (the login console), or its pins belong to another service."""
+    pin_services = pin_services or {}
+    rows = []
+    for port in pi_ports(sysfs, devroot):
+        node = os.path.join(devroot, port)
+        uart = piuart.uart_of(sysfs, port)
+        pins = (uart["tx"], uart["rx"])
+        problem, code = "", None
+        held = checks.holders(node, proc)
+        other = sorted(set(pin_services.get(g) for g in pins if pin_services.get(g) not in (None, "console")))
+        if held:
+            problem = "it is held by %s (is the serial login on it? wiring.uart_status says what to switch off)" % "; ".join(
+                "pid %d (%s)" % h for h in held)
+            code = "port_held"
+        elif other:
+            problem = "its header pins are assigned to another service in the pin map: %s" % ", ".join(other)
+            code = "pin_taken"
+        where = piuart.header_text(*pins)
+        rows.append({"serial": PI_PREFIX + port, "ids": PI_IDS, "name": "Raspberry Pi serial port %s (%s)" % (uart["name"], where),
+                     "slot": where.replace("header ", ""), "node": node, "problem": problem, "problem_code": code, "pins": list(pins)})
     return rows

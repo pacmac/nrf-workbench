@@ -32,6 +32,9 @@ DEFAULTS = {
     # `meter` is the LAN multimeter, host or host:port (docs/specs/meter.md): unset means there are no meter commands. The address is
     # configuration and never an argument, so no caller can aim the service at another machine.
     "instruments": {"meter": None},
+    # `reserved` is a list of BCM pin numbers this bench never hands to anything (docs/specs/pi-uart-move.md): the pins of a UART it gave up, whose old wire
+    # may still be connected to a board. gpio.assign refuses them. Empty by default: another bench may still wire those pins.
+    "pins": {"reserved": []},
     # Each retained stream needs BOTH bounds and has NO default: an unbounded log is retained for ever by
     # oversight (core.md, "the event bus"). With neither set, the stream is absent and says why. The console's
     # `retain` counts LINES.
@@ -180,6 +183,10 @@ def validate(cfg):
     name = cfg["service"]["bench_name"]
     if name is not None and (not isinstance(name, str) or not name.strip()):
         problems.append("service.bench_name must be a non-empty string (or unset: the host name is used)")
+    reserved = cfg["pins"]["reserved"]
+    if not isinstance(reserved, list) or not all(isinstance(g, int) and not isinstance(g, bool) and 0 <= g <= 27 for g in reserved) \
+            or len(set(reserved)) != len(reserved):
+        problems.append("pins.reserved must be a list of different header GPIO numbers, 0 to 27")
     meter = cfg["instruments"]["meter"]
     if meter is not None:
         try:

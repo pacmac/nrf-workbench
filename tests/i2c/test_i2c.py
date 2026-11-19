@@ -167,7 +167,7 @@ class Host(object):
         os.makedirs(self.devroot)
         if with_bus:
             open(os.path.join(self.devroot, "i2c-1"), "w").close()
-        self.config = {"paths": {"gpio": os.path.join(root, "gpio")}}
+        self.config = {"paths": {"gpio": os.path.join(root, "gpio")}, "pins": {"reserved": []}}
         self.hooks, self.units, self.profiles = {}, {}, []
         self.services = {}
         self.calls = []

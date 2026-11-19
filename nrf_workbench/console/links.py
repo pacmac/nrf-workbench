@@ -15,10 +15,9 @@ import yaml
 
 from ..devices import identity
 
-# The Pi's own UARTs a link may use, and the BCM pins each one is on, TX then RX (docs/specs/pi-uart.md). Only the PL011 on header
-# pins 8 and 10 is known; any other port is listed with the reason and never opened.
+# The Pi's own UARTs a link may use are PL011s, named ttyAMAn. Which header pins one is on is NOT known from its name (it depends on the boot
+# overlays): the wiring store and the project plan ask `wiring.piuart`, which reads the hardware address, and a port it does not know is never offered.
 PI_PORT = re.compile(r"^ttyAMA[0-9]$")
-PI_UART_PINS = {"ttyAMA0": (14, 15)}
 SLUG = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 IDS = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{4}$")
 # The standard rates the kernel names a constant for. 1200 is deliberately absent: a 1200-baud open IS the bootloader touch.
@@ -108,10 +107,7 @@ def _validate(raw, seen, board_ids):
     elif backend == "pi-uart":
         port = raw.get("port")
         if not isinstance(port, str) or not PI_PORT.match(port):
-            problems.append(Problem("invalid", "port is the Pi's own UART by name, such as ttyAMA0"))
-        elif port not in PI_UART_PINS:
-            problems.append(Problem("not_a_declared_link", "%s is not a UART whose header pins are known here (only %s is)"
-                                    % (port, ", ".join(sorted(PI_UART_PINS)))))
+            problems.append(Problem("invalid", "port is the Pi's own UART by name, such as ttyAMA1"))
 
     adapter = raw.get("adapter")
     ids = adapter.get("ids") if isinstance(adapter, dict) else None

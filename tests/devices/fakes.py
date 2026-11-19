@@ -66,12 +66,23 @@ class Tree(object):
         return self.usb(name, BOOT_ID, "WisBlock RAK4631", serial=serial, tty=tty, majmin=majmin)
 
     # --- nodes -----------------------------------------------------------------------------
-    def node(self, name, major, minor):
+    # The PL011 a Pi UART node is, by physical base address: sysfs names the device behind /dev/ttyAMAn and the bench tells UARTs apart by it
+    # (docs/specs/pi-uart-move.md). ttyAMA0 is uart0 (GPIO14/15), ttyAMA1 is uart5 (GPIO12/13), ttyAMA2 is uart3 (GPIO4/5), unless `base` says otherwise.
+    PI_UART_BASES = {"ttyAMA0": "fe201000", "ttyAMA1": "fe201a00", "ttyAMA2": "fe201600"}
+
+    def node(self, name, major, minor, base=None):
         path = os.path.join(self.dev, name)
         try:
             os.mknod(path, 0o600 | stat.S_IFCHR, os.makedev(major, minor))
         except (PermissionError, OSError) as exc:
             raise unittest.SkipTest("cannot create a character device here (%s)" % exc)
+        base = base or self.PI_UART_BASES.get(name)
+        if name.startswith("ttyAMA") and base:
+            device = os.path.join(self.sysfs, "devices", "platform", "soc", "%s.serial:0.0" % base)
+            os.makedirs(device, exist_ok=True)
+            tty = os.path.join(self.sysfs, "class", "tty", name)
+            os.makedirs(tty, exist_ok=True)
+            os.symlink(device, os.path.join(tty, "device"))
         return path
 
     def hold(self, pid, node_path, cmdline):

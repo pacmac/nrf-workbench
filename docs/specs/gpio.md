@@ -53,7 +53,7 @@ every browser see the same one. It is read and changed only through commands, ne
 
   `purpose` is 200 because one clear sentence is about 100 to 140 characters and 1.5x that is the room, not
   a paragraph. 26 usable pins make the store at most 26 entries, so it needs no other bound.
-- **Refusals are by name and made by the service.** `pin_reserved` (BCM 0 or 1), `pin_not_on_header` (28 and up
+- **Refusals are by name and made by the service.** `pin_reserved` (BCM 0 or 1, and any pin in the bench's `pins.reserved` configuration: the pins of a UART it gave up, `pi-uart-move.md`), `pin_not_on_header` (28 and up
   or negative), `pin_taken` (that GPIO is already assigned to a different name), `voltage_unsafe`. A malformed
   field (a bad slug, an unknown direction, a missing required field, `max_pulse_ms` of 0, an output field on an
   input) is `usage`. Assigning an existing **name** replaces it (an edit); a name that moves to a GPIO another
