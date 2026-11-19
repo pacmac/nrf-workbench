@@ -167,6 +167,15 @@ def run(browser, theme, size, width, height, shots):
         check("%s the whole result is one click away" % tag, page.get_by_text('"points"').is_visible())
         shot("3-sampled")
         check("%s no sideways scroll" % tag, no_sideways_scroll(page))
+        # a steady current (6.599 to 6.601 mA, 0.03% apart) must look steady: the axis includes zero, so the line is flat and not a mountain
+        fake.answers["READ?"] = ["+6.599E-03", "+6.601E-03", "+6.600E-03", "+6.601E-03", "+6.599E-03"]
+        page.get_by_role("button", name="Take 5").click()
+        flat = page.get_by_role("img", name=re.compile(r"^5 readings, from 6\.599 mA to 6\.601 mA"))
+        flat.wait_for()
+        line_box, frame = flat.locator("polyline").bounding_box(), flat.bounding_box()
+        check("%s a steady reading is drawn flat, not stretched to fill the chart" % tag, line_box["height"] < 0.1 * frame["height"], (line_box, frame))
+        check("%s the chart says where its axis starts and ends" % tag, page.get_by_text("bottom of the chart: 0 A").is_visible(), page.inner_text("body"))
+        shot("3b-steady")
         del fake.table["READ?"]
         page.get_by_role("button", name="Read once").click()
         page.get_by_text("no_reply").wait_for()

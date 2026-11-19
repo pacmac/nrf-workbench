@@ -17,7 +17,7 @@ function Chart({ points, unit }) {
       <svg viewBox="0 0 480 96" preserveAspectRatio="none" role="img" aria-label={`${points.length} readings, from ${s.lo} to ${s.hi} ${unit}`} className="h-24 w-full rounded-md bg-slate-100 dark:bg-slate-950">
         <polyline points={s.line} fill="none" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" className="stroke-blue-700 dark:stroke-blue-300" />
       </svg>
-      <figcaption className="flex justify-between text-xs text-slate-600 dark:text-slate-400"><span>{s.lo}</span><span>{s.hi}</span></figcaption>
+      <figcaption className="flex justify-between text-xs text-slate-600 dark:text-slate-400"><span>bottom of the chart: {s.axisLo}</span><span>top: {s.axisHi}</span></figcaption>
     </figure>
   );
 }

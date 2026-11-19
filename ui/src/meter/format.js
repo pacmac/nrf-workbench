@@ -30,19 +30,24 @@ export function headline(command, d) {
 }
 
 // A polyline for a chart `width` by `height`: the readings in order along x by their arrival time, y scaled to their own range. Overloads are left out.
-// {line, lo, hi} with lo and hi as text, or null when there is nothing to draw. A flat series is drawn in the middle.
+// {line, lo, hi, axisLo, axisHi}: lo and hi are the readings' own lowest and highest, axisLo and axisHi the ends of the vertical axis (zero is always on it),
+// all as text. null when there is nothing to draw. An all-zero series is drawn in the middle.
 export function series(points, width, height, unit = "") {
   const good = (points || []).filter((p) => Math.abs(p.value) < 9.9e37);
   if (good.length < 2) return null;
   const lo = Math.min(...good.map((p) => p.value));
   const hi = Math.max(...good.map((p) => p.value));
+  // The axis always includes zero. A chart scaled to its own range draws a 0.03% wobble (6.599 to 6.601 mA) as a mountain, which says
+  // something the readings do not: with zero on the axis a steady current is a flat line and a real spike stands out.
+  const axisLo = Math.min(0, lo);
+  const axisHi = Math.max(0, hi);
   const t0 = good[0].t_s;
   const span = good[good.length - 1].t_s - t0;
   const pad = 4;
-  const y = (v) => (hi === lo ? height / 2 : height - pad - ((v - lo) / (hi - lo)) * (height - 2 * pad));
+  const y = (v) => (axisHi === axisLo ? height / 2 : height - pad - ((v - axisLo) / (axisHi - axisLo)) * (height - 2 * pad));
   // x is the arrival time. Readings that all arrived inside the clock's resolution (a fast meter setting) share one time, and a line with
   // no width says nothing, so they are spread evenly in the order they came.
   const x = (p, i) => ((span > 0 ? (p.t_s - t0) / span : i / (good.length - 1)) * (width - 2 * pad) + pad);
   const line = good.map((p, i) => `${x(p, i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
-  return { line, lo: si(lo, unit), hi: si(hi, unit) };
+  return { line, lo: si(lo, unit), hi: si(hi, unit), axisLo: si(axisLo, unit), axisHi: si(axisHi, unit) };
 }
