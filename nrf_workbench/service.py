@@ -43,6 +43,7 @@ from .esp32 import commands as esp32_commands
 from .esp32 import flash as esp32_flash
 from .gpio import commands as gpio_commands
 from .i2c import commands as i2c_commands
+from .instruments import meter as meter_commands
 from .project import commands as project_commands
 from .wiring import commands as wiring_commands
 from .wiring import detect as wiring_detect
@@ -138,6 +139,9 @@ def capabilities(host):
         # Floating a Pi UART link's pins (docs/specs/line-release.md) needs the Pi's own pin tool.
         if wiring_pinctrl.available(host):
             caps.add("pinctrl")
+    # The multimeter is on the LAN, so any host with its address configured has it (docs/specs/meter.md). Whether it answers is meter.show's answer.
+    if host.config["instruments"]["meter"]:
+        caps.add("meter")
     return caps
 
 
@@ -175,6 +179,7 @@ def build_host(cfg, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
     wiring_commands.register(registry, host)
     esp32_commands.register(registry, host)
     i2c_commands.register(registry, host)
+    meter_commands.register(registry, host)
     bench_commands.register(registry, host)
     project_commands.register(registry, host)
     caps = capabilities(host)

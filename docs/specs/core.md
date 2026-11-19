@@ -127,6 +127,9 @@ returned, never a tail. **[brief]**
 | `i2c_pins_unclaimed` | refused | an I2C transfer or scan on a bus whose pins the pin map does not hold with service `i2c` (or a bus with no known pins) | the bus, its pins, the unclaimed ones |
 | `pins_not_controllable` | refused | releasing or engaging a connection that does not use the Pi's own pins (a USB adapter's lines are its chip's) (`line-release.md`) | the connection |
 | `pins_not_set` | failed | `pinctrl` would not run or set a pin, or the pins did not read back as asked after a release or engage; the link stays held (`line-release.md`) | the connection, what was wanted, the pins as read |
+| `meter_function` | refused | a meter read that named the function it expects (`expect_function`) while the meter is set to another; nothing was read (`meter.md`) | the function it is set to, the one expected |
+| `meter_unreachable` | failed | the multimeter did not accept a connection within the ceiling, or closed it (`meter.md`) | the address, the reason |
+| `meter_overload` | suspect | a meter reading at SCPI's overload value: the range is too small to trust any number (`meter.md`) | the raw reply, the range |
 | `pin_reserved` | refused | a GPIO assignment to BCM 0 or 1, the HAT ID EEPROM's bus (`gpio.md`) | the gpio |
 | `pin_not_on_header` | refused | a GPIO assignment to a number that is not on the 40-pin header (0 to 27) | the gpio |
 | `pin_taken` | refused | that GPIO is already assigned to another name | the gpio, who holds it |
@@ -146,7 +149,7 @@ returned, never a tail. **[brief]**
 | `link_rx_only` | refused | a send on a link whose host TX is not wired to the DUT | the link |
 | `voltage_unverified` | refused | the link's voltage domain has not been measured | the link |
 | `dtr_rts_unsafe` | refused | DTR or RTS reach the DUT's reset or boot line | the link |
-| `no_reply` | failed | a sent verb got no reply within the caller's bound | the bound, the elapsed time |
+| `no_reply` | failed | a sent verb got no reply within the caller's bound (the multimeter too: it took a query and stayed silent, `meter.md`) | the bound, the elapsed time |
 | `no_return_path` | refused | the unit declares no way back from the bootloader (or the declared package is missing or not a DFU zip), so it will not be sent there (`devices.md`) | the allowed methods, or the package |
 | `touch_pending` | refused | this board's current USB enumeration was already touched once and it has not re-enumerated since (or the enumeration cannot be read), so a second touch would be a second reset in quick succession (`devices.md`) | the serial, the enumeration, the earlier outcome |
 | `touch_failed` | failed | the bootloader touch could not be performed (the one attempt failed); nothing is known to have changed | the error |

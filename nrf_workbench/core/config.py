@@ -29,6 +29,9 @@ DEFAULTS = {
     # folder for the wiring store (docs/specs/wiring.md): with it set the console reads its links from the connections.
     "paths": {"lock": None, "profiles": None, "firmware": None, "units": None, "links": None, "console": None,
               "gpio": None, "wiring": None},
+    # `meter` is the LAN multimeter, host or host:port (docs/specs/meter.md): unset means there are no meter commands. The address is
+    # configuration and never an argument, so no caller can aim the service at another machine.
+    "instruments": {"meter": None},
     # Each retained stream needs BOTH bounds and has NO default: an unbounded log is retained for ever by
     # oversight (core.md, "the event bus"). With neither set, the stream is absent and says why. The console's
     # `retain` counts LINES.
@@ -54,6 +57,7 @@ ENV = {
     "NRFWB_CONSOLE_DIR": ("paths", "console"),
     "NRFWB_GPIO_DIR": ("paths", "gpio"),
     "NRFWB_WIRING_DIR": ("paths", "wiring"),
+    "NRFWB_METER": ("instruments", "meter"),
 }
 
 ACCESS_MODES = ("token", "open-read", "open")
@@ -141,6 +145,19 @@ def parse_listen(text):
     return host, int(port_text)
 
 
+def meter_address(text):
+    """(host, port) from 'host' or 'host:port'; the port defaults to the instrument's own (instruments/scpi.py). ValueError says what is wrong."""
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("must be host or host:port")
+    text = text.strip()
+    host, sep, port_text = text.rpartition(":")
+    if not sep:
+        return text, None
+    if not host or not port_text.isdigit() or not 1 <= int(port_text) <= 65535:
+        raise ValueError("must be host or host:port, the port 1 to 65535")
+    return host, int(port_text)
+
+
 def is_loopback(host):
     """True only for an address that cannot be reached from another machine. A host NAME other than
     localhost is not assumed to be loopback."""
@@ -163,6 +180,12 @@ def validate(cfg):
     name = cfg["service"]["bench_name"]
     if name is not None and (not isinstance(name, str) or not name.strip()):
         problems.append("service.bench_name must be a non-empty string (or unset: the host name is used)")
+    meter = cfg["instruments"]["meter"]
+    if meter is not None:
+        try:
+            meter_address(meter)
+        except ValueError as exc:
+            problems.append("instruments.meter: %s" % exc)
     for name, bounds in cfg["streams"].items():
         retain, days = bounds["retain"], bounds["max_age_days"]
         if retain is None and days is None:
