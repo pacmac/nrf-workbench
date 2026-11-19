@@ -19,7 +19,7 @@ export function headline(command, d) {
   if (command === "meter.show") {
     const mode = d.function ? `set to ${d.function}` : "its setting is unknown";
     const range = d.range != null ? `, range ${si(d.range, unit)}${d.autorange ? " (auto)" : ""}` : "";
-    return `${d.identity}: ${mode}${range}`;
+    return `${String(d.identity).split(",").join(", ")}: ${mode}${range}`;      // the meter's comma-joined id has no spaces, so it would not wrap
   }
   if (command === "meter.read") return d.overload ? `Overload on the ${si(d.range, unit)} range` : (unit ? si(d.value, unit) : `${d.value} (unit not known for ${d.function})`);
   if (command === "meter.sample") {

@@ -131,6 +131,17 @@ def run(browser, theme, size, width, height, shots):
     try:
         page.goto(bench.url)
         page.get_by_role("navigation", name="Pages").wait_for(state="attached")
+        go_to(page, "Home")
+        page.get_by_role("button", name="Check the meter").wait_for()
+        check("%s Home has the multimeter card, and it has asked nothing of the meter yet" % tag,
+              page.get_by_text("Multimeter", exact=True).is_visible() and fake.sent == [], fake.sent)
+        page.get_by_role("button", name="Check the meter").click()
+        page.get_by_role("status").filter(has_text="Siglent").first.wait_for()
+        check("%s Check on Home says what the meter is and how it is set" % tag, "set to CURR" in page.get_by_role("status").filter(has_text="Siglent").first.inner_text())
+        head = page.get_by_role("status").filter(has_text="Siglent").first.bounding_box()
+        frame = page.get_by_role("button", name="Check the meter").locator("xpath=ancestor::section[1]").bounding_box()
+        check("%s the headline stays inside the card (a long id must wrap)" % tag, head["x"] + head["width"] <= frame["x"] + frame["width"] + 0.5, (head, frame))
+        shot("0-home")
         go_to(page, "Devices")
         page.get_by_role("button", name="Check the meter").wait_for()
         check("%s the Devices page has a multimeter section" % tag, page.get_by_text("Multimeter", exact=True).is_visible())

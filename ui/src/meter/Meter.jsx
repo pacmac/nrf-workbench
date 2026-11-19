@@ -68,7 +68,7 @@ export default function Meter({ commands, onDone }) {
         {outcome && outcome.pending && <ResultView outcome={outcome} pendingText="Asking the meter…" />}
         {r && (
           <div className="space-y-2">
-            <p role="status" className="text-[17px] font-semibold">{headline(shown, r.data)}</p>
+            <p role="status" className="break-words text-[17px] font-semibold">{headline(shown, r.data)}</p>
             {r.data.in_series && <p className="text-[13px] text-amber-800 dark:text-amber-300">Set to current: this is in series with the circuit if the leads are in the current jacks.</p>}
             {shown === "meter.sample" && r.data.points && <Chart points={r.data.points} unit={r.data.unit} />}
             {r.class !== "ok" && <ResultView outcome={outcome} />}

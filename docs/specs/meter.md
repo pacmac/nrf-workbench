@@ -81,8 +81,9 @@ slower setting then shows as `no_reply` and says so, which fails safe.
 
 ## Elsewhere in the bench
 
-- **`bench.overview` and Home do not show the meter** (decided while building: a meter that is off would add a connect ceiling to every Home load, and a static
-  "configured" line says nothing a person needs). Live state is an action on the Devices page. Nothing is added to the overview.
+- **`bench.overview` does not know the meter** (a meter that is off would add a connect ceiling to every Home load). Nothing is added to the overview.
+  **Home shows the same Multimeter card** as Devices (Peter, 2026-11-19: "I dont see anything on the dashboard for the new meter addition": the first build
+  had it on Devices only). It asks only when a button is pressed: it never reads on load and never on a timer.
 - **Devices page**: a *Multimeter* card (present only when the commands are, so only with an address), with **Check the meter** (`meter.show`), **Read once**
   (`meter.read`) and **Take N** (`meter.sample`). The answer is a sentence in words with SI prefixes ("1.717 mA"), the amber note that the meter is in series
   when it is set to current, for a sample a chart (x is arrival time, spread evenly when every reading arrived inside the clock's resolution) with its range
