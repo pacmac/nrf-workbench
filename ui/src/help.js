@@ -56,6 +56,7 @@ export const TOPICS = [
       "The bench only asks. It never changes the meter's function or range, because in current mode the board is wired through the meter and switching would cut its supply.",
       "Set the function at the meter's front panel and plug the leads into the matching jacks. The page says what it is set to.",
       "Take readings gives a mean, a lowest and a highest, and a chart. The time of each reading is when it reached the bench.",
+      "A project can expect a range, such as a 3.3 V rail between 3.1 and 3.5. Measure on the project's page reads the meter once and says inside or outside.",
     ],
     steps: [
       "To measure a board's current, put the meter in series with its supply, set current at the front panel, then Check the meter.",

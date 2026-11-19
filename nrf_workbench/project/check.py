@@ -67,6 +67,10 @@ def check(host, m, plan, entry):
         e = m["expect"]["i2c"]
         findings.append({"section": "expect", "name": "i2c %d 0x%02x" % (e["bus"], e["address"]), "status": "not_applied",
                          "why": "not probed by check: project.probe sends the probe"})
+    if m["expect"]["meter"]:
+        e = m["expect"]["meter"]
+        findings.append({"section": "expect", "name": "meter %s %g to %g" % (e["function"], e["min"], e["max"]), "status": "not_applied",
+                         "why": "not measured by check: project.measure reads the meter"})
     drift = [f for f in findings if f["status"] in ("missing", "changed")]
     problems = [f for f in findings if f["status"] in ("missing", "changed", "unmet", "absent")]
     return findings, {"applied": applied, "pending": bool(entry and entry.get("pending")), "drift": len(drift), "problems": len(problems),
@@ -82,6 +86,22 @@ def state_word(summary, entry):
     if summary["problems"] == 0:
         return "connected", "ready"
     return "attention", "%d thing%s to look at" % (summary["problems"], "" if summary["problems"] == 1 else "s")
+
+
+def measure(call, m):
+    """One reading of the meter against the manifest's expect.meter (docs/specs/meter.md). The reading is judged here, by the project, never by
+    the meter command: `meter.read` is asked with the expected function, so a meter set to something else is refused and nothing is read. Any
+    result that is not a reading (refused, failed, suspect) is returned as it came: a project is not held to a number nobody measured."""
+    e = m["expect"]["meter"]
+    if not e:
+        return Result.refused("bad_manifest", "this project declares no expect.meter", {})
+    res = call("meter.read", {"expect_function": e["function"]})
+    if not res.ok:
+        return res
+    value, unit = res.data["value"], res.data["unit"]
+    inside = e["min"] <= value <= e["max"]
+    data = {"function": e["function"], "unit": unit, "value": value, "min": e["min"], "max": e["max"], "met": inside}
+    return Result.success(data, "%g %s is %s %g to %g %s" % (value, unit, "inside" if inside else "OUTSIDE", e["min"], e["max"], unit))
 
 
 def probe(call, m):

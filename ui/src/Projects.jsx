@@ -121,6 +121,10 @@ function Detail({ name, cmd, onChanged, onDone, onGone }) {
     setOutcome({ pending: true });
     setOutcome(await readJson(find("project.check").path, { project: name }));
   }
+  async function doMeasure() {                      // a read: one reading of the meter against expect.meter, nothing changes
+    setOutcome({ pending: true });
+    setOutcome(await readJson(find("project.measure").path, { project: name }));
+  }
   async function save(event) {
     event.preventDefault();
     const r = await run(writeFile(find("project.put").path, { project: name }, new Blob([text], { type: "text/yaml" })));
@@ -168,6 +172,7 @@ function Detail({ name, cmd, onChanged, onDone, onGone }) {
         {show.manifest && find("project.apply") && plan && plan.ok && <Button onClick={() => act("project.apply", null).then(() => setPlan(null))} disabled={busy}>Apply</Button>}
         {show.manifest && find("project.check") && <Button tone="quiet" onClick={doCheck} disabled={busy}>Check</Button>}
         {show.manifest && find("project.probe") && show.resources.i2c && <Button tone="quiet" onClick={() => act("project.probe")} disabled={busy}>Probe I2C</Button>}
+        {show.manifest && find("project.measure") && show.resources.meter && <Button tone="quiet" onClick={doMeasure} disabled={busy}>Measure</Button>}
         {show.manifest && applied && find("project.release") && asking !== "release" && <Button tone="quiet" onClick={() => setAsking("release")} disabled={busy}>Release</Button>}
         {find("project.put") && <Button tone="quiet" onClick={() => { setText(show.text || TEMPLATE(name)); setEditing(!editing); }} aria-expanded={editing}>{show.manifest ? "Edit manifest" : "Write manifest"}</Button>}
         {show.manifest && !applied && find("project.delete") && asking !== "delete" && <Button tone="quiet" onClick={() => setAsking("delete")} disabled={busy}>Delete</Button>}

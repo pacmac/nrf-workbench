@@ -58,7 +58,7 @@ class Good(unittest.TestCase):
         self.assertEqual(m["esp32"], [{"name": "timercam", "baud": 115200, "serial": "5D52ADF916"}])
         self.assertEqual(m["wiring"][0]["send"], False)
         self.assertEqual(m["macros"], {"ping": "ping\nstatus"})
-        self.assertEqual(m["expect"], {"console": {"camera": "i2c slave 0x62"}, "i2c": {"bus": 1, "address": 0x62}})
+        self.assertEqual(m["expect"], {"console": {"camera": "i2c slave 0x62"}, "i2c": {"bus": 1, "address": 0x62}, "meter": None})
         self.assertEqual((m["name"], m["purpose"], m["requires"]), ("demo", "develop the camera transport", ["i2c", "pi-uart"]))
         self.assertEqual(m["pins"][0]["pull"], "up")
 
@@ -182,6 +182,22 @@ class Others(unittest.TestCase):
             self.assertTrue(bad(base % item, frag), item)
         self.assertEqual(check(base % "i2c: {bus: 1, address: 8}")[1], [])
         self.assertEqual(check(base % "i2c: {bus: 1, address: 119}")[1], [])
+
+    def test_expect_meter_names_a_function_and_a_range(self):
+        base = "name: demo\nexpect:\n  %s\n"
+        m, errors = check(base % "meter: {function: dcv, min: 3.1, max: 3.5}")
+        self.assertEqual((errors, m["expect"]["meter"]), ([], {"function": "dcv", "min": 3.1, "max": 3.5}))
+        self.assertEqual(check(base % "meter: {function: dci, min: 0, max: 0.002}")[1], [])
+        self.assertEqual(check(base % "meter: {function: res, min: 5, max: 5}")[1], [], "a range of one value is allowed")
+        self.assertIsNone(check("name: demo\n")[0]["expect"]["meter"])
+        for item in ("meter: {function: volts, min: 1, max: 2}", "meter: {function: dcv, min: 3.5, max: 3.1}", "meter: {function: dcv, min: 1}",
+                     "meter: {function: dcv, max: 2}", "meter: {min: 1, max: 2}", "meter: {function: dcv, min: '1', max: 2}",
+                     "meter: {function: dcv, min: true, max: 2}", "meter: {function: dcv, min: .nan, max: 2}", "meter: {function: dcv, min: 1, max: .inf}",
+                     "meter: {function: dcv, min: 1, max: 2, extra: 3}", "meter: 3.3", "meter: {}"):
+            self.assertTrue(bad(base % item, "expect.meter"), item)
+
+    def test_meter_cannot_be_a_role_name(self):
+        self.assertTrue(bad("name: demo\ndevices:\n  meter: {esp32: a}\n", "reserved"))
 
     def test_requires_is_a_list_of_names(self):
         self.assertTrue(bad("name: demo\nrequires: i2c\n", "requires"))

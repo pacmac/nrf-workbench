@@ -180,6 +180,9 @@ sends one probe (a one-byte read; never a write) to the address on the named bus
 device may miss the first probe, so the result says *no answer* and `check` reports it, not an error. A check with no console line seen is
 `not seen in the lines held` (the log is in memory and a restart empties it), not `failed`.
 
+`expect.meter: {function, min, max}` is a reading of the LAN multimeter (`meter.md`): `project.measure` takes one and says whether it is inside the range
+(ok either way, `met` says which). `check` lists it as not measured and never touches the meter. `meter` is a reserved name, so it cannot be a role.
+
 ### Flash by role
 
 `project.flash(project, role, enter_bound_s?, flash_bound_s, baud?)` resolves the role's board and package from the manifest and calls

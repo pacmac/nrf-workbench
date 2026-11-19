@@ -9,6 +9,7 @@ Run:  python3 tests/project/test_project.py
 import io
 import json
 import os
+import socket
 import sys
 import tempfile
 import unittest
@@ -18,6 +19,7 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tests", "devices"))
 sys.path.insert(0, os.path.join(ROOT, "tests", "esp32"))
+sys.path.insert(0, os.path.join(ROOT, "tests", "instruments"))
 
 from fakes import SERIAL, Tree  # noqa: E402
 from nrf_workbench import service  # noqa: E402
@@ -27,6 +29,7 @@ from nrf_workbench.core.result import Result  # noqa: E402
 from nrf_workbench.project import apply as applymod  # noqa: E402
 from nrf_workbench.project.store import ProjectStore  # noqa: E402
 from test_esp32 import GOOD as ESP_GOOD, Tool, bundle, merged  # noqa: E402
+from test_meter import FakeMeter  # noqa: E402
 
 CAM = "0001"            # a CP2102's usual shared serial: unique here, so a target by serial works
 
@@ -602,6 +605,91 @@ class Probe(Base):
         self.assertEqual(self.call("project.probe", {"project": "demo"}).code, "bad_manifest")
 
 
+VOLTS = {"*IDN?": "Siglent Technologies,SDM3045X,SDM35EAC1L0704,5.01.01.09R2", "FUNC?": '"VOLT"', "VOLT:DC:RANG?": "+6.0E+00",
+         "VOLT:DC:RANG:AUTO?": "1", "VOLT:DC:NPLC?": "+2.0E-02", "READ?": "+3.31E+00", "SYST:ERR?": '0,"No error"'}
+
+
+class Measure(Base):
+    """project.measure: one reading against expect.meter, judged by the project (docs/specs/meter.md)."""
+
+    RAIL = MANIFEST + "  meter: {function: dcv, min: 3.1, max: 3.5}\n"
+
+    def setUp(self):
+        Base.setUp(self)
+        self.meter = FakeMeter(VOLTS)
+        self.addCleanup(self.meter.close)
+        self.host.config["instruments"]["meter"] = "127.0.0.1:%d" % self.meter.port
+        self.caps.add("meter")                                  # the capability is computed at build; the config is set after it here
+        self.put(self.RAIL)
+
+    def measure(self):
+        return self.call("project.measure", {"project": "demo"})
+
+    def test_a_reading_inside_the_range_is_met_and_says_the_number(self):
+        res = self.measure()
+        self.assertTrue(res.ok, res)
+        self.assertEqual((res.data["met"], res.data["value"], res.data["unit"], res.data["function"]), (True, 3.31, "V", "dcv"))
+        self.assertIn("inside", res.message)
+
+    def test_a_reading_outside_the_range_is_still_an_ok_result_that_says_outside(self):
+        self.meter.table["READ?"] = "+2.80E+00"
+        res = self.measure()
+        self.assertEqual((res.cls, res.data["met"], res.data["value"]), ("ok", False, 2.8))
+        self.assertIn("OUTSIDE", res.message)
+
+    def test_the_ends_of_the_range_are_inside(self):
+        for raw in ("+3.10E+00", "+3.50E+00"):
+            self.meter.table["READ?"] = raw
+            self.assertTrue(self.measure().data["met"], raw)
+        for raw in ("+3.09E+00", "+3.51E+00"):
+            self.meter.table["READ?"] = raw
+            self.assertFalse(self.measure().data["met"], raw)
+
+    def test_a_meter_set_to_another_function_is_refused_and_nothing_is_read(self):
+        self.meter.table.update({"FUNC?": '"CURR"', "CURR:DC:RANG?": "+6.0E-01", "CURR:DC:RANG:AUTO?": "0", "CURR:DC:NPLC?": "+2.0E-02"})
+        res = self.measure()
+        self.assertEqual((res.cls, res.code), ("refused", "meter_function"))
+        self.assertNotIn("READ?", self.meter.sent)
+
+    def test_an_overload_is_returned_as_suspect_not_judged(self):
+        self.meter.table["READ?"] = "+9.9E+37"
+        res = self.measure()
+        self.assertEqual((res.cls, res.code), ("suspect", "meter_overload"))
+
+    def test_a_host_without_a_meter_is_refused_for_the_capability(self):
+        self.caps.discard("meter")
+        res = self.measure()
+        self.assertEqual((res.cls, res.code), ("refused", "capability_missing"))
+
+    def test_an_unreachable_meter_is_the_meters_failure(self):
+        gone = socket.socket()
+        gone.bind(("127.0.0.1", 0))
+        port = gone.getsockname()[1]
+        gone.close()                                            # a port nothing listens on
+        self.host.config["instruments"]["meter"] = "127.0.0.1:%d" % port
+        res = self.measure()
+        self.assertEqual((res.cls, res.code), ("failed", "meter_unreachable"))
+
+    def test_a_project_without_expect_meter_is_refused(self):
+        self.put(MANIFEST)
+        self.assertEqual(self.call("project.measure", {"project": "demo"}).code, "bad_manifest")
+
+    def test_check_names_the_expectation_and_never_touches_the_meter(self):
+        res = self.call("project.check", {"project": "demo"})
+        found = [f for f in res.data["findings"] if f["section"] == "expect" and f["name"].startswith("meter")]
+        self.assertEqual([(f["name"], f["status"]) for f in found], [("meter dcv 3.1 to 3.5", "not_applied")])
+        self.assertIn("project.measure", found[0]["why"])
+        self.assertEqual((self.meter.connections, self.meter.sent), (0, []))
+
+    def test_show_lists_the_expectation(self):
+        res = self.call("project.show", {"project": "demo"})
+        self.assertEqual(res.data["resources"]["meter"], {"function": "dcv", "min": 3.1, "max": 3.5})
+
+    def test_only_questions_reach_the_meter(self):
+        self.measure()
+        self.assertTrue(self.meter.sent and all(s.endswith("?") for s in self.meter.sent), self.meter.sent)
+
+
 class Flashing(Base):
     FW = "firmware:\n  camera: {id: %s}\n  alarm: {id: %s}\n"
 
@@ -689,8 +777,8 @@ class ListAndShow(Base):
         _h, reg, caps = service.build_host(cfg, self.t.sysfs, self.t.dev, self.t.proc, {"tool": "/x"})
         self.assertEqual([c.name for c in reg.commands(set(caps)) if c.name.startswith("project.")], [])
         rows = dict((c.name, c) for c in self.reg.commands(set(self.caps)) if c.name.startswith("project."))
-        self.assertEqual(sorted(rows), ["project.apply", "project.check", "project.delete", "project.flash", "project.list", "project.plan",
-                                        "project.probe", "project.put", "project.release", "project.show"])
+        self.assertEqual(sorted(rows), ["project.apply", "project.check", "project.delete", "project.flash", "project.list", "project.measure",
+                                        "project.plan", "project.probe", "project.put", "project.release", "project.show"])
         self.assertEqual([rows[n].effect for n in ("project.list", "project.show", "project.plan", "project.check")], ["read"] * 4)
         self.assertEqual(rows["project.put"].body, "raw")
 

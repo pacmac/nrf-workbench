@@ -78,6 +78,41 @@ def no_sideways_scroll(page):
     return page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
 
 
+RAIL = {"*IDN?": CURRENT["*IDN?"], "FUNC?": '"VOLT"', "VOLT:DC:RANG?": "+6.0E+00", "VOLT:DC:RANG:AUTO?": "1", "VOLT:DC:NPLC?": "+2.0E-02",
+        "READ?": "+3.31E+00", "SYST:ERR?": '0,"No error"'}
+
+
+def project_measure(page, fake, tag, shot):
+    """A project that expects a 3.1 to 3.5 V rail: Measure reads the meter once and says inside or OUTSIDE; a meter set to current is refused."""
+    name = "rail-" + tag.replace(" ", "-")
+    fake.table.clear()
+    fake.table.update(RAIL)
+    go_to(page, "Projects")
+    page.get_by_label("New project name").fill(name)
+    page.get_by_role("button", name="Create project").click()
+    detail = page.get_by_label("Project %s" % name)
+    detail.wait_for()
+    check("%s a project without expect.meter has no Measure button" % tag, detail.get_by_role("button", name="Measure").count() == 0)
+    detail.get_by_role("button", name="Edit manifest").click()
+    detail.get_by_label("Manifest").fill("name: %s\npurpose: the 3.3 V rail\nexpect:\n  meter: {function: dcv, min: 3.1, max: 3.5}\n" % name)
+    detail.get_by_role("button", name="Save manifest").click()
+    detail.get_by_role("button", name="Edit manifest").wait_for()
+    detail.get_by_role("button", name="Measure").click()
+    detail.get_by_text("3.31 V is inside 3.1 to 3.5 V").wait_for()
+    check("%s Measure says the rail is inside its range, with the number" % tag, True)
+    shot("5-measured")
+    fake.table["READ?"] = "+2.8E+00"
+    detail.get_by_role("button", name="Measure").click()
+    detail.get_by_text("2.8 V is OUTSIDE 3.1 to 3.5 V").wait_for()
+    check("%s a reading outside the range says OUTSIDE" % tag, True)
+    fake.table["FUNC?"] = '"CURR"'
+    fake.table.update({"CURR:DC:RANG?": "+6.0E-01", "CURR:DC:RANG:AUTO?": "0", "CURR:DC:NPLC?": "+2.0E-02"})
+    detail.get_by_role("button", name="Measure").click()
+    detail.get_by_text("meter_function").wait_for()
+    check("%s a meter set to current is refused and nothing is read from it" % tag, "set at the meter's front panel" in detail.inner_text())
+    shot("6-refused")
+
+
 def run(browser, theme, size, width, height, shots):
     tag = "%s %s" % (theme, size)
     fake = FakeMeter(CURRENT)
@@ -89,7 +124,7 @@ def run(browser, theme, size, width, height, shots):
     # Chrome logs every 4xx/5xx response as a console error. A failed Result is HTTP 500 by design (core.md), so the one deliberate failure
     # below is expected; the console line is dropped and the response is checked by URL and status instead.
     bad = []
-    page.on("response", lambda r: bad.append((r.status, r.url.rsplit("/", 2)[-2] + "/" + r.url.rsplit("/", 1)[-1])) if r.status >= 400 else None)
+    page.on("response", lambda r: bad.append((r.status, "/".join(r.url.split("?")[0].rsplit("/", 2)[-2:]))) if r.status >= 400 else None)
     page.on("console", lambda m: errors.append("console.%s: %s" % (m.type, m.text))
             if m.type == "error" and not m.text.startswith("Failed to load resource") else None)
     shot = lambda name: page.screenshot(path=os.path.join(shots, "%s-%s-%s.png" % (theme, size, name)), full_page=True)
@@ -141,7 +176,9 @@ def run(browser, theme, size, width, height, shots):
         check("%s a failed read has no made-up headline (no 'undefined' anywhere)" % tag, "undefined" not in page.inner_text("body"), page.inner_text("body"))
         check("%s everything the page made the service send to the meter was a query" % tag,
               fake.sent and all(s.endswith("?") for s in fake.sent), [s for s in fake.sent if not s.endswith("?")])
-        check("%s the only failing response was the silent meter's (HTTP 500 from meter/read)" % tag, bad == [(500, "meter/read")], bad)
+        project_measure(page, fake, tag, shot)
+        check("%s the only failing responses were the two deliberate ones: the silent meter (500 from meter/read) and the meter set to "
+              "another function (409 from project/measure)" % tag, bad == [(500, "meter/read"), (409, "project/measure")], bad)
         check("%s no page or console errors" % tag, not errors, errors)
     finally:
         context.close()

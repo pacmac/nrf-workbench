@@ -6,7 +6,11 @@ bench: whether a pin is legal, an adapter present or a name free is the plan's b
 """
 import re
 
+import math
+
 import yaml
+
+from ..instruments.meter import EXPECT as METER_FUNCTIONS
 
 SLUG = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 HEX_ID = re.compile(r"^[0-9a-f]{8,64}$")
@@ -14,7 +18,7 @@ SERIAL = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
 MAX_BYTES = 64 * 1024            # a manifest is a page or two of YAML; 64 KiB is thirty times a generous one
 PURPOSE_MAX = 200                # the pin map's own limit for a sentence
 NOTES_MAX = 4000
-ROLE_RESERVED = ("i2c",)         # an `expect` key that is not a role
+ROLE_RESERVED = ("i2c", "meter")   # an `expect` key that is not a role
 PI_PREFIX = "uart:"
 BAUDS = (9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600)
 SECTIONS = ("name", "purpose", "requires", "devices", "esp32", "wiring", "pins", "macros", "firmware", "expect", "notes")
@@ -43,6 +47,10 @@ def _slug(where, value, errors):
 
 def _int(value):
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def _devices(raw, errors):
@@ -204,9 +212,9 @@ def _firmware(raw, roles, errors):
 
 
 def _expect(raw, roles, errors):
-    out = {"console": {}, "i2c": None}
+    out = {"console": {}, "i2c": None, "meter": None}
     if not isinstance(raw, dict):
-        errors.append("expect: a mapping of role to {console: <text>}, and optionally i2c: {bus, address}")
+        errors.append("expect: a mapping of role to {console: <text>}, and optionally i2c: {bus, address} and meter: {function, min, max}")
         return out
     for key, spec in raw.items():
         where = "expect.%s" % key
@@ -216,6 +224,13 @@ def _expect(raw, roles, errors):
                 errors.append("%s: {bus: <number>, address: <7-bit address, 8 to 119>}" % where)
             else:
                 out["i2c"] = {"bus": spec["bus"], "address": spec["address"]}
+        elif key == "meter":
+            if not isinstance(spec, dict) or set(spec) != {"function", "min", "max"} or spec["function"] not in METER_FUNCTIONS \
+                    or not _number(spec["min"]) or not _number(spec["max"]) or spec["min"] > spec["max"]:
+                errors.append("%s: {function: one of %s, min: <number>, max: <number, not below min>} in volts, amps, ohms, hertz or farads"
+                              % (where, ", ".join(METER_FUNCTIONS)))
+            else:
+                out["meter"] = {"function": spec["function"], "min": spec["min"], "max": spec["max"]}
         elif key not in roles:
             errors.append("%s: %r is not a role in devices" % (where, key))
         elif not isinstance(spec, dict) or set(spec) != {"console"} or not (isinstance(spec["console"], str) and 1 <= len(spec["console"]) <= 200):
@@ -259,7 +274,7 @@ def validate(text, name):
          "pins": _pins(raw["pins"], errors) if "pins" in raw else [],
          "macros": _macros(raw["macros"], name, errors) if "macros" in raw else {},
          "firmware": _firmware(raw["firmware"], roles, errors) if "firmware" in raw else {},
-         "expect": _expect(raw["expect"], roles, errors) if "expect" in raw else {"console": {}, "i2c": None}}
+         "expect": _expect(raw["expect"], roles, errors) if "expect" in raw else {"console": {}, "i2c": None, "meter": None}}
     for section, key in (("esp32", "name"), ("wiring", "name"), ("pins", "name"), ("pins", "gpio")):
         seen = set()
         for item in m[section]:

@@ -88,8 +88,14 @@ slower setting then shows as `no_reply` and says so, which fails safe.
   when it is set to current, for a sample a chart (x is arrival time, spread evenly when every reading arrived inside the clock's resolution) with its range
   stated, and the whole result one click away; a failure is shown as the whole result with its code and no headline. No timers: a button asks, the answer is shown.
 - **Help**: a `meter` topic (opened from Devices): what it can do, why it cannot change the function (the board loses power), what to set at the front panel.
-- **`project.probe`** gains `expect.meter: {function, min, max}` (slice 3): one `meter.read` with `expect_function`; the value inside `[min, max]` is met, outside is
-  not met and says the number, a different function or no meter is `not_seen`. `project.check` stays read-only and does not touch the meter (it waits for nothing).
+- **A project can expect a reading** (slice 3): `expect.meter: {function, min, max}` in its manifest (base units: V, A, ohm, Hz, F; both ends inclusive; `min` not above
+  `max`; `function` one of the `expect_function` words). The new read command **`project.measure`** takes one `meter.read` with `expect_function` and returns
+  `{function, unit, value, min, max, met}`: **ok** whether inside or not (`met` says which, the message says "OUTSIDE"), because the number is the answer and the
+  project does the judging, never the meter command. Anything that is not a reading is returned as it came: a meter set to another function is the refusal
+  `meter_function`, an overload is `suspect`, an unreachable or silent meter is `failed`, a host with no meter is `capability_missing`: a project is not held to a
+  number nobody measured. It is **not** a mode of `project.probe` (decided while building: probe's result is the I2C probe's `bus, address, answered`, and
+  callers rely on it). `project.check` stays read-only: it lists the expectation as `not_applied` ("not measured by check") and **never touches the meter**.
+  The Projects page shows a **Measure** button on a project that has the expectation.
 
 ## Checks
 

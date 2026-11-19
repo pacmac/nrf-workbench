@@ -147,7 +147,8 @@ def _show(registry):
                 "roles": [_role_view(host, m, plan, r) for r in sorted(m["devices"])],
                 "resources": {"esp32": [e["name"] for e in m["esp32"]], "connections": [w["name"] for w in m["wiring"]],
                               "pins": [{"name": p["name"], "gpio": p["gpio"], "service": p["service"]} for p in m["pins"]],
-                              "macros": [planmod.stored_macro(project, n) for n in sorted(m["macros"])], "i2c": m["expect"]["i2c"]},
+                              "macros": [planmod.stored_macro(project, n) for n in sorted(m["macros"])], "i2c": m["expect"]["i2c"],
+                              "meter": m["expect"]["meter"]},
                 "expect": [f for f in findings if f["section"] == "expect"],
                 "scope": {"boards": sorted(v["key"] for v in m["devices"].values()), "pins": sorted(p["gpio"] for p in m["pins"]),
                           "links": sorted(set(link_names))},
@@ -248,6 +249,15 @@ def _probe(registry):
     return _guard(handler)
 
 
+def _measure(registry):
+    def handler(ctx, project):
+        m, refusal = _load(ctx.host, project)
+        if refusal is not None:
+            return refusal
+        return checkmod.measure(_caller(registry, ctx), m)
+    return _guard(handler)
+
+
 def _flash(registry):
     def handler(ctx, project, role, flash_bound_s, enter_bound_s=None, baud=None):
         host, call = ctx.host, _caller(registry, ctx)
@@ -306,6 +316,9 @@ def register(registry, host):
                 _release(registry), args=(p,), requires=WIRING, effect="write", result="removed"))
     add(Command("project.probe", "Send the one probe the project's expect.i2c names: a one-byte read at that address, through i2c.transfer.",
                 _probe(registry), args=(p,), requires=WIRING, effect="write", result="bus, address, answered"))
+    add(Command("project.measure", "Read the multimeter once against the project's expect.meter (function, min, max) and say whether the reading is "
+                "inside. Reads only: the meter's setting is never changed.", _measure(registry), args=(p,), requires=WIRING,
+                result="function, unit, value, min, max, met"))
     add(Command("project.flash", "Flash a role's declared firmware to its board, with the same required time limits as the flash commands. "
                 "One role per call.", _flash(registry),
                 args=(p, Arg("role", doc="the role in the manifest's devices"),
