@@ -102,6 +102,14 @@ class Meter(object):
             except scpi.Unreachable as exc:
                 return Result.failed("meter_unreachable", str(exc), {"meter": "%s:%d" % (address, port)})
 
+    def exchange(self, work):
+        """Run `work(conn)` on a fresh connection under the one-caller lock and give back what it returns. The transport's own errors (scpi.ScpiError) propagate: a
+        session ends on one, where a command turns it into a result."""
+        address, port = self._address()
+        with self._lock:
+            with scpi.Connection(address, port) as conn:
+                return work(conn)
+
     def _silent(self, address, port, exc):
         """The meter was silent: ask a new connection what its error queue says, so the evidence is the meter's own words."""
         error = None
@@ -208,3 +216,55 @@ def register(registry, host):
     add(Command("meter.sample", "Several readings in a row, timestamped when each arrives, with min, max and mean. At most 1000, and at most 30 s of readings.",
                 meter.sample, args=(Arg("count", type="int", doc="how many readings, 1 to 1000 (and at most 30 s at the meter's NPLC)"), function),
                 requires=("meter",), result="points (t_s, value), n, min, max, mean, unit, period_s, duration_s"))
+
+    # Sessions (docs/specs/meter-page.md): a watch or a recording for minutes to hours, on the Pi, pushed to the page over the live feed.
+    from . import sampler as samplerlib
+    STREAM, STORE = ("meter", "meter_stream"), ("meter", "meter_stream", "meter_store")
+
+    def sampler(ctx):
+        h = ctx.host
+        return h.service("meter_sampler", lambda: samplerlib.Sampler(meter, h.streams.meter, h.config["paths"]["meter"]))
+
+    def starter(mode):
+        def handler(ctx, bound_s, name=None):
+            try:
+                summary = sampler(ctx).start(mode, bound_s, name)
+            except samplerlib.Busy as exc:
+                return Result.refused("meter_busy", "%s: stop it first (meter.stop)" % exc, {"session": exc.session})
+            except samplerlib.NameTaken as exc:
+                return Result.refused("name_taken", str(exc), {"name": name})
+            except ValueError as exc:
+                raise UsageError(str(exc), "name" if "name" in str(exc) else "bound_s")
+            return Result.success(summary, "%s started for at most %g s" % ("recording" if mode == "record" else "watch", summary["bound_s"]))
+        return handler
+
+    def stop(ctx):
+        s = sampler(ctx)
+        s.stop()
+        return Result.success(s.session(), "stopped")
+
+    def recordings(ctx):
+        rows = sampler(ctx).recordings()
+        return Result.success({"recordings": rows}, "%d recording%s" % (len(rows), "" if len(rows) == 1 else "s"))
+
+    def recording(ctx, name):
+        text = sampler(ctx).recording_text(name)
+        if text is None:
+            return Result.refused("recording_unknown", "there is no recording named %s" % name, {"name": name})
+        return Result.success({"name": name, "csv": text, "bytes": len(text)}, "%d bytes" % len(text))
+
+    bound = Arg("bound_s", type="float", unit="s", doc="how long to run at most, 1 to 43200 (12 h): nothing runs unbounded")
+    add(Command("meter.watch", "Start a live session: a reading every period, pushed to the page and kept as a chart, nothing written to disk. At most 12 h.",
+                starter("watch"), args=(bound,), requires=STREAM, effect="write", result="session, state, mode, started, bound_s, stats"))
+    add(Command("meter.record", "Start a recording: a live session that also appends every reading to a CSV file on the Pi. At most 12 h; the newest 10 files are kept.",
+                starter("record"), args=(bound, Arg("name", required=False, doc="the file's name: a-z 0-9 . _ -, default the start time")),
+                requires=STORE, effect="write", result="session, state, mode, name, started, bound_s, stats"))
+    add(Command("meter.stop", "End the running session now. Already stopped is fine.", stop, requires=STREAM, effect="write", result="the session as it ended"))
+    add(Command("meter.session", "The session's state, time and statistics: readings, min, max, mean and, for a current, the charge in mAh.",
+                lambda ctx: Result.success(sampler(ctx).session(), "ok"), requires=STREAM,
+                result="session, state, mode, name, started, elapsed_s, bound_s, reason, function, unit, stats"))
+    add(Command("meter.profile", "The whole session so far as buckets of lowest, highest and mean, with the live feed cursor to carry on from. Bounded at 2000 buckets however long it runs.",
+                lambda ctx: Result.success(sampler(ctx).profile(), "ok"), requires=STREAM, result="session, cursor, epoch, unit, function, buckets, stats, state"))
+    add(Command("meter.recordings", "The recordings on this bench, newest first, with what each holds.", recordings, requires=STORE, result="recordings"))
+    add(Command("meter.recording", "One recording's CSV text, for download.", recording, args=(Arg("name", doc="the recording's name, from meter.recordings"),),
+                requires=STORE, result="name, csv, bytes"))

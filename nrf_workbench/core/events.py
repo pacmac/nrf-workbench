@@ -54,12 +54,13 @@ class Streams(object):
     """The retained streams a service runs with, and WHY any is absent. A stream with no configured
     bound is not started (it would be unbounded), and is reported, not hidden."""
 
-    def __init__(self, events=None, activity=None, absent=None, console=None):
+    def __init__(self, events=None, activity=None, absent=None, console=None, meter=None):
         self.events, self.activity, self.console, self.absent = events, activity, console, dict(absent or {})
+        self.meter = meter                                   # the multimeter's readings and session state (docs/specs/meter-page.md)
 
     def to_dict(self):
         return {"events": self.events is not None, "activity": self.activity is not None,
-                "console": self.console is not None, "absent": dict(self.absent)}
+                "console": self.console is not None, "meter": self.meter is not None, "absent": dict(self.absent)}
 
 
 def _positive_number(value):

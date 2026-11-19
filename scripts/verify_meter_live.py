@@ -50,10 +50,10 @@ class Bench(object):
         self.tree.app_board()
         instruments = {"meter": meter_address} if meter_address else {}
         cfg, problems = cfgmod.load(env={}, overrides={
-            "paths": {"wiring": os.path.join(self.tmp, "wiring"), "console": os.path.join(self.tmp, "console")},
+            "paths": {"wiring": os.path.join(self.tmp, "wiring"), "console": os.path.join(self.tmp, "console"), "meter": os.path.join(self.tmp, "meter")},
             "instruments": instruments,
             "streams": {"events": {"retain": 50, "max_age_days": 1}, "activity": {"retain": 50, "max_age_days": 1},
-                        "console": {"retain": 500, "max_age_days": 1}}})
+                        "console": {"retain": 500, "max_age_days": 1}, "meter": {"retain": 5000, "max_age_days": 1}}})
         assert problems == [], problems
         self.uev_a, self.uev_b = socket.socketpair()
         hooks = {"tool": "/fake/uploader", "open_uevents": lambda: self.uev_a}
@@ -80,6 +80,68 @@ def no_sideways_scroll(page):
 
 RAIL = {"*IDN?": CURRENT["*IDN?"], "FUNC?": '"VOLT"', "VOLT:DC:RANG?": "+6.0E+00", "VOLT:DC:RANG:AUTO?": "1", "VOLT:DC:NPLC?": "+2.0E-02",
         "READ?": "+3.31E+00", "SYST:ERR?": '0,"No error"'}
+
+
+def meter_page(page, fake, bench, tag, shot):
+    """The Meter menu page (docs/specs/meter-page.md): a live watch with a chart and figures, a recording that downloads, the battery figure, and a fault."""
+    fake.table.clear()
+    fake.table.update(CURRENT)
+    fake.delay["READ?"] = 0.05                                   # a reading every 50 ms, like a meter and not like a loop
+    go_to(page, "Meter")
+    page.get_by_role("heading", name="Meter", exact=True).wait_for()
+    check("%s the Meter menu item opens a Meter page" % tag, page.get_by_role("heading", name="Meter", exact=True).is_visible())
+    page.get_by_text("Siglent Technologies, SDM3045X").first.wait_for()
+    check("%s it says what the meter is set to, and that it is set at the front panel" % tag,
+          "set to CURR" in page.inner_text("body") and "front panel" in page.inner_text("body"))
+    shot("7-meter-page")
+    page.get_by_role("button", name="Watch", exact=True).click()
+    now = page.get_by_label("Latest reading")
+    page.get_by_text(re.compile(r"^watching, ")).wait_for()
+    now.filter(has_text=re.compile(r"^1\.717 mA$")).wait_for()
+    check("%s Watch shows the live reading with its unit and a session line" % tag, True)
+    page.get_by_role("img", name=re.compile(r"^Readings over")).wait_for()
+    check("%s the chart is drawn while it runs and says where its axis is" % tag, "bottom of the chart: 0 A" in page.inner_text("body"))
+    check("%s Watch cannot be pressed twice, and Stop can be" % tag,
+          page.get_by_role("button", name="Watch", exact=True).is_disabled() and page.get_by_role("button", name="Stop").is_enabled())
+    shot("8-watching")
+    page.get_by_role("button", name="Stop").click()
+    page.get_by_text(re.compile(r"^ended: stopped")).wait_for()
+    figures = page.get_by_label("Figures")
+    check("%s after Stop the figures say lowest, highest, average and the charge used" % tag,
+          all(w in figures.inner_text() for w in ("Lowest", "Highest", "Average", "Charge used")) and "1.717 mA" in figures.inner_text(), figures.inner_text())
+    page.get_by_label("Battery capacity in milliamp hours").fill("1000")
+    page.get_by_text(re.compile(r"At this average it lasts [0-9.]+ (hours|days)")).wait_for()
+    check("%s a battery capacity turns the average into how long it lasts" % tag, True)
+    # a recording: the file is on the Pi, it lists, it downloads
+    page.get_by_label("Name for the recording").fill("night-1")
+    page.get_by_role("button", name="Record", exact=True).click()
+    page.get_by_text(re.compile(r"^recording, .*to night-1\.csv")).wait_for()
+    page.get_by_text(re.compile(r"night-1\.csv"), exact=False).first.wait_for()
+    page.get_by_text("recording now").wait_for()
+    check("%s Record starts a file, named, and the list says it is recording now" % tag, True)
+    shot("9-recording")
+    page.get_by_role("button", name="Stop").click()
+    page.get_by_text(re.compile(r"^ended: stopped")).wait_for()
+    page.get_by_label("Recordings").get_by_text(re.compile(r"readings")).wait_for()
+    with page.expect_download() as dl:
+        page.get_by_role("button", name="Download night-1").click()
+    with open(dl.value.path()) as fh:
+        text = fh.read().splitlines()
+    check("%s Download gives the CSV: a header and one line per reading" % tag,
+          text[0] == "t_s,wall,value,unit,function,range,nplc,overload" and len(text) >= 3 and text[1].split(",")[3] == "A"
+          and float(text[2].split(",")[0]) > float(text[1].split(",")[0]), text[:3])
+    check("%s the list no longer says recording now once it has stopped" % tag, page.get_by_text("recording now").count() == 0)
+    check("%s no sideways scroll on the Meter page" % tag, no_sideways_scroll(page))
+    shot("10-recorded")
+    # a fault ends a session and says why
+    del fake.table["READ?"]
+    page.get_by_role("button", name="Watch", exact=True).click()
+    page.get_by_text(re.compile(r"^ended by a fault: no answer to READ\?")).wait_for()
+    check("%s a silent meter ends the session and the page says why" % tag, True)
+    shot("11-fault")
+    fake.table.update(CURRENT)
+    check("%s the meter was only ever asked questions (every line ends in ?)" % tag, fake.sent and all(s.endswith("?") for s in fake.sent),
+          [s for s in fake.sent if not s.endswith("?")])
 
 
 def project_measure(page, fake, tag, shot):
@@ -196,6 +258,7 @@ def run(browser, theme, size, width, height, shots):
         check("%s a failed read has no made-up headline (no 'undefined' anywhere)" % tag, "undefined" not in page.inner_text("body"), page.inner_text("body"))
         check("%s everything the page made the service send to the meter was a query" % tag,
               fake.sent and all(s.endswith("?") for s in fake.sent), [s for s in fake.sent if not s.endswith("?")])
+        meter_page(page, fake, bench, tag, shot)
         project_measure(page, fake, tag, shot)
         check("%s the only failing responses were the two deliberate ones: the silent meter (500 from meter/read) and the meter set to "
               "another function (409 from project/measure)" % tag, bad == [(500, "meter/read"), (409, "project/measure")], bad)

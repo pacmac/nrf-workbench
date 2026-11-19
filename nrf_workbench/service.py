@@ -86,6 +86,11 @@ class Host(object):
                 self._services[name] = factory()
             return self._services[name]
 
+    def started(self, name):
+        """The service of that name if something has already made it, else None: a shutdown must not create what it is about to stop."""
+        with self._guard:
+            return self._services.get(name)
+
 
 # -- data the host loads -------------------------------------------------------------------------
 def load_profiles(directory):
@@ -142,6 +147,11 @@ def capabilities(host):
     # The multimeter is on the LAN, so any host with its address configured has it (docs/specs/meter.md). Whether it answers is meter.show's answer.
     if host.config["instruments"]["meter"]:
         caps.add("meter")
+        # Sessions (watch and record) need the readings' bounded stream; recording needs its folder (docs/specs/meter-page.md).
+        if cfgmod.stream_bounds(host.config, "meter") is not None:
+            caps.add("meter_stream")
+            if host.config["paths"]["meter"]:
+                caps.add("meter_store")
     return caps
 
 
@@ -201,7 +211,7 @@ def build_host(cfg, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
 def build_streams(cfg):
     """The retained streams. A stream with no configured bound is NOT started (it would be unbounded): it is
     absent, with the reason, and the service says so."""
-    absent, events, activity, console = {}, None, None, None
+    absent, events, activity, console, meter = {}, None, None, None, None
     bounds = cfgmod.stream_bounds(cfg, "events")
     if bounds is None:
         absent["events"] = "no bound configured: set streams.events.retain and streams.events.max_age_days"
@@ -217,7 +227,13 @@ def build_streams(cfg):
         absent["console"] = "no bound configured: set streams.console.retain (lines) and streams.console.max_age_days"
     else:
         console = Bus(*bounds)
-    return Streams(events, activity, absent, console)
+    bounds = cfgmod.stream_bounds(cfg, "meter")
+    if bounds is None:
+        if cfg["instruments"]["meter"]:                    # only a bench that has a meter is told its readings stream is off
+            absent["meter"] = "no bound configured: set streams.meter.retain (readings) and streams.meter.max_age_days"
+    else:
+        meter = Bus(*bounds)
+    return Streams(events, activity, absent, console, meter)
 
 
 def bench_name(cfg):
@@ -422,7 +438,7 @@ def main(argv=None, run=None, env=None, make_monitor=DeviceMonitor):
     absent = [c.name for c in registry.commands() if registry.unmet(c, caps)]
     if absent:
         print("absent here (GET /api/capabilities says why): %s" % ", ".join(absent), flush=True)
-    for name in ("events", "activity", "console"):
+    for name in ("events", "activity", "console") + (("meter",) if "meter" in caps else ()):
         reason = host.streams.absent.get(name)
         print("stream %s: %s" % (name, "OFF (%s)" % reason if reason else "on"), flush=True)
     if host.console is not None:
@@ -443,6 +459,9 @@ def main(argv=None, run=None, env=None, make_monitor=DeviceMonitor):
     try:
         run(app, host=host_addr, port=port, log_level="info")
     finally:
+        sampler = host.started("meter_sampler")
+        if sampler is not None:
+            sampler.stop()                    # a running meter session ends with the service, its file closed
         if host.console is not None:
             host.console.stop()
         if monitor is not None:

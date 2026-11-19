@@ -128,6 +128,8 @@ returned, never a tail. **[brief]**
 | `pins_not_controllable` | refused | releasing or engaging a connection that does not use the Pi's own pins (a USB adapter's lines are its chip's) (`line-release.md`) | the connection |
 | `pins_not_set` | failed | `pinctrl` would not run or set a pin, or the pins did not read back as asked after a release or engage; the link stays held (`line-release.md`) | the connection, what was wanted, the pins as read |
 | `meter_function` | refused | a meter read that named the function it expects (`expect_function`) while the meter is set to another; nothing was read (`meter.md`) | the function it is set to, the one expected |
+| `meter_busy` | refused | a meter session (watch or record) is already running, so a second cannot start; the running one is in the evidence (`meter-page.md`) | the running session |
+| `recording_unknown` | refused | no meter recording has that name (`meter-page.md`) | the name |
 | `meter_unreachable` | failed | the multimeter did not accept a connection within the ceiling, or closed it (`meter.md`) | the address, the reason |
 | `meter_overload` | suspect | a meter reading at SCPI's overload value: the range is too small to trust any number (`meter.md`) | the raw reply, the range |
 | `pin_reserved` | refused | a GPIO assignment to BCM 0 or 1, the HAT ID EEPROM's bus (`gpio.md`), or to a pin the bench's configuration reserves (`pins.reserved`, `pi-uart-move.md`) | the gpio, and `reserved_by: configuration` for a configured one |
@@ -170,7 +172,7 @@ One function maps a `Result` to both, so the CLI and API cannot disagree.
 | class | CLI exit | HTTP |
 |---|---|---|
 | ok | 0 | 200 |
-| refused | 1 | 409 for state, holder, lock, serial, protected and link-wiring refusals (`link_absent`, `link_rx_only`, `voltage_unverified`, `dtr_rts_unsafe`); 422 for `bad_package`, `wrong_softdevice`, `no_bound`, `baud_refused`, `not_a_declared_link`, `checksum_mismatch`, `bad_project`; 422 also for `pin_reserved`, `pin_not_on_header`, `voltage_unsafe`, `intent_not_built`; 404 for `firmware_unknown`, `project_unknown`, `macro_unknown`, `pin_unknown`, `connection_unknown`, `target_unknown`; 422 also for `bad_manifest`; 411 for `length_required`; 507 for `store_full`; 409 for `in_use` |
+| refused | 1 | 409 for state, holder, lock, serial, protected and link-wiring refusals (`link_absent`, `link_rx_only`, `voltage_unverified`, `dtr_rts_unsafe`); 422 for `bad_package`, `wrong_softdevice`, `no_bound`, `baud_refused`, `not_a_declared_link`, `checksum_mismatch`, `bad_project`; 422 also for `pin_reserved`, `pin_not_on_header`, `voltage_unsafe`, `intent_not_built`; 404 for `firmware_unknown`, `project_unknown`, `macro_unknown`, `pin_unknown`, `connection_unknown`, `target_unknown`, `recording_unknown`; 422 also for `bad_manifest`; 411 for `length_required`; 507 for `store_full`; 409 for `in_use` |
 | (usage error: bad arguments) | 2 | 400 |
 | failed | 3 | 500 |
 | suspect | 4 | 500, `ok` false |

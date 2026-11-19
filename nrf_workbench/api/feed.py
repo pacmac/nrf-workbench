@@ -36,6 +36,9 @@ def feeds_of(streams):
     if streams is not None and streams.console is not None:
         # the lines every declared link logs, and the link's own state changes; the page filters by link
         feeds["console"] = (streams.console, ("console.line", "console.link"))
+    if streams is not None and streams.meter is not None:
+        # the multimeter's readings and the session's own state changes (docs/specs/meter-page.md)
+        feeds["meter"] = (streams.meter, ("meter.reading", "meter.state"))
     return feeds
 
 

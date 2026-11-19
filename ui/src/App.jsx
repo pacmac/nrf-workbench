@@ -18,11 +18,12 @@ import Gpio from "./Gpio.jsx";
 import Projects from "./Projects.jsx";
 import Wiring from "./wiring/Wiring.jsx";
 import FlashDialog from "./FlashDialog.jsx";
+import MeterPage from "./MeterPage.jsx";
 import { addLines } from "./consoleLog.js";
 
 // The daily pages first, the reference last (docs/specs/navigation.md). On a phone the first DAILY pages this host has are the bar and the
 // rest are under More; on a desktop all of them are a list down the left. Nothing scrolls sideways.
-const PAGES = [["home", "Home"], ["devices", "Devices"], ["projects", "Projects"], ["console", "Console"], ["firmware", "Firmware"], ["wiring", "Wiring"], ["gpio", "GPIO"], ["activity", "Activity"], ["commands", "Commands"], ["help", "Help"]];
+const PAGES = [["home", "Home"], ["devices", "Devices"], ["projects", "Projects"], ["console", "Console"], ["firmware", "Firmware"], ["wiring", "Wiring"], ["gpio", "GPIO"], ["meter", "Meter"], ["activity", "Activity"], ["commands", "Commands"], ["help", "Help"]];
 const DAILY = 4;      // the bar holds four pages and More: five equal cells at 390 px are 78 px each, past the 44 px touch target
 
 // How many activity rows the browser keeps in memory. Same derivation as the draw limit: the server's retention
@@ -170,6 +171,7 @@ export default function App() {
   const linksPath = linksRow ? linksRow.path : null;
   const gpioOn = Boolean(authenticated && (info.commands || []).some((c) => c.name === "gpio.header"));   // only on a Pi with a pin-map folder
   const projectsOn = Boolean(authenticated && (info.commands || []).some((c) => c.name === "project.list"));   // needs the wiring folder
+  const meterOn = Boolean(authenticated && (info.commands || []).some((c) => c.name === "meter.show"));        // needs the meter's address in the configuration
 
   useEffect(() => {
     if (!consoleOn) return undefined;
@@ -213,7 +215,7 @@ export default function App() {
 
   const host = overview.data ? overview.data.host : null;
   const live = feed.state === "live";
-  const pages = PAGES.filter(([id]) => (id !== "console" || consoleOn) && (id !== "gpio" || gpioOn) && (id !== "projects" || projectsOn));
+  const pages = PAGES.filter(([id]) => (id !== "console" || consoleOn) && (id !== "gpio" || gpioOn) && (id !== "projects" || projectsOn) && (id !== "meter" || meterOn));
   const daily = pages.slice(0, DAILY);
   const others = pages.slice(DAILY);
   const underMore = others.some(([id]) => id === page);
@@ -274,6 +276,7 @@ export default function App() {
           {page === "wiring" && <Wiring commands={info.commands} refreshKey={linksTick + usbTick} onOpenPage={go} />}
           {page === "console" && consoleOn && <Console commands={info.commands} links={links} lines={consoleLines} activity={activity} feed={consoleFeed} onDone={onCommandDone} />}
           {page === "gpio" && gpioOn && <Gpio commands={info.commands} overview={overview} onDone={onCommandDone} />}
+          {page === "meter" && meterOn && <MeterPage commands={info.commands} onDone={onCommandDone} />}
           {page === "activity" && <Activity activity={activity} />}
           {page === "commands" && <Commands commands={info.commands} overview={overview} onDone={onCommandDone} />}
           {page === "help" && <Help topic={topic} direct={helpDirect} onTopic={setTopic} onGo={go} />}

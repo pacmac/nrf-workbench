@@ -51,3 +51,50 @@ export function series(points, width, height, unit = "") {
   const line = good.map((p, i) => `${x(p, i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
   return { line, lo: si(lo, unit), hi: si(hi, unit), axisLo: si(axisLo, unit), axisHi: si(axisHi, unit) };
 }
+
+// Seconds as a clock: 252 -> "4:12", 3725 -> "1:02:05". Event-driven: it is shown from a reading's own time, never from a ticking timer.
+export function clock(seconds) {
+  const s = Math.max(0, Math.floor(seconds || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = s % 60;
+  const two = (n) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${two(m)}:${two(r)}` : `${m}:${two(r)}`;
+}
+
+// A duration for a person: 90 -> "1 min 30 s", 3600 -> "1 h", 43200 -> "12 h".
+export function words(seconds) {
+  const s = Math.round(seconds);
+  if (s < 60) return `${s} s`;
+  if (s < 3600) return `${Math.floor(s / 60)} min${s % 60 ? ` ${s % 60} s` : ""}`;
+  return `${Math.floor(s / 3600)} h${Math.floor((s % 3600) / 60) ? ` ${Math.floor((s % 3600) / 60)} min` : ""}`;
+}
+
+// How long a battery of `capacityMah` lasts at an average of `meanAmps`: hours, or days from 48 h. "" when either is missing or the draw is zero.
+export function batteryLife(meanAmps, capacityMah) {
+  if (!(meanAmps > 0) || !(capacityMah > 0)) return "";
+  const hours = capacityMah / (meanAmps * 1000);
+  if (hours < 48) return `${Number(hours.toPrecision(3))} hours`;
+  const days = hours / 24;
+  return days >= 365 * 2 ? `${Number((days / 365).toPrecision(3))} years` : `${Number(days.toPrecision(3))} days`;
+}
+
+// The chart of a session's envelope: a band from each bucket's lowest to its highest reading and a line through the means. Zero is always on the vertical axis
+// (a steady current is a flat band, a real spike stands out). x is time. Returns null when there is nothing to draw.
+export function bandChart(buckets, width, height, unit = "") {
+  if (!buckets || buckets.length === 0) return null;
+  const lo = Math.min(...buckets.map((b) => b.min));
+  const hi = Math.max(...buckets.map((b) => b.max));
+  const axisLo = Math.min(0, lo);
+  const axisHi = Math.max(0, hi);
+  const pad = 4;
+  const t0 = buckets[0].t0;
+  const span = buckets[buckets.length - 1].t1 - t0;
+  const y = (v) => (axisHi === axisLo ? height / 2 : height - pad - ((v - axisLo) / (axisHi - axisLo)) * (height - 2 * pad));
+  const x = (t, i) => ((span > 0 ? (t - t0) / span : buckets.length > 1 ? i / (buckets.length - 1) : 0.5) * (width - 2 * pad) + pad);
+  const mid = (b, i) => x((b.t0 + b.t1) / 2, i);
+  const top = buckets.map((b, i) => `${mid(b, i).toFixed(1)},${y(b.max).toFixed(1)}`);
+  const bottom = buckets.map((b, i) => `${mid(b, i).toFixed(1)},${y(b.min).toFixed(1)}`).reverse();
+  const mean = buckets.map((b, i) => `${mid(b, i).toFixed(1)},${y(b.mean).toFixed(1)}`).join(" ");
+  return { band: [...top, ...bottom].join(" "), mean, axisLo: si(axisLo, unit), axisHi: si(axisHi, unit), lo: si(lo, unit), hi: si(hi, unit), span };
+}

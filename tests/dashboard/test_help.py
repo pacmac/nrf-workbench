@@ -23,7 +23,7 @@ from nrf_workbench.core import status  # noqa: E402
 MODULE = os.path.join(ROOT, "ui", "src", "help.js")
 NODE = shutil.which("node")
 # the pages the nav offers, apart from Help itself
-PAGES = ["home", "devices", "projects", "wiring", "console", "firmware", "gpio", "activity", "commands"]
+PAGES = ["home", "devices", "projects", "wiring", "console", "firmware", "gpio", "meter", "activity", "commands"]
 # One phone screen at 15 px with the structure around it: a summary of two lines and at most this many of each block.
 MAX_SUMMARY, MAX_POINTS, MAX_STEPS, MAX_PROBLEMS, MAX_CODES = 160, 6, 6, 6, 6
 

@@ -15,8 +15,9 @@ export function feedUrl() {
   return u.toString();
 }
 
-export function createFeed({ feeds, onPage, onState }) {
-  const cursors = new Map(feeds.map((name) => [name, { cursor: 0, epoch: null }]));
+// `from` is {feed: {cursor, epoch}} for a feed the page has already caught up to by another read (the meter's profile), so the feed carries on from exactly there.
+export function createFeed({ feeds, onPage, onState, from }) {
+  const cursors = new Map(feeds.map((name) => [name, { cursor: (from && from[name] && from[name].cursor) || 0, epoch: (from && from[name] && from[name].epoch) || null }]));
   let socket = null;
   let wasLive = false;
   let closed = false;

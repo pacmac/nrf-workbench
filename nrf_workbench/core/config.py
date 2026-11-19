@@ -27,8 +27,9 @@ DEFAULTS = {
     # with either unset there is no console (docs/specs/console.md, "slice 1").
     # `gpio` is a folder for the pin map (docs/specs/gpio.md): with it unset there are no gpio commands. `wiring` is a
     # folder for the wiring store (docs/specs/wiring.md): with it set the console reads its links from the connections.
+    # `meter` is a folder for the multimeter's recordings (CSV files, docs/specs/meter-page.md): with it unset the meter can be watched but not recorded.
     "paths": {"lock": None, "profiles": None, "firmware": None, "units": None, "links": None, "console": None,
-              "gpio": None, "wiring": None},
+              "gpio": None, "wiring": None, "meter": None},
     # `meter` is the LAN multimeter, host or host:port (docs/specs/meter.md): unset means there are no meter commands. The address is
     # configuration and never an argument, so no caller can aim the service at another machine.
     "instruments": {"meter": None},
@@ -42,6 +43,7 @@ DEFAULTS = {
         "events": {"retain": None, "max_age_days": None},
         "activity": {"retain": None, "max_age_days": None},
         "console": {"retain": None, "max_age_days": None},
+        "meter": {"retain": None, "max_age_days": None},     # the multimeter's readings, counted in READINGS (docs/specs/meter-page.md)
     },
 }
 
@@ -60,6 +62,7 @@ ENV = {
     "NRFWB_CONSOLE_DIR": ("paths", "console"),
     "NRFWB_GPIO_DIR": ("paths", "gpio"),
     "NRFWB_WIRING_DIR": ("paths", "wiring"),
+    "NRFWB_METER_DIR": ("paths", "meter"),
     "NRFWB_METER": ("instruments", "meter"),
 }
 

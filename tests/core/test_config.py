@@ -38,8 +38,9 @@ class Defaults(Base):
         self.assertEqual(cfg["service"]["listen"], "127.0.0.1:8080")
         self.assertEqual(cfg["service"]["access"], "token")
         self.assertEqual(cfg["paths"], {"lock": None, "profiles": None, "firmware": None, "units": None,
-                                        "links": None, "console": None, "gpio": None, "wiring": None})
+                                        "links": None, "console": None, "gpio": None, "wiring": None, "meter": None})
         self.assertEqual(cfg["streams"]["console"], {"retain": None, "max_age_days": None})   # no default bound
+        self.assertEqual(cfg["streams"]["meter"], {"retain": None, "max_age_days": None}, "the meter's readings have no default bound either")
         for banned in ("/usr/share/pac", "/etc", "/root", "/home", "/tmp"):
             self.assertNotIn(banned, json.dumps(config.DEFAULTS), "a folder is assumed")
 
