@@ -33,6 +33,10 @@ RATE_LOW_HZ = 98000                         # 2 % under the 100,000 the unit sen
 RATE_AFTER_S = 1.0                          # a rate is judged only after a second of stream
 PORT_TIMEOUT_S = 0.05                       # one wait for bytes: a quarter of a block, so a stop is seen within a block
 NOMINAL_BAUD = 9600
+# The line discipline's read buffer is 4,096 bytes and the stream is 400,000 bytes a second: it fills in 10.2 ms. Waiting 8 ms after the port turns readable leaves 3.2 kB,
+# under the buffer with 2 ms to spare for the sleep to overshoot; anything left over stays in the kernel's larger flip buffer (64 kB, 160 ms), which a block never gets near.
+READ_PACE_S = 0.008
+READ_MAX = 65536
 ADC_MULT = 1.8 / 163840
 VOLT_MIN_MV, VOLT_MAX_MV = 800, 5000
 VOLT_OFFSET, VOLT_BASE_HI = 32, 3           # the regulator's encoding in the reference library: the pair is (3 + n // 256, n % 256) for n = mV - 800 + 32
@@ -43,6 +47,13 @@ META, START, STOP, MODE, POWER, VOLTAGE = 0x19, 0x06, 0x07, 0x11, 0x0C, 0x0D
 AMPERE_BYTE, SOURCE_BYTE = 1, 2
 WORD_MASK = 0x1FFFF                         # bits 0..13 the ADC, 14..16 the range
 ADC_MASK = 0x3FFF
+# Byte tables for bytes.translate, which does a whole block in C: the range is bits 14, 15 (byte 1, bits 6, 7) and 16 (byte 2, bit 0), the ADC's top bits are byte 1's low 6,
+# the counter is byte 2's bits 2..7, and a counter run is the byte (i & 63) << 2 over and over.
+_TOP2 = bytes(b >> 6 for b in range(256))
+_LOW6 = bytes(b & 0x3F for b in range(256))
+_BIT0 = bytes(b & 1 for b in range(256))
+_NO_RANGE = bytes(b & 0xFC for b in range(256))
+_COUNTER_RUN = bytes(range(0, 256, 4)) * (2 * BLOCK_SAMPLES // 64 + 2)
 
 
 class Ppk2Error(Exception):
@@ -115,40 +126,80 @@ class Reducer(object):
         self.words = self.lost = self.filtered = 0           # received, lost to the counter, left out after a range change
         self.prev_range, self.prev_counter, self.skip = None, None, 0
 
-    def block(self, data):
-        """The block's facts for `data`, a multiple of 4 bytes: t, mean, lo, hi, n, range, dt; or None if every sample in it was filtered."""
+    def _lost(self, masked, n):
+        """Samples the host never got in this block, from the counter (bits 18..23, one step a sample, wrapping at 64). `masked` is each word's third byte with the range and
+        spare bits cleared. A block with no loss is the counter run on from its first value, and that is one comparison in C; only a block that differs is walked sample by sample."""
+        first = masked[0] >> 2
+        lost = 0
+        if masked != _COUNTER_RUN[first:first + n]:
+            cs = [b >> 2 for b in masked]
+            lost = sum((q - p - 1) & 63 for p, q in zip(cs, cs[1:]))
+        if self.prev_counter is not None:
+            lost += (first - self.prev_counter - 1) & 63
+        self.prev_counter = masked[-1] >> 2
+        return lost
+
+    def _blockwise(self, data, n):
+        """A block in one range (a steady load: the common case): the ADC values are counted in C with no per-sample Python, and a range change can only be at the
+        block's start. Returns (counts of (range, ADC) keys, the samples to hold out and the ADC values they had, the range), or None if the block has more than one range."""
+        b1, b2 = data[1::4], data[2::4]
+        low, high = b1.translate(_TOP2), b2.translate(_BIT0)
+        if low.count(low[:1]) != n or high.count(high[:1]) != n:
+            return None
+        rng = low[0] | (high[0] << 2)
+        until = self.skip
+        if self.prev_range is not None and rng != self.prev_range:
+            until = max(until, SPIKE_SAMPLES)
+        self.skip = max(0, until - n)
+        self.prev_range = rng
+        buf = bytearray(2 * n)
+        buf[0::2] = data[0::4]
+        buf[1::2] = b1.translate(_LOW6)
+        adc = array("H")
+        adc.frombytes(bytes(buf))
+        if sys.byteorder == "big":
+            adc.byteswap()
+        counts = collections.Counter(adc)
+        dropped = min(until, n)
+        for i in range(dropped):
+            counts[adc[i]] -= 1
+        offset = rng << 14
+        return {offset | a: c for a, c in counts.items()}, dropped, rng
+
+    def _samplewise(self, data, n):
+        """A block whose range changes inside it: every sample is looked at, and the 3 after each change are held out, across a block boundary too."""
         words = array("I")
         words.frombytes(data)
         if sys.byteorder == "big":
             words.byteswap()
-        n = len(words)
         keys = [w & WORD_MASK for w in words]
         rs = [k >> 14 for k in keys]
         drop = set()
-        # The samples straight after a range change are not the current: hold them out, across a block boundary too.
         until = self.skip
         if until:
             drop.update(range(min(until, n)))
         last = self.prev_range
-        if rs.count(rs[0]) != n or rs[0] != last:
-            for i, r in enumerate(rs):
-                if r != last:
-                    if last is not None:
-                        until = max(until, i + SPIKE_SAMPLES)
-                        drop.update(range(i, min(i + SPIKE_SAMPLES, n)))
-                    last = r
+        for i, r in enumerate(rs):
+            if r != last:
+                if last is not None:
+                    until = max(until, i + SPIKE_SAMPLES)
+                    drop.update(range(i, min(i + SPIKE_SAMPLES, n)))
+                last = r
         self.skip = max(0, until - n) if until > n else 0
         self.prev_range = rs[-1]
-        # The counter (bits 18..23) steps by one a sample: a step of more is samples the host never got.
-        cs = [b >> 2 for b in data[2::4]]
-        lost = sum((q - p - 1) & 63 for p, q in zip(cs, cs[1:]))
-        if self.prev_counter is not None:
-            lost += (cs[0] - self.prev_counter - 1) & 63
-        self.prev_counter = cs[-1]
         counts = collections.Counter(keys)
         for i in drop:
             counts[keys[i]] -= 1
-        kept = n - len(drop)
+        return counts, len(drop), max(rs)
+
+    def block(self, data):
+        """The block's facts for `data`, a multiple of 4 bytes: t, mean, lo, hi, n, range, dt; or None if every sample in it was filtered."""
+        n = len(data) // 4
+        lost = self._lost(data[2::4].translate(_NO_RANGE), n)
+        fast = self._blockwise(data, n)
+        counts, held, top = fast if fast is not None else self._samplewise(data, n)
+        kept = n - held
+        drop = range(held)
         self.words += n
         self.lost += lost
         self.filtered += len(drop)
@@ -167,7 +218,7 @@ class Reducer(object):
                     lo = v
                 if hi is None or v > hi:
                     hi = v
-        return {"t": t, "mean": total / kept, "lo": lo, "hi": hi, "n": kept, "range": min(max(rs), RANGES - 1), "dt": (n + lost) / float(SAMPLE_RATE_HZ)}
+        return {"t": t, "mean": total / kept, "lo": lo, "hi": hi, "n": kept, "range": min(top, RANGES - 1), "dt": (n + lost) / float(SAMPLE_RATE_HZ)}
 
 
 # -- the instrument -----------------------------------------------------------------------------
@@ -185,12 +236,20 @@ class Link(object):
 
     def read(self, size):
         if not self._extra:
-            if not select.select([self.port.fileno()], [], [], PORT_TIMEOUT_S)[0]:
+            fd = self.port.fileno()
+            if not select.select([fd], [], [], PORT_TIMEOUT_S)[0]:
                 return b""
+            # The kernel hands a USB serial port's bytes over in 128-byte pieces: 6,250 reads in 2 s on the Pi, 8 % of a core. Waiting READ_PACE_S lets about 3 kB gather so a
+            # read returns that much (measured below).
+            time.sleep(READ_PACE_S)
             try:
-                self._extra = self.port.read()
-            except portlib.PortError as exc:
-                raise OSError(str(exc))
+                self._extra = os.read(fd, READ_MAX)
+            except BlockingIOError:
+                return b""
+            except OSError as exc:
+                raise OSError("the port went away (%s)" % exc.strerror)
+            if not self._extra:
+                raise OSError("the port hung up")
         data, self._extra = self._extra[:size], self._extra[size:]
         return data
 

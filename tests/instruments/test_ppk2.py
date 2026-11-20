@@ -321,6 +321,73 @@ class Reducing(unittest.TestCase):
             self.assertAlmostEqual(got["hi"], max(kept), places=15)
             self.assertAlmostEqual(got["mean"], sum(kept) / len(kept), places=13)
 
+    def test_blocks_in_one_range_and_blocks_that_change_range_both_equal_the_straight_loop(self):
+        """The fast path (a block in one range, counted in C) and the slow one (a change inside it) must give what looking at every sample gives, with losses in the counter too."""
+        rng = random.Random(17)
+        red = ppk2.Reducer(self.cal)
+        prev, skip, counter, lost_total, last_counter = None, 0, 0, 0, None
+        steady = mixed = 0
+        for block in range(40):
+            n = rng.choice((3, 5, 64, 1000, 4096))
+            if rng.random() < 0.6:
+                r = rng.randrange(0, 5)
+                ranges = [r] * n
+                steady += 1
+            else:
+                ranges = [rng.randrange(0, 5) if rng.random() < 0.02 else 0 for _ in range(n)]
+                for i in range(1, n):
+                    if rng.random() > 0.02:
+                        ranges[i] = ranges[i - 1]
+                mixed += 1
+            words, counters = [], []
+            for i in range(n):
+                counter += rng.choice((0, 0, 0, 0, 0, 0, 0, 0, 0, 3)) if rng.random() < 0.05 else 0      # now and then samples never arrived
+                words.append(word(rng.randrange(0, 16384), ranges[i], counter))
+                counters.append(counter & 63)
+                counter += 1
+            kept, prev, skip = naive_block(self.cal, words, prev, skip)
+            seq = ([last_counter] if last_counter is not None else []) + counters
+            naive_lost = sum((b - a - 1) & 63 for a, b in zip(seq, seq[1:]))
+            last_counter = counters[-1]
+            before = red.lost
+            got = red.block(pack(words))
+            self.assertEqual(red.lost - before, naive_lost, "block %d" % block)
+            lost_total += naive_lost
+            if not kept:
+                self.assertIsNone(got)
+                continue
+            self.assertEqual(got["n"], len(kept), "block %d" % block)
+            self.assertAlmostEqual(got["lo"], min(kept), places=15)
+            self.assertAlmostEqual(got["hi"], max(kept), places=15)
+            self.assertAlmostEqual(got["mean"], sum(kept) / len(kept), places=13)
+            self.assertEqual(got["range"], max(ranges))
+        self.assertEqual(red.lost, lost_total)
+        self.assertGreater(steady, 10)
+        self.assertGreater(mixed, 10)
+
+    def test_a_steady_block_after_a_change_holds_out_its_first_three_and_the_next_steady_block_none(self):
+        red = ppk2.Reducer(self.cal)
+        red.block(pack([word(100, 0, i) for i in range(50)]))
+        got = red.block(pack([word(100, 2, 50 + i) for i in range(50)]))                 # the whole block is in the new range
+        self.assertEqual((got["n"], red.filtered), (47, 3))
+        got = red.block(pack([word(100, 2, 100 + i) for i in range(50)]))
+        self.assertEqual((got["n"], red.filtered), (50, 3))
+
+    def test_a_block_with_no_loss_is_the_counter_run_and_one_dropped_sample_is_found_anywhere_in_it(self):
+        for gap_at in (0, 1, 31, 32, 63, 64, 100, 998, 999):
+            red = ppk2.Reducer(self.cal)
+            red.block(pack([word(100, 0, i) for i in range(5)]))
+            c = 5
+            words = []
+            for i in range(1000):
+                if i == gap_at:
+                    c += 1                                                              # one sample the host never got
+                words.append(word(100, 0, c))
+                c += 1
+            before = red.lost
+            red.block(pack(words))
+            self.assertEqual(red.lost - before, 1, gap_at)
+
     def test_a_burst_of_a_few_samples_is_the_blocks_highest_and_still_moves_the_mean_exactly(self):
         words = [word(100, 0, i) for i in range(2000)]
         for i in range(1000, 1004):
@@ -381,6 +448,76 @@ class Reducing(unittest.TestCase):
         red = ppk2.Reducer(self.cal)
         red.block(pack([word(i % 16384, i % 5, i) for i in range(30000)]))
         self.assertLessEqual(len(self.cal._memo), 5 * 16384)
+
+
+class LinkOnAPty(unittest.TestCase):
+    """The real port wrapper, on a pseudo-terminal: bytes in order and none lost, never more than asked for, the surplus kept, silence as an empty read, a hang-up as an error."""
+
+    def setUp(self):
+        try:
+            self.master, slave = os.openpty()
+        except OSError as exc:
+            self.skipTest("no pty here (%s)" % exc)
+        self.name = os.ttyname(slave)
+        self.slave = slave                                   # held open so the pty outlives the link
+        self.link = ppk2.Link(self.name)
+        self.addCleanup(self.cleanup)
+
+    def cleanup(self):
+        for fd in (self.master, self.slave):
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        try:
+            self.link.close()
+        except OSError:
+            pass
+
+    def feed(self, data):
+        def run():
+            view = memoryview(data)
+            while view:
+                view = view[os.write(self.master, view[:4096]):]
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+        return t
+
+    def test_every_byte_arrives_in_order_and_no_read_returns_more_than_it_asked_for(self):
+        data = bytes((i * 7 + i // 251) & 0xFF for i in range(120000))
+        self.feed(data)
+        got, sizes = b"", []
+        end = time.monotonic() + 10
+        while len(got) < len(data) and time.monotonic() < end:
+            chunk = self.link.read(7777)
+            self.assertLessEqual(len(chunk), 7777)
+            sizes.append(len(chunk))
+            got += chunk
+        self.assertEqual(got, data)
+
+    def test_the_surplus_of_a_read_is_kept_for_the_next_one(self):
+        os.write(self.master, bytes(range(200)))
+        first = self.link.read(10)
+        self.assertEqual(first, bytes(range(10)))
+        self.assertEqual(self.link.read(1000), bytes(range(10, 200)))
+
+    def test_silence_is_an_empty_read_after_about_the_port_timeout(self):
+        t = time.monotonic()
+        self.assertEqual(self.link.read(100), b"")
+        took = time.monotonic() - t
+        self.assertGreaterEqual(took, ppk2.PORT_TIMEOUT_S * 0.8)
+        self.assertLess(took, ppk2.PORT_TIMEOUT_S + 0.2)
+
+    def test_a_write_reaches_the_other_end(self):
+        self.link.write(ppk2._frame(ppk2.META))
+        self.assertEqual(os.read(self.master, 10), bytes([ppk2.META]))
+
+    def test_a_hang_up_is_an_error_not_an_endless_empty_read(self):
+        os.close(self.master)                                # the far end goes away: the link's reads are told so
+        self.master = -1
+        with self.assertRaises(OSError):
+            for _ in range(5):
+                self.link.read(10)
 
 
 class Writing(Base):
