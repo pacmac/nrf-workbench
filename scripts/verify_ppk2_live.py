@@ -167,6 +167,7 @@ def meter_page(page, bench, fake, tag, shot):
     check("%s the unit is asked again once the session is over (the card is back)" % tag,
           page.get_by_label("Profiler").inner_text().startswith("Power profiler E1C5F15B15A3"), page.get_by_label("Profiler").inner_text())
     check("%s a clean run says nothing about lost samples" % tag, "were lost between" not in page.inner_text("body"))
+    check("%s a steady load keeps no wake, and the scope card says so" % tag, page.get_by_text("No wake kept yet.").is_visible())
 
     # lost samples are said
     bench.unit.lost_at = {6000: 5}
@@ -230,6 +231,41 @@ def meter_page(page, bench, fake, tag, shot):
           "No energy: the supply voltage is not known here" in page.inner_text("body") and "Each wake fills a single point of the chart" in page.inner_text("body"))
     check("%s the chart shades the four wakes" % tag, page.get_by_test_id("wake-span").count() == 4, page.get_by_test_id("wake-span").count())
     check("%s no sideways scroll with the cycle line and the table" % tag, no_sideways_scroll(page))
+
+    # the wakes kept at full rate, as a scope trace (docs/specs/ppk2-stages.md, stage 1)
+    page.get_by_text("The wake at full rate", exact=True).wait_for()
+    pick = page.get_by_label("Wake", exact=True)
+    pick.locator("option").nth(2).wait_for(state="attached")
+    options = [o.inner_text() for o in pick.locator("option").all()]
+    check("%s the wakes the unit kept are listed, each with its length and peak" % tag,
+          len(options) >= 3 and all(re.match(r"^wake \d+, 600 ms, peak [0-9.]+ [nµm]A$", o) for o in options), options)
+    page.get_by_role("img", name=re.compile(r"^Current of wake [0-9]+, from -200 ms to 400 ms$")).wait_for()
+    check("%s the wake is drawn from 200 ms before it started, with its start marked once" % tag, page.get_by_test_id("wake-start").count() == 1)
+    wf = page.get_by_label("Wake figures")
+    check("%s the wake's figures say how long, the average, the peak and the charge" % tag,
+          all(w in wf.inner_text() for w in ("Shown", "Average", "Peak", "Charge")) and "600 ms" in wf.inner_text(), wf.inner_text())
+    linear = page.get_by_text(re.compile(r"^bottom of the chart: 0 A$"))
+    check("%s the scope's axis starts linear, with zero at the bottom (the session chart says the same)" % tag, linear.count() == 2 and page.get_by_text(re.compile(r"^log scale")).count() == 0)
+    page.get_by_label("Log current axis").check()
+    page.get_by_text(re.compile(r"^log scale, bottom [0-9.]+ [nµ]A$")).wait_for()
+    check("%s the log switch changes the scope's axis and says where its floor is; the session chart is untouched" % tag, linear.count() == 1)
+    box = page.get_by_role("img", name=re.compile(r"^Current of wake")).bounding_box()
+    page.mouse.move(box["x"] + box["width"] * 0.30, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] * 0.37, box["y"] + box["height"] / 2)
+    check("%s dragging shows the stretch being chosen" % tag, page.get_by_test_id("zoom-selection").count() == 1)
+    page.mouse.move(box["x"] + box["width"] * 0.45, box["y"] + box["height"] / 2)
+    page.mouse.up()
+    page.get_by_role("button", name="Show all of it").wait_for()
+    page.wait_for_function("(() => { const t = document.querySelector('[aria-label=\"Wake figures\"]').innerText; return !t.includes('600 ms') && /Shown\\s+[0-9.]+ ms/.test(t); })()")
+    shown = re.search(r"Shown\s+([0-9.]+) ms", wf.inner_text()).group(1)
+    check("%s dragging across the chart zooms to about 15 percent of the wake (90 ms)" % tag, 70 <= float(shown) <= 110, shown)
+    page.get_by_role("button", name="Show all of it").click()
+    page.wait_for_function("document.querySelector('[aria-label=\"Wake figures\"]').innerText.includes('600 ms')")
+    check("%s Show all of it returns to the whole wake" % tag, page.get_by_role("button", name="Show all of it").count() == 0)
+    check("%s no sideways scroll with the scope" % tag, no_sideways_scroll(page))
+    page.get_by_text("The wake at full rate", exact=True).scroll_into_view_if_needed()
+    shot("5b-scope")
     shot("5-cycle")
     page.get_by_role("button", name="Stop").click()
     page.get_by_text(re.compile(r"^ended: stopped")).wait_for()

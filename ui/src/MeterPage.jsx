@@ -6,6 +6,7 @@ import { ResultView } from "./Commands.jsx";
 import { Envelope, Stats } from "./meter/envelope.js";
 import { findCycle } from "./meter/cycle.js";
 import { CycleTable } from "./meter/Cycle.jsx";
+import { Scope } from "./meter/Scope.jsx";
 import { batteryLife, bandChart, clock, headline, lapse, si } from "./meter/format.js";
 import { Profiler } from "./meter/Profiler.jsx";
 
@@ -338,6 +339,8 @@ export default function MeterPage({ commands, onDone }) {
           </p>
         </div>
       </Card>
+
+      {shownSource === "ppk2" && <Scope commands={commands} count={session ? session.captures || 0 : 0} session={session} />}
 
       {record && (
         <Card title="Recordings">

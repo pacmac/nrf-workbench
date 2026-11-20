@@ -76,6 +76,9 @@ Unit (`tests/instruments/test_capture.py`): the level rule (median to ±7.5 %, n
 25 blocks is truncated and the next is found; two wakes closer than a block are one capture; only the newest 8 are kept and numbers keep rising; raw words are stored whole (compared byte for byte with what the unit sent); the decoded window equals a per-sample decode,
 exactly, in every bucket, at any zoom, with the lowest and highest sample kept; the wake start is the first sample over the level; the whole path over the fake unit with a wake profile gives the captures and the right peak; a multimeter session has none;
 `meter.captures` and `meter.capture` over the registry, `capture_unknown`, a bad window; mutants on each rule. Browser: the scope appears under the chart, the wake is chosen, the log switch changes the axis note, a drag zooms and Reset returns, both themes, phone and desktop.
+Chart maths (`tests/dashboard/test_meter_scope.py`, Node): linear puts zero at the bottom and the peak at the top; log lifts a 3 mA stage well off the floor where linear leaves a sliver, and falls back to linear with nothing above zero;
+the band's top edge is the highest sample and its bottom edge the lowest; the wake start is marked only when in view; time reads in ms under a second; ticks are 1, 2 or 5 times a power of ten inside the range; a drag position maps back to a time and is held inside the chart; 10 mutants, the one
+survivor being equivalent (no value exceeds the top). Browser (`scripts/verify_ppk2_live.py`): the steady load says no wake was kept; with the 2 s wake, the list, the chart's range, the dashed start, the figures, the linear and log axes, a drag to about 15 % (90 ms) and Show all of it.
 Live, when a board with a repeating wake is wired: a capture of a real wake and its shape (not possible with the LED alone).
 
 ## Files this spec allows
