@@ -119,7 +119,8 @@ def parse_metadata(text):
 
 # -- the stream ----------------------------------------------------------------------------------
 class Reducer(object):
-    """Turns the stream, 0.2 s at a time, into the exact lowest, highest, mean and count of each block, in a way that costs about 17 ms a block on the bench Pi."""
+    """Turns the stream, 0.2 s at a time, into the exact lowest, highest, mean and count of each block. A steady block is counted in C; one that changes range or loses
+    samples is walked sample by sample. The service takes 5.3 % of a core for a recording on the bench Pi (docs/specs/ppk2.md, "Reading cost")."""
 
     def __init__(self, cal):
         self.cal = cal

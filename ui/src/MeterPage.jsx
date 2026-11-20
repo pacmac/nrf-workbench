@@ -5,14 +5,16 @@ import { Button, Card, Field, Json, PageHeader, cx, inputClass } from "./ui.jsx"
 import { ResultView } from "./Commands.jsx";
 import { Envelope, Stats } from "./meter/envelope.js";
 import { batteryLife, bandChart, clock, headline, si } from "./meter/format.js";
+import { Profiler } from "./meter/Profiler.jsx";
 
-// The Meter page (docs/specs/meter-page.md): power over minutes to hours. A session runs on the Pi; this page only listens to it. Readings arrive on the live feed and
-// are kept in the same bounded envelope the server keeps, so a 12 hour session is as cheap to hold as a 1 minute one. There is no timer here: the clock shown is the
-// latest reading's own time.
+// The Meter page (docs/specs/meter-page.md, docs/specs/ppk2.md): power over minutes to hours, from the multimeter or the Nordic Power Profiler. A session runs on the Pi;
+// this page only listens to it. Readings arrive on the live feed and are kept in the same bounded envelope the server keeps, so a 12 hour session is as cheap to hold as a
+// 1 minute one. There is no timer here: the clock shown is the latest reading's own time.
 
 const DURATIONS = [[60, "1 minute"], [600, "10 minutes"], [3600, "1 hour"], [14400, "4 hours"], [43200, "12 hours"]];
 const isCurrent = (fn) => /^CURR/i.test(fn || "");
 const RUNNING = ["watching", "recording"];
+const SOURCES = { meter: "Multimeter", ppk2: "Power profiler" };
 
 function Chart({ buckets, unit }) {
   const c = bandChart(buckets, 480, 120, unit);
@@ -45,6 +47,7 @@ function Figure({ label, value }) {
 export default function MeterPage({ commands, onDone }) {
   const find = useCallback((name) => (commands || []).find((c) => c.name === name) || null, [commands]);
   const [setting, setSetting] = useState(null);
+  const [profiler, setProfiler] = useState(null);
   const [session, setSession] = useState(null);
   const [latest, setLatest] = useState(null);
   const [, bump] = useState(0);
@@ -53,10 +56,18 @@ export default function MeterPage({ commands, onDone }) {
   const [bound, setBound] = useState("600");
   const [recName, setRecName] = useState("");
   const [capacity, setCapacity] = useState("");
+  const [chosen, setChosen] = useState(null);
   const [feedState, setFeedState] = useState({ state: "connecting" });
   const env = useRef(new Envelope());
   const stats = useRef(new Stats());
   const number = useRef(0);
+
+  const available = ["meter", "ppk2"].filter((s) => find(`${s}.show`));
+  const running = Boolean(session && RUNNING.includes(session.state));
+  // The instrument a new session will read: the one a running session is reading, else the one chosen, else the first this bench has.
+  const source = running && session.source ? session.source : chosen && available.includes(chosen) ? chosen : available[0] || "meter";
+  // The instrument the figures on screen came from.
+  const shownSource = (session && session.session > 0 && session.source) || (latest && latest.source) || source;
 
   const loadProfile = useCallback(async () => {
     const cmd = find("meter.profile");
@@ -83,6 +94,12 @@ export default function MeterPage({ commands, onDone }) {
     try { setSetting(await readJson(cmd.path)); } catch (e) { setSetting({ status: 0, body: { message: String(e) } }); }
   }, [find]);
 
+  const loadProfiler = useCallback(async () => {
+    const cmd = find("ppk2.show");
+    if (!cmd) return;
+    try { setProfiler(await readJson(cmd.path)); } catch (e) { setProfiler({ status: 0, body: { message: String(e) } }); }
+  }, [find]);
+
   useEffect(() => {
     if (!find("meter.profile")) return undefined;
     let live = true;
@@ -98,13 +115,15 @@ export default function MeterPage({ commands, onDone }) {
             setLatest(null);
           }
           setSession(st);
+          if (!RUNNING.includes(st.state)) loadProfiler();          // the unit is free again: ask it what it is set to now
           if (!RUNNING.includes(st.state) || st.mode === "record") loadRecordings();
         } else if (e.type === "meter.reading") {
           const r = e.payload;
           if (r.session !== number.current) continue;               // a reading of an earlier session
           if (r.overload) stats.current.overload();
-          else { env.current.add(r.t_s, r.value); stats.current.add(r.t_s, r.value); }
+          else { env.current.add(r.t_s, r.value, r.min, r.max, r.n); stats.current.add(r.t_s, r.value, r.min, r.max, r.n, r.dt); }
           setLatest(r);
+          if (r.facts && Object.keys(r.facts).length) setSession((s) => (s ? { ...s, ...r.facts } : s));    // lost and filtered samples show while it runs, not only at its end
         }
       }
       if (p.reset) loadProfile().then(() => bump((n) => n + 1));    // the service restarted: its cursors are new, so start again from its profile
@@ -114,16 +133,18 @@ export default function MeterPage({ commands, onDone }) {
       const d = await loadProfile();
       if (!live) return;
       const s = find("meter.session");
-      if (s) { const r = await readJson(s.path); if (live && r.ok && r.body) setSession(r.body.data); }
+      let st = null;
+      if (s) { const r = await readJson(s.path); if (live && r.ok && r.body) { st = r.body.data; setSession(st); } }
       loadRecordings();
       loadSetting();
+      if (!(st && RUNNING.includes(st.state))) loadProfiler();
       if (!live) return;
       feed = createFeed({ feeds: ["meter"], from: d ? { meter: { cursor: d.cursor, epoch: d.epoch } } : undefined, onPage, onState: setFeedState });
       feed.start();
       bump((n) => n + 1);
     })();
     return () => { live = false; if (feed) feed.stop(); };
-  }, [find, loadProfile, loadRecordings, loadSetting]);
+  }, [find, loadProfile, loadRecordings, loadSetting, loadProfiler]);
 
   async function run(cmd, args) {
     setOutcome({ pending: true });
@@ -153,15 +174,16 @@ export default function MeterPage({ commands, onDone }) {
   const watch = find("meter.watch");
   const record = find("meter.record");
   const stop = find("meter.stop");
-  const running = Boolean(session && RUNNING.includes(session.state));
   const pending = Boolean(outcome && outcome.pending);
-  const fn = (session && session.function) || (setting && setting.body && setting.body.data && setting.body.data.function) || "";
-  const unit = (latest && latest.unit) || (session && session.unit) || (setting && setting.body && setting.body.data && setting.body.data.unit) || "";
+  const fn = (session && session.function) || (shownSource === "ppk2" ? "CURR" : (setting && setting.body && setting.body.data && setting.body.data.function) || "");
+  const unit = (latest && latest.unit) || (session && session.unit) || (shownSource === "ppk2" ? "A" : (setting && setting.body && setting.body.data && setting.body.data.unit) || "");
   const current = isCurrent(fn);
   const figures = stats.current.toObject(current);
   const capacityMah = Number(capacity);
   const life = current ? batteryLife(figures.mean, capacityMah) : "";
   const sd = setting && setting.body && setting.body.data && Object.keys(setting.body.data).length ? setting.body : null;
+  const word = shownSource === "ppk2" ? "samples" : "readings";
+  const count = figures.readings.toLocaleString("en-US");
 
   if (!watch) {
     return (
@@ -180,15 +202,29 @@ export default function MeterPage({ commands, onDone }) {
         </p>
       )}
 
-      <Card title="The meter" aside={<Button tone="quiet" onClick={loadSetting}>Check again</Button>}>
-        {sd ? (
-          <div className="space-y-1">
-            <p className="break-words text-[15px] font-medium">{headline("meter.show", sd.data)}</p>
-            {sd.data.in_series && <p className="text-[13px] text-amber-800 dark:text-amber-300">Set to current: the board is in series with the meter, so the meter's own settings must not be changed while it runs.</p>}
-            <p className="text-[13px] text-slate-600 dark:text-slate-400">Function, range and integration time are set at the meter's front panel. A lower integration time shows faster changes.</p>
-          </div>
-        ) : setting ? <ResultView outcome={setting} /> : <p className="text-[13px] text-slate-600 dark:text-slate-400">Asking the meter…</p>}
-      </Card>
+      {available.length > 1 && (
+        <div role="group" aria-label="Instrument" className="flex flex-wrap items-center gap-2">
+          <span className="text-[13px] text-slate-600 dark:text-slate-400">Read the</span>
+          {available.map((s) => (
+            <Button key={s} tone={source === s ? "primary" : "quiet"} aria-pressed={source === s} disabled={running} onClick={() => setChosen(s)}>{SOURCES[s]}</Button>
+          ))}
+        </div>
+      )}
+
+      {source === "meter" && find("meter.show") && (
+        <Card title="The meter" aside={<Button tone="quiet" onClick={loadSetting}>Check again</Button>}>
+          {sd ? (
+            <div className="space-y-1">
+              <p className="break-words text-[15px] font-medium">{headline("meter.show", sd.data)}</p>
+              {sd.data.in_series && <p className="text-[13px] text-amber-800 dark:text-amber-300">Set to current: the board is in series with the meter, so the meter's own settings must not be changed while it runs.</p>}
+              <p className="text-[13px] text-slate-600 dark:text-slate-400">Function, range and integration time are set at the meter's front panel. A lower integration time shows faster changes.</p>
+            </div>
+          ) : setting ? <ResultView outcome={setting} /> : <p className="text-[13px] text-slate-600 dark:text-slate-400">Asking the meter…</p>}
+        </Card>
+      )}
+      {source === "ppk2" && find("ppk2.show") && (
+        <Profiler commands={commands} shown={profiler} running={running} session={session} reload={loadProfiler} onDone={onDone} />
+      )}
 
       <Card title="Power over time">
         <div className="space-y-4">
@@ -199,9 +235,9 @@ export default function MeterPage({ commands, onDone }) {
             </p>
             <p className="text-[13px] text-slate-600 dark:text-slate-400" aria-label="Session">
               {running
-                ? `${session.state}, ${clock(latest ? latest.t_s : 0)} of ${clock(session.bound_s)}, ${figures.readings} readings${session.name ? `, to ${session.name}.csv` : ""}`
+                ? `${session.state}, ${clock(latest ? latest.t_s : 0)} of ${clock(session.bound_s)}, ${count} ${word}${session.name ? `, to ${session.name}.csv` : ""}`
                 : session && session.session > 0
-                  ? `${session.state === "error" ? "ended by a fault" : "ended"}: ${session.reason}. ${figures.readings} readings`
+                  ? `${session.state === "error" ? "ended by a fault" : "ended"}: ${session.reason}. ${count} ${word}`
                   : "No session has run since the service started."}
             </p>
           </div>
@@ -212,12 +248,12 @@ export default function MeterPage({ commands, onDone }) {
                 {DURATIONS.map(([s, label]) => <option key={s} value={String(s)}>{label}</option>)}
               </select>
             </Field>
-            <Button disabled={running || pending} onClick={() => run(watch, { bound_s: Number(bound) })}>Watch</Button>
+            <Button disabled={running || pending} onClick={() => run(watch, { bound_s: Number(bound), source })}>Watch</Button>
             {record && (
               <>
                 <div className="w-44"><Field label="Recording name"><input className={inputClass} value={recName} placeholder="the start time" disabled={running}
                   onChange={(e) => setRecName(e.target.value.toLowerCase())} aria-label="Name for the recording" autoComplete="off" spellCheck="false" /></Field></div>
-                <Button tone="quiet" disabled={running || pending} onClick={() => run(record, { bound_s: Number(bound), ...(recName.trim() ? { name: recName.trim() } : {}) })}>Record</Button>
+                <Button tone="quiet" disabled={running || pending} onClick={() => run(record, { bound_s: Number(bound), source, ...(recName.trim() ? { name: recName.trim() } : {}) })}>Record</Button>
               </>
             )}
             {stop && <Button tone="danger" disabled={!running || pending} onClick={() => run(stop)}>Stop</Button>}
@@ -233,9 +269,24 @@ export default function MeterPage({ commands, onDone }) {
             {current && <Figure label="Charge used" value={`${Number(figures.charge_mah.toPrecision(4))} mAh`} />}
           </dl>
 
+          {shownSource === "ppk2" && session && session.lost > 0 && (
+            <p role="note" className="text-[13px] text-amber-800 dark:text-amber-300">
+              {session.lost.toLocaleString("en-US")} samples were lost between the unit and the Pi, so the charge is a little low.
+            </p>
+          )}
+          {shownSource === "ppk2" && session && session.rate_low && (
+            <p role="note" className="text-[13px] text-amber-800 dark:text-amber-300">
+              The samples are arriving slower than the unit sends them: some may be missing without the counter showing it.
+            </p>
+          )}
+          {shownSource === "ppk2" && session && session.filtered > 0 && (
+            <p className="text-[13px] text-slate-600 dark:text-slate-400">
+              {session.filtered.toLocaleString("en-US")} samples taken just after the unit changed range were left out, as they are not the current.
+            </p>
+          )}
           {current && figures.mean !== null && figures.mean < 0 && (
             <p role="note" className="text-[13px] text-amber-800 dark:text-amber-300">
-              The current reads negative: it flows the other way through the meter, so the leads are probably the wrong way round. The numbers are right, only their sign is reversed.
+              The current reads negative: it flows the other way through the {shownSource === "ppk2" ? "unit" : "meter"}, so the leads are probably the wrong way round. The numbers are right, only their sign is reversed.
             </p>
           )}
           {current && (
@@ -245,8 +296,9 @@ export default function MeterPage({ commands, onDone }) {
             </div>
           )}
           <p className="text-[13px] text-slate-600 dark:text-slate-400">
-            This meter gives one reading per integration time and averages what happens inside it, so it shows sleep and awake levels and cycles of seconds or more. A radio burst of a few
-            milliseconds needs the Nordic Power Profiler.
+            {shownSource === "ppk2"
+              ? "The power profiler takes 100,000 samples a second. Each point on the chart is 0.2 s: its band runs from the lowest to the highest sample, so a burst of a few milliseconds shows as the top of the band."
+              : "This meter gives one reading per integration time and averages what happens inside it, so it shows sleep and awake levels and cycles of seconds or more. A radio burst of a few milliseconds needs the Nordic Power Profiler."}
           </p>
         </div>
       </Card>
@@ -262,7 +314,9 @@ export default function MeterPage({ commands, onDone }) {
                       <span className="block truncate font-mono text-[13px]">{r.name}.csv</span>
                       <span className="block text-xs text-slate-600 dark:text-slate-400">
                         {r.started ? new Date(r.started * 1000).toLocaleString() : "unknown start"}, {Math.max(1, Math.round(r.bytes / 1024))} KB
-                        {r.stats ? `, ${r.stats.readings} readings` : ""}{r.stats && r.stats.mean != null ? `, average ${si(r.stats.mean, r.unit || "")}` : ""}
+                        {available.length > 1 ? `, ${(SOURCES[r.source] || r.source).toLowerCase()}` : ""}
+                        {r.stats ? `, ${r.stats.readings.toLocaleString("en-US")} ${r.source === "ppk2" ? "samples" : "readings"}` : ""}{r.stats && r.stats.mean != null ? `, average ${si(r.stats.mean, r.unit || "")}` : ""}
+                        {r.lost > 0 ? `, ${r.lost.toLocaleString("en-US")} samples lost` : ""}
                         {r.recording ? ", recording now" : r.interrupted ? ", cut short" : ""}
                       </span>
                     </span>

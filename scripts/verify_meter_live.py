@@ -128,7 +128,7 @@ def meter_page(page, fake, bench, tag, shot):
     with open(dl.value.path()) as fh:
         text = fh.read().splitlines()
     check("%s Download gives the CSV: a header and one line per reading" % tag,
-          text[0] == "t_s,wall,value,unit,function,range,nplc,overload" and len(text) >= 3 and text[1].split(",")[3] == "A"
+          text[0] == "t_s,wall,value,unit,function,range,nplc,overload,min,max,n" and len(text) >= 3 and text[1].split(",")[3] == "A"
           and float(text[2].split(",")[0]) > float(text[1].split(",")[0]), text[:3])
     check("%s the list no longer says recording now once it has stopped" % tag, page.get_by_text("recording now").count() == 0)
     check("%s and the finished recording lists its readings, not zero" % tag, re.search(r"[1-9][0-9]* readings", page.get_by_label("Recordings").inner_text()) is not None,

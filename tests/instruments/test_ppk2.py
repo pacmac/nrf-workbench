@@ -763,6 +763,16 @@ class Session(Base):
         sess = s.session()
         self.assertEqual((sess["lost"], sess["filtered"], sess["rate_low"]), (7, 3, False))
 
+    def test_every_block_on_the_feed_carries_the_sessions_facts_so_a_page_shows_them_while_it_runs(self):
+        self.unit.lost_at = {5000: 4}
+        s = self.start_sampler()
+        s.start("watch", 60, source="ppk2")
+        self.assertTrue(until(lambda: s.session()["stats"]["readings"] >= 60000))
+        s.stop()
+        reads = [e.payload for e in self.host.streams.meter.since(0).events if e.type == "meter.reading"]
+        self.assertEqual(reads[0]["facts"]["lost"], 4)
+        self.assertEqual(set(reads[-1]["facts"]), {"lost", "filtered", "rate_low"})
+
     def test_a_stream_slower_than_98000_a_second_is_flagged(self):
         clock = {"t": 0.0}
 

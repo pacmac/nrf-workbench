@@ -226,7 +226,8 @@ class Sampler(object):
             self.bus.publish("meter.reading", "meter", {
                 "session": s.number, "source": s.source.name, "t_s": round(r.t, 3), "wall": wall, "value": None if r.overload else r.value,
                 "min": None if r.overload else r.lo, "max": None if r.overload else r.hi, "n": 0 if r.overload else r.n, "dt": r.dt, "overload": r.overload,
-                "unit": r.unit, "function": r.function, "range": r.range, "nplc": r.nplc})
+                "unit": r.unit, "function": r.function, "range": r.range, "nplc": r.nplc,
+                "facts": dict(r.facts)})                 # what only the source knows so far (lost, filtered, rate_low): the page shows it while the session runs
 
     # -- reading state --------------------------------------------------------------------------------
     def _current(self, s):

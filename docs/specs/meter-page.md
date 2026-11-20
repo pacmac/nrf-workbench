@@ -3,7 +3,7 @@
 Peter, 2026-11-19: "why does the dashboard not have anything for the meter control / readings / charts etc etc ?", "I was expecting a new Menu, not just a card !", and then:
 "full control of the meter would be nice, but at this stage I am primarily interested in power consumption. now it is limited to 30 seconds I believe, but it would be nice if that could
 be longer so that we can potentially monitor sleep and awake cycles of a device. Although that said, the NRF power profiler might be a more accurate tool for that, but I dont have that yet."
-Extends `meter.md`; where they differ this one is later.
+Extends `meter.md`; where they differ this one is later. Sessions can also read the Nordic Power Profiler (`ppk2.md`, later still): `meter.watch` and `meter.record` take a `source`, the CSV gained `min,max,n`, and the page has a switch.
 
 The first build is a card that asks only on a button press: at most 150 readings (30 s). Peter's own use shows the need: Activity, 09:44 and 09:45, `meter.sample` read 7.17 mA, then 0.102 mA:
 a board going to sleep. A node that beats every 900 s needs minutes to hours.

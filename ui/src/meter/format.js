@@ -21,6 +21,13 @@ export function headline(command, d) {
     const range = d.range != null ? `, range ${si(d.range, unit)}${d.autorange ? " (auto)" : ""}` : "";
     return `${String(d.identity).split(",").join(", ")}: ${mode}${range}`;      // the meter's comma-joined id has no spaces, so it would not wrap
   }
+  if (command === "ppk2.show" || command === "ppk2.mode" || command === "ppk2.supply") {
+    const mode = d.mode === "source" ? "source mode" : d.mode === "ampere" ? "ampere mode" : "mode not known";
+    // The unit does not say whether its output is on: "off" and "on" are only what this service last switched it to.
+    const output = d.mode === "ampere" ? "" : d.supply === "on" ? `, output on at ${d.vdd_mv} mV` : d.supply === "off" ? `, output off (${d.vdd_mv} mV when on)`
+      : `, output state unknown (${d.vdd_mv} mV when on)`;
+    return `Power profiler ${d.serial}: ${mode}${output}`;
+  }
   if (command === "meter.read") return d.overload ? `Overload on the ${si(d.range, unit)} range` : (unit ? si(d.value, unit) : `${d.value} (unit not known for ${d.function})`);
   if (command === "meter.sample") {
     if (d.mean == null) return `${d.n} readings, all overload`;

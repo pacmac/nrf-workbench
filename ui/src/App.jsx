@@ -171,7 +171,7 @@ export default function App() {
   const linksPath = linksRow ? linksRow.path : null;
   const gpioOn = Boolean(authenticated && (info.commands || []).some((c) => c.name === "gpio.header"));   // only on a Pi with a pin-map folder
   const projectsOn = Boolean(authenticated && (info.commands || []).some((c) => c.name === "project.list"));   // needs the wiring folder
-  const meterOn = Boolean(authenticated && (info.commands || []).some((c) => c.name === "meter.show"));        // needs the meter's address in the configuration
+  const meterOn = Boolean(authenticated && (info.commands || []).some((c) => c.name === "meter.show" || c.name === "ppk2.show"));        // needs the meter's address or the PPK2 in the configuration
 
   useEffect(() => {
     if (!consoleOn) return undefined;

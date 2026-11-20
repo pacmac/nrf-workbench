@@ -30,12 +30,21 @@ then "I have plugged it in". Extends `meter-page.md`; where they differ this one
    run is under 98,000 (2 % under the 100,000 the device sends; measured 99,466 over the first second) is flagged `rate_low`. Both numbers are on the session and in the sidecar.
 6. **Range changes are filtered like the reference.** The PPK2 switches range automatically; the samples straight after a switch are not the current. The reference library holds the output for **3 samples** after a range change and so
    do we: those 3 words are left out of the statistics and counted in `filtered`. **Unproven**: with nothing attached the unit never changed range, so this is not yet seen working; it is checked against a real load in VERIFY.
-7. **Reading cost is derived.** Reducing 20,000 words took 9.8 ms (mask and count unique values: the calibration is applied to the at most 5 x 16,384 distinct (range, ADC) values, not per sample), counter check 4.1 ms,
-   logic 2.7 ms on this Pi, worst case on random data: about 17 ms per 0.2 s, **8.5 % of one core**. Reads are 0.2 s of data at a time; the kernel's tty buffer (64 KB, 160 ms of stream) is well above the 17 ms the thread is away.
+7. **Reading cost is measured, not guessed.** The first build cost **24 % of a core** during a real recording (2026-11-20), three times the 8.5 % the benchmark on random words promised: the kernel hands a USB serial port's bytes over in
+   128-byte pieces (6,250 reads in 2 s, 8 % of a core by themselves) and the per-sample counter check was the largest part of the reduction (16 ms of 25 ms a block). Now: a read waits 8 ms after the port turns readable so about 3 kB gathers
+   (the line discipline's buffer is 4,096 bytes and the stream fills it in 10.2 ms; the kernel's own 64 KB buffer is 160 ms of stream); a block in one range (a steady load) is counted in C with no per-sample Python; a block with no loss is
+   the counter run and is checked with one comparison; the calibration is applied to the at most 5 x 16,384 distinct (range, ADC) values, not per sample. A block that changes range inside it, or loses samples, still takes the per-sample path,
+   and a test holds both paths to the straight loop. **Measured after: 5.3 % of one core over a 30 s recording, 3,000,000 samples, 0 lost.**
 8. **Source mode and the supply switch are gated.** In source mode the PPK2 powers the board (0.8 to 5 V); the multimeter's lesson applies in both directions: the service cannot see what is wired. So:
    - `ppk2.mode` to **ampere** is how a board with its own supply is measured, and to **source** powers nothing yet; the PPK2 does not report whether its output is on, so after a restart of the service the output state is **unknown**.
-     Leaving source mode while the output is on or unknown can cut a board's power, so it is refused `supply_unconfirmed` unless `accept_supply` is true. Entering source mode, or leaving it when this service itself switched the output off, needs no tick.
+     Leaving source mode while the output is on or unknown can cut a board's power, so it is refused `supply_unconfirmed` unless `accept_supply` is true. Entering source mode needs no tick; leaving it when this service itself switched the output
+     off needs none either. Asking for the mode the unit is already in writes nothing. Coming back into source mode the output is **unknown again** (the unit may resume an output it had on and does not say so).
    - `ppk2.supply` sets the voltage (800 to 5000 mV, refused `voltage_unsafe` outside) and switches the output. **Switching on** needs source mode (`ppk2_mode` refuses otherwise) and `accept_supply` true (`supply_unconfirmed`). Off needs no tick.
+     The voltage is written **before** the switch, so the output never comes on at an older voltage.
+   - **The unit does not report its voltage back.** The first design read the metadata's `VDD` after a voltage command and failed if it differed. On the real unit `VDD` stayed 4000 after the command (it is the figure at connect), so the check could
+     never pass, and it ran after the switch: a first stepped ramp into an LED left the output on for a moment at an unverified voltage until its `finally` switched it off. The check is gone. What was set is remembered by the service and shown with
+     `vdd_from` ("set by this service", or "the unit's own figure when it was read" before any); the effect is the proof: the LED's current rose with the set voltage (about 1 uA at 2.2 V, 30 uA at 2.4 V, milliamps at 2.6 V, 2026-11-20). The frame is
+     the voltage in mV as two bytes, high then low (the reference library's offset arithmetic works out to exactly that).
    - No other byte is ever sent: a whitelist of the six command shapes, and a test fails if any other can leave the module.
 
 ## Configuration
@@ -48,9 +57,9 @@ is refused `capability_missing`. On the bench `streams.meter.retain` stays 20,00
 
 | command | effect | what it does |
 |---|---|---|
-| `ppk2.show` | read | `{reachable, serial, port, mode: ampere/source/unknown, vdd_mv, calibrated, hw, supply: on/off/unknown}`; opens the port only for the metadata query, never starts a stream. While a session is using the PPK2 it is refused `meter_busy` and the session carries the facts |
-| `ppk2.mode` `mode`, `accept_supply`? | write | ampere or source, by the rule above; read back from the metadata (`no_reply` if it did not take) |
-| `ppk2.supply` `on`, `mv`?, `accept_supply`? | write | the voltage and the switch, by the rule above; the voltage read back from the metadata |
+| `ppk2.show` | read | `{reachable, serial, port, mode: ampere/source/unknown, vdd_mv, vdd_from, calibrated, hw, supply: on/off/unknown}`; opens the port only for the metadata query, never starts a stream. While a session is using the PPK2 it is refused `meter_busy` and the session carries the facts |
+| `ppk2.mode` `mode`, `accept_supply`? | write | ampere or source, by the rule above; the mode is read back from the metadata (which does report it: `no_reply` if it did not take) |
+| `ppk2.supply` `on`, `mv`?, `accept_supply`? | write | the voltage and the switch, by the rule above; the unit reports neither back, so the answer says what was set |
 | `meter.watch` / `meter.record` | write | gain a `source` argument: `meter` (the default when the multimeter is configured) or `ppk2` (the default when only it is) |
 | `meter.session`, `meter.profile`, `meter.recordings` | read | gain `source`, `lost`, `filtered`, `rate_low` |
 
@@ -71,13 +80,17 @@ so an older file still reads. For the PPK2, `range` is the highest range index s
 
 A source switch at the top of the Meter page (only when both are configured) and the multimeter's setting line becomes the instrument's: for the PPK2, *mode (ampere or source), supply voltage, calibrated yes/no, lost, filtered*.
 Watch, Record, Stop, the figure, the chart, the figures and battery life are unchanged. The note about averaging changes with the source: for the PPK2 it says each point is a 0.2 s band from lowest to highest, so a burst shows as the
-band's top edge. Mode and supply controls on the page are **deferred** (the commands exist; the page shows the mode and says to set it with `ppk2.mode`). Devices and Home get a *Power profiler* card like the multimeter's; Help gets a topic.
+band's top edge. The profiler's card also carries **the mode and supply controls** (built after Peter wired an LED across the output): Ampere and Source buttons, a voltage field, Switch on and Switch off, and one tick,
+"I mean to change what powers the board", without which Switch on stays locked and a mode change away from source is refused by the server with its reason. They are locked while a session runs, because a session holds the port. The lost
+and filtered samples show while it runs (every block on the feed carries the session's `facts`), not only at the end. Devices and Home get a *Power profiler* card like the multimeter's; Help gets a topic.
 
 ## Deferred (named so they are not forgotten)
 
 - **Raw capture of a burst**: `ppk2.capture` for 1 to 10 s at the full 100 ksps, kept as a file, to look inside one wake. 10 s is 4 MB of words; not built.
 - **The 8 logic inputs** (bits 24 to 31): wiring a board's GPIO to one would mark exactly when it wakes. The bytes are already read and counted in the benchmark; recording them per block is not built.
-- Page controls for mode and supply; a project `expect` for a current range.
+- **Switching the supply during a session**: a session holds the port, so the supply cannot be switched while it records. Powering a board on in the middle of a recording to catch its start-up current needs the writes to go through the
+  session's own port, between blocks (at most 0.2 s late). Not built; today the output is switched on first and the recording started after, so the first 0.2 s or so of the inrush is missed.
+- A project `expect` for a current range.
 
 ## Checks
 
@@ -88,8 +101,10 @@ and counted, across a block boundary too; a silent unit ends the session with `e
 sources; `ppk2.show` is refused while a session runs; **the whitelist**: every byte written is one of the six shapes (a test fails on any other); the gate: leaving source mode with the output on or unknown is `supply_unconfirmed`, entering it
 is not, switching on without source mode is `ppk2_mode`, without the tick `supply_unconfirmed`, voltage outside 800 to 5000 is `voltage_unsafe`; the CSV's old columns are where they were. Envelope: min/max/mean/count exact through every merge
 with blocks of different `n`, in Python and in the page's code, cross-checked. Mutants on the reducer, the conversion, the range filter, the counter, the gate and the whitelist. Browser: both themes, phone and desktop, the switch, a PPK2
-watch and recording, the lost/filtered line, the failure shown. **Live**: `ppk2.show` on the real unit; a 60 s recording with `lost` 0 and the service's CPU under 15 % of a core; a stop that leaves the unit quiet; the unit's mode and supply
-are not written on the real unit without Peter's word (the gate is proved on the fake).
+watch and recording, the lost/filtered line, the mode and supply controls and their tick, the failure shown (`scripts/verify_ppk2_live.py`, 132 checks). The real port wrapper on a pty (bytes in order, never more than asked, the surplus kept,
+silence, a hang-up). **Live, on the real unit, 2026-11-20**: `ppk2.show`; 20 s and 30 s recordings with `lost` 0 and 2,000,000 and 3,000,000 samples; the service at 5.3 % of a core; a stop that leaves the unit quiet; a stepped power-on of an LED with
+its series resistor from 1.8 V in 0.2 V steps (the voltage frame took effect, `filtered` 234 and 213 samples at the range changes, the output off at the end). **Unproven**: that 3 samples is the right hold-out after a range change (the filter ran and
+counted, but what a step looks like inside a block has not been inspected); that the unit does not resume an output after a mode change (hence "unknown again").
 
 ## Files this spec allows
 

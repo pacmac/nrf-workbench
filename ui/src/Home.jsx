@@ -1,6 +1,7 @@
 import { useContext } from "react";
 import DeviceRow from "./DeviceRow.jsx";
 import Meter from "./meter/Meter.jsx";
+import { ProfilerCheck } from "./meter/Profiler.jsx";
 import { sentence } from "./overview.js";
 import { Card, Lamp, NavContext, PageHeader, cx } from "./ui.jsx";
 import { BACKGROUND_READS, clock, when } from "./format.js";
@@ -235,6 +236,7 @@ export default function Home({ overview, session, feed, activity, info }) {
         </div>
         <div className="min-w-0 space-y-4">
           <Meter commands={info.commands} />
+          <ProfilerCheck commands={info.commands} />
           {data.header && (
             <Section title="The Pi" page="gpio">
               <div className="space-y-3 py-2">
