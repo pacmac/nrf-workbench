@@ -85,16 +85,24 @@ Times are kept as given. Stages are saved only against a recording (the page say
 
 | command | args | effect |
 |---|---|---|
-| `meter.stage_set` | `recording`, `name`, `start_s`, `end_s` | write: add the stage, or change the one of that name |
+| `meter.stage_set` | `recording`, `name`, `start_s`, `end_s`, `every`?, `offset`? | write: add the stage, or change the one of that name |
 | `meter.stage_delete` | `recording`, `name` | write: remove it; `stage_unknown` if there is none |
 | `meter.stages` | `recording`, `volts`? | read: the stage table over that recording's saved wakes |
 
-**The stage table** (`meter.stages`): for each stage, over every wake held for the recording (up to 20): in each wake the samples in `[start_s, end_s)` give a mean current, a peak and a charge; the answer gives, per stage, `mean` (of the wakes' means),
-`lowest_mean` and `highest_mean` (the spread across wakes: a stage that costs the same each time has them close), `peak` (the highest sample in any wake), `charge_c` (mean over the wakes) and `share` (of the tagged stages' charge), with `length_s`
-(`end_s - start_s`) and `wakes` (how many contributed: a stage outside a short capture contributes nothing). `untagged_charge_c` is the rest of the capture window (lead-in, tail, anything not named), and `energy_j` per stage is charge × `volts` when volts is given.
-Exact: every figure is from the raw samples, not from the envelope.
+**Wakes of different kinds.** The bench RAK alternates two shapes of wake (found 2026-11-20): a beacon wake (CPU ramp, setup, TX 1, then the RX window) and a second-send wake (the end of the RX window, TX 2, shutdown). One set of stage
+boundaries cannot describe both, and averaging them gives a 6.5 mA wake and a 0.02 mA one as one stage. So a stage may apply to only some wakes: `every` (1 to 8, default 1) and `offset` (0 to every - 1, default 0) select the wakes whose capture number `n`
+has `n % every == offset`. `every` 1 is every wake (what a stage was before); for the RAK, `every` 2 with `offset` 1 is the beacon wakes (1, 3, 5 ...) and `offset` 0 the second-send wakes (2, 4, 6 ...). Capture numbers only rise (a recording keeps the newest 20 but
+their numbers stay), so the pattern does not shift as old wakes are dropped; a recording that happened to start on the other kind has the offsets the other way round, and the table says which wake numbers each stage used so that is visible. This is by number, which suits a
+device that alternates and is an accident of its firmware; grouping wakes by their shape is not built. The overlap rule applies only between stages that can apply to the same wake: two selectors `(e1, o1)` and `(e2, o2)` can both hold for some `n` exactly when
+`(o1 - o2)` is a multiple of `gcd(e1, e2)`, and only then are overlapping times refused.
 
-**On the scope:** drag across the trace to zoom, then name the stretch as a stage (a name box and an "Add as a stage" button; the stretch is rounded to 0.1 ms); saved stages are shaded on the trace with their names above the shading, listed with a delete,
+**The stage table** (`meter.stages`): for each stage, over every wake it applies to, among the held ones (up to 20): in each wake the samples in `[start_s, end_s)` give a mean current, a peak and a charge; the answer gives, per stage, `mean` (of the wakes' means),
+`lowest_mean` and `highest_mean` (the spread across wakes: a stage that costs the same each time has them close), `peak` (the highest sample in any wake), `charge_c` (mean over the wakes) and `share` (of the charge of the stages that apply to the same wakes), with `length_s`
+(`end_s - start_s`), `every`, `offset`, `wakes` (how many contributed: a stage outside a short capture contributes nothing) and `numbers` (which wakes). `groups` lists each set of wakes that stages share: `{every, offset, numbers, stages, tagged_charge_c,
+untagged_charge_c}`, the untagged charge being the rest of those wakes' capture windows (lead-in, tail, anything not named). `energy_j` per stage is charge × `volts` when volts is given. Exact: every figure is from the raw samples, not from the envelope.
+
+**On the scope:** drag across the trace to zoom, then name the stretch as a stage (a name box, an "Applies to" choice of all wakes, odd wakes or even wakes, and an "Add as a stage" button; the stretch is rounded to 0.1 ms; the choice sets `every` and `offset`, the API takes any);
+the table is in groups, each headed by the wakes it used; saved stages are shaded on the trace with their names above the shading, listed with a delete,
 and the table is shown under the trace. Without a recording behind the wakes the page says stages are kept with a recording.
 
 ## Result codes (core.md rows)

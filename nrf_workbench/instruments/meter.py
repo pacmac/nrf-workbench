@@ -287,9 +287,9 @@ def register(registry, host):
             return Result.refused("capture_unknown", "no capture %d is held (held: %s)" % (n, ", ".join(str(i) for i in held) or "none"), {"held": held})
         return Result.success(data, "wake %d: %.4g s, peak %.4g A" % (n, data["t1"] - data["t0"], data["peak"]))
 
-    def stage_set(ctx, recording, name, start_s, end_s):
-        try:
-            stages = sampler(ctx).stage_set(recording, name, start_s, end_s)
+    def stage_set(ctx, recording, name, start_s, end_s, every=None, offset=None):
+        try:                                                  # an argument not given arrives as None
+            stages = sampler(ctx).stage_set(recording, name, start_s, end_s, 1 if every is None else every, 0 if offset is None else offset)
         except samplerlib.RecordingUnknown as exc:
             return unknown(exc, recording)
         except capturelib.StageError as exc:
@@ -341,7 +341,10 @@ def register(registry, host):
     add(Command("meter.stage_set", "Name a stretch of a wake as a stage of a recording: seconds from the wake's start, so it means the same in every wake. Adds it, or changes the stage of that name. "
                 "Stages may not overlap; at most 12.", stage_set,
                 args=(rec, stage_name, Arg("start_s", type="float", unit="s", doc="where the stage starts, seconds from the wake's start (negative is before it)"),
-                      Arg("end_s", type="float", unit="s", doc="where it ends")), requires=STORE, effect="write", result="recording, stages"))
+                      Arg("end_s", type="float", unit="s", doc="where it ends"),
+                      Arg("every", type="int", required=False, doc="1 to 8, default 1: the stage is for every that-many wakes (2 for a device that alternates two kinds of wake)"),
+                      Arg("offset", type="int", required=False, doc="0 to every - 1, default 0: which of them; the wakes whose number n has n % every == offset")),
+                requires=STORE, effect="write", result="recording, stages"))
     add(Command("meter.stage_delete", "Remove a stage from a recording.", stage_delete, args=(rec, stage_name), requires=STORE, effect="write", result="recording, stages"))
     add(Command("meter.stages", "The stage table of a recording: for each named stage, over the wakes it saved, the mean current, its spread from wake to wake, the peak, the charge and its share of the tagged charge.",
                 stage_table, args=(rec, Arg("volts", type="float", required=False, unit="V", doc="the supply voltage, to add each stage's energy")), requires=STORE,

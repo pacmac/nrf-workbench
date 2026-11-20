@@ -312,10 +312,10 @@ class Sampler(object):
     def stage_list(self, recording):
         return capture.load_stages(self._stages_path(recording))
 
-    def stage_set(self, recording, name, start_s, end_s):
+    def stage_set(self, recording, name, start_s, end_s, every=1, offset=0):
         """The recording's stages with this one added or changed (capture.StageError for a rule broken)."""
         path = self._stages_path(recording)
-        stages = capture.set_stage(capture.load_stages(path), name, start_s, end_s)
+        stages = capture.set_stage(capture.load_stages(path), name, start_s, end_s, every, offset)
         capture.save_stages(path, stages)
         return stages
 
@@ -333,9 +333,8 @@ class Sampler(object):
         stages = capture.load_stages(path)
         ws = self._wakes(recording)
         if ws is None:
-            return {"recording": recording, "wakes": 0, "stages": [dict(s, length_s=s["end_s"] - s["start_s"], wakes=0, mean=None, lowest_mean=None, highest_mean=None, peak=None,
-                                                                         charge_c=None, share=None, energy_j=None) for s in stages],
-                    "tagged_charge_c": 0.0, "untagged_charge_c": None}
+            return {"recording": recording, "wakes": 0, "stages": [dict(s, length_s=s["end_s"] - s["start_s"], wakes=0, numbers=[], mean=None, lowest_mean=None, highest_mean=None,
+                                                                         peak=None, charge_c=None, share=None, energy_j=None) for s in stages], "groups": []}
         return dict(ws.stage_table(stages, volts), recording=recording)
 
     def recordings(self):

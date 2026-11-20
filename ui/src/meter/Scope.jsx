@@ -23,6 +23,12 @@ const TINTS = [
   { rect: "fill-fuchsia-300/50 dark:fill-fuchsia-500/25", chip: "bg-fuchsia-200 text-fuchsia-950 dark:bg-fuchsia-900 dark:text-fuchsia-100" },
 ];
 
+// Which wakes a stage is for (docs/specs/ppk2-stages.md, "Wakes of different kinds"): all, or the odd or even ones of a device that alternates two kinds of wake (the API takes any every and offset).
+const APPLIES = { all: { every: 1, offset: 0 }, odd: { every: 2, offset: 1 }, even: { every: 2, offset: 0 } };
+const groupLabel = (g) => (g.every === 1 ? "All wakes" : g.every === 2 ? (g.offset === 1 ? "Odd wakes" : "Even wakes") : `Every ${g.every}th wake, the ${g.offset}th of each ${g.every}`);
+const numbersText = (g) => (g.numbers.length ? ` (${g.numbers.slice(0, 8).join(", ")}${g.numbers.length > 8 ? ", …" : ""})` : " (none held yet)");
+const appliesTo = (s, n) => n % (s.every || 1) === (s.offset || 0);        // whether stage s is for wake number n
+
 const find = (commands, name) => (commands || []).find((c) => c.name === name) || null;
 const share = (x) => (x === null || x === undefined ? "—" : x < 0.001 ? "under 0.1 %" : `${(x * 100).toFixed(x < 0.1 ? 1 : 0)} %`);
 
@@ -41,6 +47,7 @@ export function Scope({ commands, count, session, recording }) {
   const [problem, setProblem] = useState("");
   const [table, setTable] = useState(null);         // meter.stages' answer for the recording
   const [name, setName] = useState("");
+  const [applies, setApplies] = useState("all");     // "all", "odd" or "even": which wakes a new stage is for
   const [busy, setBusy] = useState(false);
   const [stageProblem, setStageProblem] = useState("");
   const svg = useRef(null);
@@ -110,6 +117,7 @@ export function Scope({ commands, count, session, recording }) {
   if (!list || !one) return null;
   const chart = data ? scopeChart(data.buckets, W, H, { log, unit: "A" }) : null;
   const stages = table ? table.stages : [];
+  const mine = data ? stages.filter((s) => appliesTo(s, data.n)) : [];          // the stages that are for the wake on show
   const unitX = (e) => {
     const box = svg.current.getBoundingClientRect();
     return ((e.clientX - box.left) / box.width) * W;
@@ -165,7 +173,7 @@ export function Scope({ commands, count, session, recording }) {
                 <svg ref={svg} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={`Current of wake ${data.n}, from ${timeLabel(chart.t0, chart.span)} to ${timeLabel(chart.t1, chart.span)}`}
                   className="h-48 w-full touch-none rounded-md bg-slate-100 dark:bg-slate-950" style={{ cursor: "crosshair" }}
                   onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => setDrag(null)}>
-                  {stages.filter((s) => s.end_s > chart.t0 && s.start_s < chart.t1).map((s) => {
+                  {mine.filter((s) => s.end_s > chart.t0 && s.start_s < chart.t1).map((s) => {
                     const a = chart.at(s.start_s);
                     const b = chart.at(s.end_s);
                     return (
@@ -197,9 +205,9 @@ export function Scope({ commands, count, session, recording }) {
             ) : (
               <p className="text-[13px] text-slate-600 dark:text-slate-400">Reading the wake…</p>
             )}
-            {stages.length > 0 && (
+            {mine.length > 0 && (
               <ul className="flex flex-wrap gap-2" aria-label="Stage colours">
-                {stages.map((s, i) => <li key={s.name} className={`rounded px-2 py-0.5 text-xs ${TINTS[i % TINTS.length].chip}`}>{s.name}</li>)}
+                {mine.map((s) => <li key={s.name} className={`rounded px-2 py-0.5 text-xs ${TINTS[stages.indexOf(s) % TINTS.length].chip}`}>{s.name}</li>)}
               </ul>
             )}
             {data && (
@@ -224,7 +232,16 @@ export function Scope({ commands, count, session, recording }) {
                   <div className="flex flex-wrap items-end gap-3">
                     <p className="pb-2 text-[13px]" aria-label="Selected stretch">Selected: {timeLabel(rounded(win.t0), span)} to {timeLabel(rounded(win.t1), span)}</p>
                     <div className="w-56 max-w-full"><Field label="Stage name"><input className={inputClass} value={name} maxLength={40} onChange={(e) => setName(e.target.value)} aria-label="Stage name" autoComplete="off" /></Field></div>
-                    <Button disabled={busy || !nameOk} onClick={() => write(setStage, { recording, name: name.trim(), start_s: rounded(win.t0), end_s: rounded(win.t1) })}>Add as a stage</Button>
+                    <div className="w-44 max-w-full">
+                      <Field label="Applies to">
+                        <select className={inputClass} aria-label="Applies to" value={applies} onChange={(e) => setApplies(e.target.value)}>
+                          <option value="all">All wakes</option>
+                          <option value="odd">Odd wakes (1, 3, 5…)</option>
+                          <option value="even">Even wakes (2, 4, 6…)</option>
+                        </select>
+                      </Field>
+                    </div>
+                    <Button disabled={busy || !nameOk} onClick={() => write(setStage, { recording, name: name.trim(), start_s: rounded(win.t0), end_s: rounded(win.t1), ...APPLIES[applies] })}>Add as a stage</Button>
                   </div>
                 ) : (
                   <p className="text-[13px] text-slate-600 dark:text-slate-400">Drag across the chart to select a stretch, then name it: a stage is the same stretch of every wake, counted from the wake's start.</p>
@@ -243,11 +260,15 @@ export function Scope({ commands, count, session, recording }) {
                           <th scope="col" className="py-1 font-normal">Charge per wake</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                        {stages.map((s, i) => (
+                      {(table.groups || []).map((g) => (
+                      <tbody key={`${g.every}:${g.offset}`} className="divide-y divide-slate-200 dark:divide-slate-800" aria-label={`${groupLabel(g)}${numbersText(g)}`}>
+                        {(table.groups || []).length > 1 || g.every !== 1 ? (
+                          <tr><th colSpan={4} scope="colgroup" className="pt-3 pb-1 text-left text-[13px] font-semibold">{groupLabel(g)}<span className="font-normal text-slate-600 dark:text-slate-400">{numbersText(g)}</span></th></tr>
+                        ) : null}
+                        {stages.filter((s) => s.every === g.every && s.offset === g.offset).map((s) => (
                           <tr key={s.name}>
                             <th scope="row" className="py-2 pr-3 align-top font-normal">
-                              <span className={`rounded px-2 py-0.5 text-[13px] font-semibold ${TINTS[i % TINTS.length].chip}`}>{s.name}</span>
+                              <span className={`rounded px-2 py-0.5 text-[13px] font-semibold ${TINTS[stages.indexOf(s) % TINTS.length].chip}`}>{s.name}</span>
                               <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">{timeLabel(s.start_s, s.length_s)} to {timeLabel(s.end_s, s.length_s)}, {timeLabel(s.length_s, s.length_s)} long</div>
                               {delStage && <div className="mt-1"><Button tone="quiet" disabled={busy} onClick={() => write(delStage, { recording, name: s.name })} aria-label={`Remove the stage ${s.name}`}>Remove</Button></div>}
                             </th>
@@ -263,10 +284,12 @@ export function Scope({ commands, count, session, recording }) {
                           </tr>
                         ))}
                       </tbody>
+                      ))}
                     </table>
                   </div>
                   <p className="text-xs text-slate-600 dark:text-slate-400">
-                    Over {table.wakes} saved {table.wakes === 1 ? "wake" : "wakes"}, from their raw samples. {table.untagged_charge_c === null ? "" : `The rest of a wake, not in a stage: ${chargeText(table.untagged_charge_c)}.`}
+                    Over {table.wakes} saved {table.wakes === 1 ? "wake" : "wakes"}, from their raw samples.
+                    {(table.groups || []).filter((g) => g.untagged_charge_c !== null).map((g) => ` The rest of ${(table.groups || []).length > 1 ? groupLabel(g).toLowerCase() : "a wake"}, not in a stage: ${chargeText(g.untagged_charge_c)}.`).join("")}
                   </p>
                 </div>
               )}

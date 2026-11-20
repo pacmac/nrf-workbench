@@ -25,6 +25,7 @@ LEAD_BLOCKS_MAX = 5                          # the lead-in goes back at most 5 b
 POINTS_DEFAULT, POINTS_MAX = 1000, 2000      # a wide chart's pixels; the envelope's own bound (about twice that)
 KEEP_DISK = 20                               # wakes kept on disk per recording: the stage table needs the spread across wakes and 20 shows it; worst case 20 x 2 MB before compression
 MAX_STAGES = 12                              # a wake has a handful of stages: more would not fit a table a person reads
+MAX_EVERY = 8                                # a device that alternates between kinds of wake has two or three; 8 is room for more
 NAME_MAX = 40
 ZLIB_LEVEL = 1                               # a wake is mostly flat, so the fastest level already shrinks it a lot, and the session thread must not stall (the kernel buffers 160 ms)
 
@@ -345,39 +346,56 @@ class WakeSet(object):
         """For each stage, over every wake: the stretch's mean current, peak and charge in each wake, and from them the mean, the spread across wakes, the peak, the mean charge and the
         share of the tagged stages' charge. Exact: from the decoded samples, not an envelope. A stage outside a capture contributes nothing from it."""
         rate = float(SAMPLE_RATE_HZ)
-        per = [{"means": [], "peaks": [], "charges": []} for _ in stages]
-        windows, tagged_each, wakes = [], [], 0
-        for c in self._items():
+        groups = {}                                          # (every, offset) -> the stages that share those wakes, and what each wake gave
+        for k, s in enumerate(stages):
+            groups.setdefault((s["every"], s["offset"]), {"stages": [], "numbers": [], "windows": [], "tagged": []})["stages"].append(k)
+        per = [{"means": [], "peaks": [], "charges": [], "numbers": []} for _ in stages]
+        items = self._items()
+        for c in items:
+            applicable = [key for key in groups if c.n % key[0] == key[1]]
+            if not applicable:
+                continue
             values, start = self._values(c)
-            wakes += 1
-            tagged = 0.0
-            for k, s in enumerate(stages):
-                i0 = max(0, start + int(round(s["start_s"] * rate)))
-                i1 = min(len(values), start + int(round(s["end_s"] * rate)))
-                if i1 <= i0:
-                    continue
-                seg = values[i0:i1]
-                q = sum(seg) / rate
-                per[k]["means"].append(sum(seg) / len(seg))
-                per[k]["peaks"].append(max(seg))
-                per[k]["charges"].append(q)
-                tagged += q
-            windows.append(sum(values) / rate)
-            tagged_each.append(tagged)
-        rows, total = [], 0.0
-        for s, p in zip(stages, per):
-            if p["charges"]:
-                total += sum(p["charges"]) / len(p["charges"])
+            window = sum(values) / rate
+            for key in applicable:
+                g, tagged = groups[key], 0.0
+                for k in g["stages"]:
+                    s = stages[k]
+                    i0 = max(0, start + int(round(s["start_s"] * rate)))
+                    i1 = min(len(values), start + int(round(s["end_s"] * rate)))
+                    if i1 <= i0:
+                        continue
+                    seg = values[i0:i1]
+                    q = sum(seg) / rate
+                    per[k]["means"].append(sum(seg) / len(seg))
+                    per[k]["peaks"].append(max(seg))
+                    per[k]["charges"].append(q)
+                    per[k]["numbers"].append(c.n)
+                    tagged += q
+                g["numbers"].append(c.n)
+                g["windows"].append(window)
+                g["tagged"].append(tagged)
+        totals = {}
+        for key, g in groups.items():
+            totals[key] = sum(sum(per[k]["charges"]) / len(per[k]["charges"]) for k in g["stages"] if per[k]["charges"])
+        rows = []
         for s, p in zip(stages, per):
             n = len(p["charges"])
             charge = sum(p["charges"]) / n if n else None
-            rows.append({"name": s["name"], "start_s": s["start_s"], "end_s": s["end_s"], "length_s": s["end_s"] - s["start_s"], "wakes": n,
+            total = totals[(s["every"], s["offset"])]
+            rows.append({"name": s["name"], "start_s": s["start_s"], "end_s": s["end_s"], "length_s": s["end_s"] - s["start_s"], "every": s["every"], "offset": s["offset"],
+                         "wakes": n, "numbers": p["numbers"],
                          "mean": sum(p["means"]) / n if n else None, "lowest_mean": min(p["means"]) if n else None, "highest_mean": max(p["means"]) if n else None,
                          "peak": max(p["peaks"]) if n else None, "charge_c": charge,
                          "share": (charge / total) if n and total > 0 else None,
                          "energy_j": charge * volts if n and volts else None})
-        untagged = [w - t for w, t in zip(windows, tagged_each)]
-        return {"wakes": wakes, "stages": rows, "tagged_charge_c": total, "untagged_charge_c": sum(untagged) / len(untagged) if untagged else None}
+        out = []
+        for key in sorted(groups):
+            g = groups[key]
+            rest = [w - t for w, t in zip(g["windows"], g["tagged"])]
+            out.append({"every": key[0], "offset": key[1], "numbers": g["numbers"], "stages": [stages[k]["name"] for k in g["stages"]],
+                        "tagged_charge_c": totals[key], "untagged_charge_c": sum(rest) / len(rest) if rest else None})
+        return {"wakes": len(items), "stages": rows, "groups": out}
 
 
 # -- stages: named stretches of a wake, kept with the recording -----------------------------------
@@ -387,8 +405,14 @@ class StageError(ValueError):
         self.field = field
 
 
-def set_stage(stages, name, start_s, end_s):
-    """`stages` with the stage `name` added, or changed if one of that name (ignoring case) is there, in order of start. StageError for a rule broken."""
+def shares_a_wake(e1, o1, e2, o2):
+    """Whether some wake number n has n % e1 == o1 and n % e2 == o2: when (o1 - o2) is a multiple of gcd(e1, e2) (the Chinese remainder theorem)."""
+    return (o1 - o2) % math.gcd(e1, e2) == 0
+
+
+def set_stage(stages, name, start_s, end_s, every=1, offset=0):
+    """`stages` with the stage `name` added, or changed if one of that name (ignoring case) is there, in order of start. It applies to the wakes whose number n has n % every == offset.
+    StageError for a rule broken."""
     name = (name if isinstance(name, str) else "").strip()
     if not 1 <= len(name) <= NAME_MAX:
         raise StageError("a stage name is 1 to %d characters" % NAME_MAX, "name")
@@ -397,13 +421,17 @@ def set_stage(stages, name, start_s, end_s):
             raise StageError("%s is a number of seconds from the wake's start" % field, field)
     if not start_s < end_s:
         raise StageError("start_s must be before end_s", "end_s")
+    if isinstance(every, bool) or not isinstance(every, int) or not 1 <= every <= MAX_EVERY:
+        raise StageError("every is 1 to %d: the stage applies to every that-many wakes" % MAX_EVERY, "every")
+    if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset < every:
+        raise StageError("offset is 0 to every - 1: which of the repeating wakes the stage is for", "offset")
     others = [s for s in stages if s["name"].lower() != name.lower()]
     for s in others:
-        if start_s < s["end_s"] and s["start_s"] < end_s:
-            raise StageError("it overlaps the stage %s (%g to %g s)" % (s["name"], s["start_s"], s["end_s"]), "start_s")
+        if start_s < s["end_s"] and s["start_s"] < end_s and shares_a_wake(every, offset, s["every"], s["offset"]):
+            raise StageError("it overlaps the stage %s (%g to %g s) in the wakes they share" % (s["name"], s["start_s"], s["end_s"]), "start_s")
     if len(others) + 1 > MAX_STAGES:
         raise StageError("at most %d stages" % MAX_STAGES, "name")
-    return sorted(others + [{"name": name, "start_s": float(start_s), "end_s": float(end_s)}], key=lambda s: s["start_s"])
+    return sorted(others + [{"name": name, "start_s": float(start_s), "end_s": float(end_s), "every": every, "offset": offset}], key=lambda s: (s["start_s"], s["every"], s["offset"]))
 
 
 def remove_stage(stages, name):
@@ -416,7 +444,7 @@ def load_stages(path):
     try:
         with open(path) as fh:
             rows = json.load(fh)["stages"]
-        return [{"name": str(r["name"]), "start_s": float(r["start_s"]), "end_s": float(r["end_s"])} for r in rows]
+        return [{"name": str(r["name"]), "start_s": float(r["start_s"]), "end_s": float(r["end_s"]), "every": int(r.get("every", 1)), "offset": int(r.get("offset", 0))} for r in rows]
     except (OSError, ValueError, KeyError, TypeError):
         return []
 

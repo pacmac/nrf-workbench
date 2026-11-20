@@ -528,14 +528,17 @@ class TheStageTable(PathBase):
         self.assertAlmostEqual(by["lead"]["mean"], self.sleep_a, delta=self.sleep_a * 1e-9)
         self.assertAlmostEqual(sum(s["share"] for s in t["stages"]), 1.0, places=9)
         self.assertAlmostEqual(b["share"], 0.2 * self.wake_a / (0.2 * self.wake_a + 0.4 * self.sleep_a), places=9)
-        self.assertAlmostEqual(t["untagged_charge_c"], 0.0, delta=1e-12, msg="the three stages cover the whole capture")
-        self.assertAlmostEqual(t["tagged_charge_c"], 0.2 * self.wake_a + 0.4 * self.sleep_a, delta=1e-12)
+        self.assertEqual(len(t["groups"]), 1)
+        self.assertAlmostEqual(t["groups"][0]["untagged_charge_c"], 0.0, delta=1e-12, msg="the three stages cover the whole capture")
+        self.assertAlmostEqual(t["groups"][0]["tagged_charge_c"], 0.2 * self.wake_a + 0.4 * self.sleep_a, delta=1e-12)
+        self.assertEqual(t["groups"][0]["numbers"], [1, 2, 3, 4])
+        self.assertEqual(by["burst"]["numbers"], [1, 2, 3, 4])
 
     def test_a_stage_is_in_seconds_from_the_wake_start_so_a_narrower_one_sees_less_of_it(self):
         self.add("early", 0.0, 0.05)
         e = self.call("meter.stages", {"recording": "rak-1"}).data["stages"][0]
         self.assertAlmostEqual(e["charge_c"], 0.05 * self.wake_a, delta=1e-12)
-        self.assertAlmostEqual(self.call("meter.stages", {"recording": "rak-1"}).data["untagged_charge_c"], 0.15 * self.wake_a + 0.4 * self.sleep_a, delta=1e-12)
+        self.assertAlmostEqual(self.call("meter.stages", {"recording": "rak-1"}).data["groups"][0]["untagged_charge_c"], 0.15 * self.wake_a + 0.4 * self.sleep_a, delta=1e-12)
 
     def test_a_stage_outside_every_capture_contributes_nothing(self):
         self.add("later", 5.0, 6.0)
@@ -551,7 +554,7 @@ class TheStageTable(PathBase):
     def test_stages_are_stored_with_the_recording_and_survive_the_sampler(self):
         self.add("burst", 0.0, 0.2)
         from nrf_workbench.instruments import capture as c2
-        self.assertEqual(c2.load_stages(os.path.join(self.folder, "rak-1.stages.json")), [{"name": "burst", "start_s": 0.0, "end_s": 0.2}])
+        self.assertEqual(c2.load_stages(os.path.join(self.folder, "rak-1.stages.json")), [{"name": "burst", "start_s": 0.0, "end_s": 0.2, "every": 1, "offset": 0}])
 
     def test_delete_removes_and_an_unknown_stage_is_stage_unknown(self):
         self.add("burst", 0.0, 0.2)
@@ -573,6 +576,84 @@ class TheStageTable(PathBase):
         self.call("meter.stage_set", {"recording": "plain", "name": "x", "start_s": 0.0, "end_s": 0.1})
         t = self.call("meter.stages", {"recording": "plain"}).data
         self.assertEqual((t["wakes"], t["stages"][0]["wakes"], t["stages"][0]["mean"]), (0, 0, None))
+
+
+class WakesOfDifferentKinds(PathBase):
+    """The RAK alternates two shapes of wake: odd wakes are one kind, even wakes another. Stages for each, over only their own wakes."""
+    HI_ADC, LO_ADC = 12000, 9000
+
+    def setUp(self):
+        PathBase.setUp(self)
+        self.unit.profile = lambda i: ((self.HI_ADC if ((i // 20000) // 10) % 2 == 0 else self.LO_ADC) if i < self.BLOCKS * 20000 and (i // 20000) % 10 == 3 else 1000, 0)
+        self.hi, self.lo = reference_amps(self.cal, 0, self.HI_ADC), reference_amps(self.cal, 0, self.LO_ADC)
+        self.record_session("rak-1")
+
+    def add(self, name, every, offset, a=0.0, b=0.2):
+        return self.call("meter.stage_set", {"recording": "rak-1", "name": name, "start_s": a, "end_s": b, "every": every, "offset": offset})
+
+    def test_each_stage_sees_only_its_own_wakes_and_the_same_times_may_be_used_twice(self):
+        self.add("beacon", 2, 1)                                   # the same 0 to 0.2 s, for the odd wakes
+        self.add("second", 2, 0)                                   # and for the even ones: not an overlap, they never share a wake
+        t = self.call("meter.stages", {"recording": "rak-1"}).data
+        by = {s["name"]: s for s in t["stages"]}
+        self.assertEqual((by["beacon"]["numbers"], by["second"]["numbers"]), ([1, 3], [2, 4]))
+        self.assertAlmostEqual(by["beacon"]["mean"], self.hi, delta=self.hi * 1e-9)
+        self.assertAlmostEqual(by["second"]["mean"], self.lo, delta=self.lo * 1e-9)
+        self.assertEqual(by["beacon"]["lowest_mean"], by["beacon"]["highest_mean"], "within a kind the wakes are alike")
+        self.assertEqual([(g["every"], g["offset"], g["numbers"], g["stages"]) for g in t["groups"]], [(2, 0, [2, 4], ["second"]), (2, 1, [1, 3], ["beacon"])])
+        self.assertAlmostEqual(by["beacon"]["share"], 1.0, places=9)
+        self.assertAlmostEqual(by["second"]["share"], 1.0, places=9, msg="a share is of the stages that apply to the same wakes")
+        for g, own in zip(t["groups"], (self.lo, self.hi)):
+            self.assertAlmostEqual(g["tagged_charge_c"], 0.2 * own, delta=1e-12)
+            self.assertAlmostEqual(g["untagged_charge_c"], 0.4 * self.sleep_a, delta=1e-12 + 0.0, msg="the rest of that kind's capture")
+
+    def test_without_a_selector_both_kinds_are_averaged_and_the_spread_shows_it(self):
+        self.add("both", 1, 0)
+        s = self.call("meter.stages", {"recording": "rak-1"}).data["stages"][0]
+        self.assertAlmostEqual(s["mean"], (2 * self.hi + 2 * self.lo) / 4, delta=self.hi * 1e-9)
+        self.assertAlmostEqual(s["lowest_mean"], self.lo, delta=self.lo * 1e-9)
+        self.assertAlmostEqual(s["highest_mean"], self.hi, delta=self.hi * 1e-9)
+
+    def test_stages_that_can_share_a_wake_may_not_overlap_in_time(self):
+        self.add("a", 2, 1, 0.0, 0.2)
+        for every, offset in ((1, 0), (2, 1), (4, 1), (4, 3)):      # 1/0 holds for every wake; 4/1 and 4/3 are odd wakes; 2/1 is the same
+            with self.assertRaises(UsageError, msg=(every, offset)) as cm:
+                self.add("b", every, offset, 0.1, 0.3)
+            self.assertEqual(cm.exception.arg, "start_s")
+        for every, offset in ((2, 0), (4, 0), (4, 2)):              # even wakes: never an odd one
+            self.add("b", every, offset, 0.1, 0.3)
+
+    def test_the_selector_is_stored_and_a_bad_one_names_the_argument(self):
+        self.add("a", 2, 1)
+        import json
+        with open(os.path.join(self.folder, "rak-1.stages.json")) as fh:
+            self.assertEqual(json.load(fh)["stages"], [{"name": "a", "start_s": 0.0, "end_s": 0.2, "every": 2, "offset": 1}])
+        for every, offset, arg in ((0, 0, "every"), (9, 0, "every"), (2, 2, "offset"), (2, -1, "offset"), (1, 1, "offset")):
+            with self.assertRaises(UsageError) as cm:
+                self.add("z", every, offset)
+            self.assertEqual(cm.exception.arg, arg, (every, offset))
+
+
+class TheSelectorRules(unittest.TestCase):
+    def test_two_selectors_share_a_wake_exactly_when_the_offsets_agree_modulo_the_gcd(self):
+        for e1 in range(1, 9):
+            for o1 in range(e1):
+                for e2 in range(1, 9):
+                    for o2 in range(e2):
+                        brute = any(n % e1 == o1 and n % e2 == o2 for n in range(1, 200))
+                        self.assertEqual(capture.shares_a_wake(e1, o1, e2, o2), brute, (e1, o1, e2, o2))
+
+    def test_an_old_stage_file_without_selectors_means_every_wake(self):
+        d = tempfile_dir()
+        path = os.path.join(d, "x.stages.json")
+        with open(path, "w") as fh:
+            fh.write('{"stages": [{"name": "a", "start_s": 0.0, "end_s": 1.0}]}')
+        self.assertEqual(capture.load_stages(path), [{"name": "a", "start_s": 0.0, "end_s": 1.0, "every": 1, "offset": 0}])
+
+    def test_a_non_integer_or_boolean_selector_is_refused(self):
+        for every, offset in ((True, 0), (2.0, 0), ("2", 0), (2, True), (2, 0.0)):
+            with self.assertRaises(capture.StageError):
+                capture.set_stage([], "a", 0.0, 1.0, every, offset)
 
 
 class TheSpreadAcrossWakes(PathBase):
