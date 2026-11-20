@@ -35,7 +35,7 @@ the current is decoded from them on request with the unit's calibration, exactly
   and ends with the first quiet block after (0.2 s of tail).
 - **The ceiling:** a capture is at most **25 blocks (5 s)**: 25 × 20,000 words × 4 bytes = 2 MB. A wake still going at 5 s is closed as `truncated` and the next one is looked for once it falls quiet.
 - **How many are kept:** the newest **8**, at most 16 MB in memory: enough to compare wake with wake and see whether a stage drifts, about 1 % of the bench Pi's memory. They live in memory for the session and until the next session on that unit starts;
-  saving them with a recording, so they survive a restart, is later (stage 2 needs it).
+  a recording also keeps its wakes on disk (stage 2, below).
 - A wake closer than a block to the one before it simply extends that capture.
 - Lost samples (the counter) are counted per capture and said; the time axis counts samples received.
 
@@ -64,11 +64,42 @@ Under the session chart, when wakes were captured (profiler only):
 - the figures of the window: length, average, peak, charge.
 With no capture it says why: no wake found yet (a steady load, or fewer than twice its sleep), or the multimeter.
 
-## Result codes (core.md row)
+## Stage 2: named stages, kept with the recording
+
+Peter, 2026-11-20: "the ability to set markers and name them", and then, going away: "you can actually profile the connected RAK and analyse and tag the wake cycle".
+
+**Wakes are kept with a recording.** A recording (not a watch) writes each wake to `<recordings>/<name>.wakes/` as it closes: `<n>.bin` (the raw words, zlib level 1: about 3.5 times smaller, measured: the 6-bit sample counter still changes every word) and `<n>.json` (its t0, level,
+lost, truncated, peak), plus `cal.json` (the calibration the unit gave, so a wake decodes without the unit). The **newest 20** are kept per recording: the stage table needs the spread across wakes and 20 shows it; worst case 20 × 2 MB = 40 MB raw
+before compression, and the recordings folder keeps the newest 10 recordings (deleting a recording deletes its `.wakes/` and `.stages.json`). So `meter.captures` and `meter.capture` take an optional `recording`: the wakes of a finished recording,
+read from disk; without it, the last session's, from memory as before. A wake that closes while the disk write fails is still held in memory and the failure is said in the session's facts (`wakes_unsaved`).
+
+**A stage** is `{name, start_s, end_s}`: a stretch of a wake in seconds from the wake's start (negative is before it), so it means the same thing in every wake. They are stored per recording in `<name>.stages.json`.
+Rules: a name is 1 to 40 characters and unique ignoring case; `start_s` < `end_s`; stages may not overlap (the shares would not add up: `bad_stage`); at most **12** (a wake has a handful of stages: more would not fit a table a person reads).
+Times are kept as given. Stages are saved only against a recording (the page says to record to keep them).
+
+| command | args | effect |
+|---|---|---|
+| `meter.stage_set` | `recording`, `name`, `start_s`, `end_s` | write: add the stage, or change the one of that name |
+| `meter.stage_delete` | `recording`, `name` | write: remove it; `stage_unknown` if there is none |
+| `meter.stages` | `recording`, `volts`? | read: the stage table over that recording's saved wakes |
+
+**The stage table** (`meter.stages`): for each stage, over every wake held for the recording (up to 20): in each wake the samples in `[start_s, end_s)` give a mean current, a peak and a charge; the answer gives, per stage, `mean` (of the wakes' means),
+`lowest_mean` and `highest_mean` (the spread across wakes: a stage that costs the same each time has them close), `peak` (the highest sample in any wake), `charge_c` (mean over the wakes) and `share` (of the tagged stages' charge), with `length_s`
+(`end_s - start_s`) and `wakes` (how many contributed: a stage outside a short capture contributes nothing). `untagged_charge_c` is the rest of the capture window (lead-in, tail, anything not named), and `energy_j` per stage is charge × `volts` when volts is given.
+Exact: every figure is from the raw samples, not from the envelope.
+
+**On the scope:** drag across the trace to zoom, then name the stretch as a stage (a name box and an "Add as a stage" button; the stretch is rounded to 0.1 ms); saved stages are shaded on the trace with their names above the shading, listed with a delete,
+and the table is shown under the trace. Without a recording behind the wakes the page says stages are kept with a recording.
+
+## Result codes (core.md rows)
 
 | code | class | meaning |
 |---|---|---|
 | `capture_unknown` | refused | no capture with that number is held (the evidence lists the numbers held) |
+| `stage_unknown` | refused | the recording has no stage of that name |
+
+A stage that breaks a rule above (an empty, too long or duplicate name, a start not before its end, an overlap, a thirteenth) is a usage error naming the argument, as any bad argument is. A recording that is not there is the existing
+`recording_unknown`.
 
 ## Checks
 

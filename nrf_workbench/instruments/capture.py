@@ -5,8 +5,12 @@ words are kept: from the block before it to the first quiet block after. `Captur
 lowest/highest/mean envelope of any stretch of it, at any resolution.
 """
 import collections
+import json
 import math
+import os
 import sys
+import threading
+import zlib
 from array import array
 
 SAMPLE_RATE_HZ = 100000
@@ -18,6 +22,10 @@ BINS = (HIGH_EXP - LOW_EXP) * BINS_PER_DECADE
 MAX_CAPTURE_BLOCKS = 25                      # 25 blocks x 20,000 words x 4 bytes = 2 MB a capture, 5 s
 KEEP = 8                                     # the newest 8: 16 MB at most, enough to compare wake with wake
 POINTS_DEFAULT, POINTS_MAX = 1000, 2000      # a wide chart's pixels; the envelope's own bound (about twice that)
+KEEP_DISK = 20                               # wakes kept on disk per recording: the stage table needs the spread across wakes and 20 shows it; worst case 20 x 2 MB before compression
+MAX_STAGES = 12                              # a wake has a handful of stages: more would not fit a table a person reads
+NAME_MAX = 40
+ZLIB_LEVEL = 1                               # a wake is mostly flat, so the fastest level already shrinks it a lot, and the session thread must not stall (the kernel buffers 160 ms)
 
 
 class Level(object):
@@ -59,7 +67,9 @@ class Level(object):
 
 
 class Capture(object):
-    def __init__(self, n, t0, level):
+    """A wake: in memory (chunks of raw words) or on disk (`loader` gives the words back, `samples` is what was saved)."""
+
+    def __init__(self, n, t0, level, loader=None, samples=0):
         self.n, self.t0, self.level = n, t0, level            # the number, the sample clock of the first word, the level in force when it began
         self.chunks = []
         self.lost = 0
@@ -67,14 +77,15 @@ class Capture(object):
         self.peak = 0.0
         self.blocks = 0
         self.stats = None                                     # wake_at_s, mean and peak of the decoded samples, worked out the first time they are asked for
+        self._loader, self._samples = loader, samples
 
     @property
     def data(self):
-        return b"".join(self.chunks)
+        return self._loader() if self._loader is not None else b"".join(self.chunks)
 
     @property
     def samples(self):
-        return sum(len(c) for c in self.chunks) // 4
+        return self._samples if self._loader is not None else sum(len(c) for c in self.chunks) // 4
 
 
 class Capturer(object):
@@ -87,6 +98,7 @@ class Capturer(object):
         self.count = 0                                        # captures taken so far, which is also the number of the last
         self._prev = None                                     # (data, t0, lost) of the block before the current one
         self._open = None
+        self.on_close = None                                  # called with each capture as it is kept (the profiler's source saves it to disk here)
 
     def feed(self, data, t0, mean, high, lost=0):
         self.level.add(mean, high)
@@ -117,8 +129,10 @@ class Capturer(object):
             o.peak = high
 
     def _close(self):
-        self.items.append(self._open)
-        self._open = None
+        done, self._open = self._open, None
+        self.items.append(done)
+        if self.on_close is not None:
+            self.on_close(done)
 
     def get(self, n):
         for c in self.items:
@@ -158,3 +172,219 @@ def window(values, i0, i1, points):
         seg = values[a:min(a + width, i1)]
         out.append({"a": a, "b": a + len(seg), "min": min(seg), "max": max(seg), "mean": sum(seg) / len(seg), "n": len(seg)})
     return out, width
+
+
+# -- wakes on disk, with a recording --------------------------------------------------------------
+class WakeStore(object):
+    """`<recording>.wakes/`: for each wake `<n>.bin` (its raw words, zlib) and `<n>.json` (t0, level, lost, truncated, peak, samples, stats); the newest `keep` are kept."""
+
+    def __init__(self, directory, keep=KEEP_DISK):
+        self.dir, self.keep = directory, keep
+
+    def _path(self, n, suffix):
+        return os.path.join(self.dir, "%d.%s" % (n, suffix))
+
+    def save(self, c):
+        """Write a capture (OSError if the disk will not take it). The json goes last and by rename, so a wake with a json always has its words."""
+        os.makedirs(self.dir, exist_ok=True)
+        raw = c.data
+        with open(self._path(c.n, "bin"), "wb") as fh:
+            fh.write(zlib.compress(raw, ZLIB_LEVEL))
+        meta = {"n": c.n, "t0": c.t0, "level": c.level, "lost": c.lost, "truncated": c.truncated, "peak": c.peak, "samples": len(raw) // 4, "stats": c.stats}
+        tmp = self._path(c.n, "json.tmp")
+        with open(tmp, "w") as fh:
+            json.dump(meta, fh)
+        os.replace(tmp, self._path(c.n, "json"))
+        self._prune()
+
+    def numbers(self):
+        try:
+            return sorted(int(f[:-5]) for f in os.listdir(self.dir) if f.endswith(".json") and f[:-5].isdigit())
+        except OSError:
+            return []
+
+    def _prune(self):
+        for n in self.numbers()[:-self.keep]:
+            for suffix in ("bin", "json"):
+                try:
+                    os.unlink(self._path(n, suffix))
+                except OSError:
+                    pass
+
+    def _loader(self, n):
+        def load():
+            with open(self._path(n, "bin"), "rb") as fh:
+                return zlib.decompress(fh.read())
+        return load
+
+    def load(self):
+        """The saved wakes, oldest first, each reading its words only when asked."""
+        out = []
+        for n in self.numbers():
+            try:
+                with open(self._path(n, "json")) as fh:
+                    m = json.load(fh)
+                c = Capture(m["n"], m["t0"], m["level"], loader=self._loader(n), samples=m["samples"])
+            except (OSError, ValueError, KeyError):
+                continue
+            c.lost, c.truncated, c.peak, c.stats = m.get("lost", 0), bool(m.get("truncated")), m.get("peak", 0.0), m.get("stats")
+            out.append(c)
+        return out
+
+    def remember(self, c):
+        """Write a capture's decoded figures back to its json, so listing it again does not decode it again."""
+        try:
+            with open(self._path(c.n, "json")) as fh:
+                m = json.load(fh)
+            m["stats"] = c.stats
+            tmp = self._path(c.n, "json.tmp")
+            with open(tmp, "w") as fh:
+                json.dump(m, fh)
+            os.replace(tmp, self._path(c.n, "json"))
+        except (OSError, ValueError):
+            pass
+
+
+class WakeSet(object):
+    """The wakes of one session (in memory) or of one finished recording (on disk): the list, an exact envelope of any stretch of one, and the stage table across all of them.
+    `items()` gives the captures, `amps` is the calibration's conversion of a (range, ADC) key. One wake is held decoded at a time (500,000 doubles are 4 MB, twenty would be 80)."""
+
+    def __init__(self, items, amps, remember=None):
+        self._items, self._amps, self._remember = items, amps, remember
+        self._decoded, self._lock = None, threading.Lock()
+
+    def numbers(self):
+        return [c.n for c in self._items()]
+
+    def get(self, n):
+        for c in self._items():
+            if c.n == n:
+                return c
+        return None
+
+    def _values(self, c):
+        with self._lock:
+            if self._decoded is not None and self._decoded[0] is c:
+                return self._decoded[1], self._decoded[2]
+            values = decode(c.data, self._amps)
+            start = wake_start(values, c.level)
+            self._decoded = (c, values, start)
+            if c.stats is None:
+                c.stats = {"wake_at_s": start / float(SAMPLE_RATE_HZ), "mean": sum(values) / len(values), "peak": max(values)}
+                if self._remember is not None:
+                    self._remember(c)
+            return values, start
+
+    def rows(self):
+        out = []
+        for c in self._items():
+            if c.stats is None:
+                self._values(c)
+            out.append({"n": c.n, "t0": round(c.t0, 6), "wake_at_s": c.stats["wake_at_s"], "duration_s": c.samples / float(SAMPLE_RATE_HZ), "samples": c.samples,
+                        "lost": c.lost, "truncated": c.truncated, "peak": c.stats["peak"], "mean": c.stats["mean"]})
+        return out
+
+    def envelope(self, n, t0=None, t1=None, points=POINTS_DEFAULT):
+        """An exact envelope of one wake: times in seconds from the wake's start. None for a number that is not held; ValueError for an empty window or bad points."""
+        c = self.get(n)
+        if c is None:
+            return None
+        if isinstance(points, bool) or not isinstance(points, int) or not 2 <= points <= POINTS_MAX:
+            raise ValueError("points is 2 to %d" % POINTS_MAX)
+        values, start = self._values(c)
+        rate = float(SAMPLE_RATE_HZ)
+        i0 = 0 if t0 is None else max(0, start + int(math.floor(t0 * rate)))
+        i1 = len(values) if t1 is None else min(len(values), start + int(math.ceil(t1 * rate)))
+        if i1 <= i0:
+            raise ValueError("the window holds no samples of capture %d (it runs from %g to %g s)" % (n, -start / rate, (len(values) - start) / rate))
+        buckets, width = window(values, i0, i1, points)
+        seg = values[i0:i1]
+        return {"n": c.n, "wake_at_s": start / rate, "t0": (i0 - start) / rate, "t1": (i1 - start) / rate, "points": len(buckets), "width_s": width / rate,
+                "buckets": [{"t0": (b["a"] - start) / rate, "t1": (b["b"] - start) / rate, "min": b["min"], "max": b["max"], "mean": b["mean"], "n": b["n"]} for b in buckets],
+                "charge_c": sum(seg) / rate, "mean": sum(seg) / len(seg), "peak": max(seg), "samples": len(seg), "lost": c.lost, "truncated": c.truncated}
+
+    def stage_table(self, stages, volts=None):
+        """For each stage, over every wake: the stretch's mean current, peak and charge in each wake, and from them the mean, the spread across wakes, the peak, the mean charge and the
+        share of the tagged stages' charge. Exact: from the decoded samples, not an envelope. A stage outside a capture contributes nothing from it."""
+        rate = float(SAMPLE_RATE_HZ)
+        per = [{"means": [], "peaks": [], "charges": []} for _ in stages]
+        windows, tagged_each, wakes = [], [], 0
+        for c in self._items():
+            values, start = self._values(c)
+            wakes += 1
+            tagged = 0.0
+            for k, s in enumerate(stages):
+                i0 = max(0, start + int(round(s["start_s"] * rate)))
+                i1 = min(len(values), start + int(round(s["end_s"] * rate)))
+                if i1 <= i0:
+                    continue
+                seg = values[i0:i1]
+                q = sum(seg) / rate
+                per[k]["means"].append(sum(seg) / len(seg))
+                per[k]["peaks"].append(max(seg))
+                per[k]["charges"].append(q)
+                tagged += q
+            windows.append(sum(values) / rate)
+            tagged_each.append(tagged)
+        rows, total = [], 0.0
+        for s, p in zip(stages, per):
+            if p["charges"]:
+                total += sum(p["charges"]) / len(p["charges"])
+        for s, p in zip(stages, per):
+            n = len(p["charges"])
+            charge = sum(p["charges"]) / n if n else None
+            rows.append({"name": s["name"], "start_s": s["start_s"], "end_s": s["end_s"], "length_s": s["end_s"] - s["start_s"], "wakes": n,
+                         "mean": sum(p["means"]) / n if n else None, "lowest_mean": min(p["means"]) if n else None, "highest_mean": max(p["means"]) if n else None,
+                         "peak": max(p["peaks"]) if n else None, "charge_c": charge,
+                         "share": (charge / total) if n and total > 0 else None,
+                         "energy_j": charge * volts if n and volts else None})
+        untagged = [w - t for w, t in zip(windows, tagged_each)]
+        return {"wakes": wakes, "stages": rows, "tagged_charge_c": total, "untagged_charge_c": sum(untagged) / len(untagged) if untagged else None}
+
+
+# -- stages: named stretches of a wake, kept with the recording -----------------------------------
+class StageError(ValueError):
+    def __init__(self, message, field):
+        ValueError.__init__(self, message)
+        self.field = field
+
+
+def set_stage(stages, name, start_s, end_s):
+    """`stages` with the stage `name` added, or changed if one of that name (ignoring case) is there, in order of start. StageError for a rule broken."""
+    name = (name if isinstance(name, str) else "").strip()
+    if not 1 <= len(name) <= NAME_MAX:
+        raise StageError("a stage name is 1 to %d characters" % NAME_MAX, "name")
+    for value, field in ((start_s, "start_s"), (end_s, "end_s")):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise StageError("%s is a number of seconds from the wake's start" % field, field)
+    if not start_s < end_s:
+        raise StageError("start_s must be before end_s", "end_s")
+    others = [s for s in stages if s["name"].lower() != name.lower()]
+    for s in others:
+        if start_s < s["end_s"] and s["start_s"] < end_s:
+            raise StageError("it overlaps the stage %s (%g to %g s)" % (s["name"], s["start_s"], s["end_s"]), "start_s")
+    if len(others) + 1 > MAX_STAGES:
+        raise StageError("at most %d stages" % MAX_STAGES, "name")
+    return sorted(others + [{"name": name, "start_s": float(start_s), "end_s": float(end_s)}], key=lambda s: s["start_s"])
+
+
+def remove_stage(stages, name):
+    """`stages` without `name` (ignoring case), or None if there is no such stage."""
+    kept = [s for s in stages if s["name"].lower() != (name or "").lower()]
+    return kept if len(kept) != len(stages) else None
+
+
+def load_stages(path):
+    try:
+        with open(path) as fh:
+            rows = json.load(fh)["stages"]
+        return [{"name": str(r["name"]), "start_s": float(r["start_s"]), "end_s": float(r["end_s"])} for r in rows]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+
+
+def save_stages(path, stages):
+    tmp = path + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump({"stages": stages}, fh)
+    os.replace(tmp, path)

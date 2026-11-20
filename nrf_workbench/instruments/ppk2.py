@@ -5,7 +5,7 @@ query, start and stop. Mode, voltage and the supply switch are writes to the uni
 cannot see what is wired. Every byte written passes `_frame`, which knows exactly six shapes.
 """
 import collections
-import math
+import json
 import os
 import select
 import sys
@@ -93,6 +93,7 @@ class Calibration(object):
         self.calibrated = bool(values.get("Calibrated"))
         self.hw = values.get("HW")
         self.mode = MODES.get(int(values["mode"])) if "mode" in values else None
+        self.values = dict(values)                         # as the unit gave them: a recording keeps these so its wakes decode without the unit
         self._memo = {}
 
     def amps(self, key):
@@ -453,8 +454,8 @@ class Ppk2Source(object):
 
     def __init__(self, ppk2):
         self.ppk2, self.port, self.reducer, self.started, self.claimed = ppk2, None, None, None, False
-        self.capturer = None
-        self._decoded, self._decoded_lock = None, threading.Lock()
+        self.capturer = self.wakes = self.store = None
+        self.unsaved = 0
 
     def ceiling_s(self, s):
         return BLOCK_CEILING_S + DRAIN_MAX_S + 1.0
@@ -481,6 +482,19 @@ class Ppk2Source(object):
                 raise Fault("the PPK2's port %s failed: %s" % (node, exc))
             self.reducer, self.started = Reducer(cal), p._mono()
             self.capturer = capture.Capturer()              # the last session's captures stay readable until the next one begins
+            capturer = self.capturer
+            self.wakes = capture.WakeSet(lambda: list(capturer.items), cal.amps)
+            self.store, self.unsaved = None, 0
+            folder = getattr(s, "wakes_dir", None)
+            if folder:                                      # a recording keeps its wakes, and the calibration to decode them without the unit
+                self.store = capture.WakeStore(folder)
+                self.capturer.on_close = self._save
+                try:
+                    os.makedirs(folder, exist_ok=True)
+                    with open(os.path.join(folder, "cal.json"), "w") as fh:
+                        json.dump(cal.values, fh)
+                except OSError:
+                    self.unsaved += 1
         except BaseException:
             self._close()
             raise
@@ -510,51 +524,17 @@ class Ppk2Source(object):
         self.capturer.feed(data, b["t"] - b["dt"], b["mean"], b["hi"], r.lost - before)      # a wake is kept at full rate (docs/specs/ppk2-stages.md)
         elapsed = p._mono() - self.started
         facts = {"lost": r.lost, "filtered": r.filtered, "rate_low": bool(elapsed >= RATE_AFTER_S and r.words / elapsed < RATE_LOW_HZ), "captures": self.capturer.count}
+        if self.unsaved:
+            facts["wakes_unsaved"] = self.unsaved
         return Reading(b["t"], b["mean"], "CURR", "A", range=b["range"], lo=b["lo"], hi=b["hi"], n=b["n"], dt=b["dt"], facts=facts)
 
     # -- the wakes kept at full rate (docs/specs/ppk2-stages.md) ---------------------------------------
-    def _values(self, c):
-        """A capture's samples in amps and the index of its first sample over the level. One capture is held decoded at a time: 500,000 doubles are 4 MB, eight would be 32."""
-        with self._decoded_lock:
-            if self._decoded is not None and self._decoded[0] is c:
-                return self._decoded[1], self._decoded[2]
-            values = capture.decode(c.data, self.reducer.cal.amps)
-            start = capture.wake_start(values, c.level)
-            self._decoded = (c, values, start)
-            if c.stats is None:
-                c.stats = {"wake_at_s": start / float(SAMPLE_RATE_HZ), "mean": sum(values) / len(values), "peak": max(values)}
-            return values, start
-
-    def numbers(self):
-        return self.capturer.numbers() if self.capturer is not None else []
-
-    def captures(self):
-        rows = []
-        for c in (list(self.capturer.items) if self.capturer is not None else []):
-            if c.stats is None:
-                self._values(c)
-            rows.append({"n": c.n, "t0": round(c.t0, 6), "wake_at_s": c.stats["wake_at_s"], "duration_s": c.samples / float(SAMPLE_RATE_HZ), "samples": c.samples,
-                         "lost": c.lost, "truncated": c.truncated, "peak": c.stats["peak"], "mean": c.stats["mean"]})
-        return rows
-
-    def capture(self, n, t0=None, t1=None, points=capture.POINTS_DEFAULT):
-        """An exact envelope of one wake: times in seconds from the wake's start. None for a number that is not held; ValueError for an empty window or bad points."""
-        c = self.capturer.get(n) if self.capturer is not None else None
-        if c is None:
-            return None
-        if isinstance(points, bool) or not isinstance(points, int) or not 2 <= points <= capture.POINTS_MAX:
-            raise ValueError("points is 2 to %d" % capture.POINTS_MAX)
-        values, start = self._values(c)
-        rate = float(SAMPLE_RATE_HZ)
-        i0 = 0 if t0 is None else max(0, start + int(math.floor(t0 * rate)))
-        i1 = len(values) if t1 is None else min(len(values), start + int(math.ceil(t1 * rate)))
-        if i1 <= i0:
-            raise ValueError("the window holds no samples of capture %d (it runs from %g to %g s)" % (n, -start / rate, (len(values) - start) / rate))
-        buckets, width = capture.window(values, i0, i1, points)
-        seg = values[i0:i1]
-        return {"n": c.n, "wake_at_s": start / rate, "t0": (i0 - start) / rate, "t1": (i1 - start) / rate, "points": len(buckets), "width_s": width / rate,
-                "buckets": [{"t0": (b["a"] - start) / rate, "t1": (b["b"] - start) / rate, "min": b["min"], "max": b["max"], "mean": b["mean"], "n": b["n"]} for b in buckets],
-                "charge_c": sum(seg) / rate, "mean": sum(seg) / len(seg), "peak": max(seg), "samples": len(seg), "lost": c.lost, "truncated": c.truncated}
+    def _save(self, c):
+        """A recording keeps each wake on disk as it closes. A disk that will not take it does not stop the session: the wake is still in memory and the failure is counted."""
+        try:
+            self.store.save(c)
+        except OSError:
+            self.unsaved += 1
 
     def _close(self):
         if not self.claimed:
@@ -573,6 +553,18 @@ class Ppk2Source(object):
 
     def end(self):
         self._close()
+
+
+def stored_wakes(directory):
+    """The wakes a finished recording kept (`<name>.wakes/`), or None if it kept none or its calibration is missing or unreadable."""
+    try:
+        with open(os.path.join(directory, "cal.json")) as fh:
+            cal = Calibration(json.load(fh))
+    except (OSError, ValueError, Ppk2Error, TypeError):
+        return None
+    store = capture.WakeStore(directory)
+    items = store.load()
+    return capture.WakeSet(lambda: items, cal.amps, remember=store.remember)
 
 
 def register(registry, host):

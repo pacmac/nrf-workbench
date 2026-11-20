@@ -129,7 +129,7 @@ class WhenAWakeIsKept(unittest.TestCase):
         self.assertEqual(c.get(1).blocks, 1 + 6 + 1)
 
 
-class TheWholePath(Base):
+class PathBase(Base):
     """The fake unit sleeps (ADC 1000) and wakes (ADC 12000) for one block in ten, through the profiler's source, the sampler and the registry."""
     BLOCKS = 40
 
@@ -137,7 +137,7 @@ class TheWholePath(Base):
         Base.setUp(self)
         from nrf_workbench.instruments import meter, sampler
         self.cal = ppk2.parse_metadata(REAL_META)
-        self.unit.profile = lambda i: (WAKE_ADC if (i // 20000) % 10 == 3 else 1000, 0)
+        self.unit.profile = lambda i: (WAKE_ADC if i < self.BLOCKS * 20000 and (i // 20000) % 10 == 3 else 1000, 0)      # the unit keeps streaming after the test stops waiting: no wake past block 40
         self.sampler = sampler.Sampler(None, self.host.streams.meter, self.folder, ppk2=self.ppk)
         self.addCleanup(self.sampler.stop)
         self.host._services["meter_sampler"] = self.sampler
@@ -150,9 +150,16 @@ class TheWholePath(Base):
         self.assertTrue(until(lambda: self.sampler.session()["stats"]["readings"] >= self.BLOCKS * 20000, 30))
         self.sampler.stop()
 
+    def record_session(self, name):
+        self.sampler.start("record", 60, name=name, source="ppk2")
+        self.assertTrue(until(lambda: self.sampler.session()["stats"]["readings"] >= self.BLOCKS * 20000, 30))
+        self.sampler.stop()
+
     def call(self, name, args=None):
         return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
 
+
+class TheWholePath(PathBase):
     def test_each_wake_is_kept_with_its_lead_in_and_tail_and_the_right_peak(self):
         self.run_session()
         rows = self.call("meter.captures").data["captures"]
@@ -250,6 +257,231 @@ class TheWholePath(Base):
         data = self.call("meter.captures").data
         self.assertEqual((data["session"], data["source"], data["captures"]), (3, "meter", []))
         self.assertEqual(self.call("meter.capture", {"n": 1}).code, "capture_unknown")
+
+
+class KeptWithTheRecording(PathBase):
+    """Stage 2, wakes: a recording writes each wake to <name>.wakes/ as it closes and reads them back without the unit; a watch writes nothing."""
+
+    def test_a_recording_saves_every_wake_with_the_calibration_and_a_watch_saves_none(self):
+        self.record_session("rak-1")
+        d = os.path.join(self.folder, "rak-1.wakes")
+        names = sorted(os.listdir(d))
+        self.assertIn("cal.json", names)
+        self.assertEqual([n for n in names if n.endswith(".json") and n != "cal.json"], ["1.json", "2.json", "3.json", "4.json"])
+        raw = 60000 * 4
+        self.assertLess(os.path.getsize(os.path.join(d, "1.bin")), raw / 3, "it must shrink (about 3.5 times: the counter bits still change every word)")
+        self.run_session()                                                                # a watch
+        self.assertEqual([f for f in os.listdir(self.folder) if f.endswith(".wakes")], ["rak-1.wakes"])
+
+    def test_the_saved_wakes_read_back_as_the_ones_in_memory_did(self):
+        self.record_session("rak-1")
+        mem = self.call("meter.captures").data["captures"]
+        disk = self.call("meter.captures", {"recording": "rak-1"}).data["captures"]
+        self.assertEqual(len(disk), len(mem))
+        for a, b in zip(mem, disk):
+            for key in ("n", "t0", "samples", "lost", "truncated", "wake_at_s", "duration_s"):
+                self.assertEqual(a[key], b[key], key)
+            self.assertAlmostEqual(a["peak"], b["peak"], delta=a["peak"] * 1e-12)
+            self.assertAlmostEqual(a["mean"], b["mean"], delta=a["mean"] * 1e-12)
+        for args in ({}, {"t0": -0.001, "t1": 0.004, "points": 5}):
+            m = self.call("meter.capture", dict(args, n=2)).data
+            k = self.call("meter.capture", dict(args, n=2, recording="rak-1")).data
+            self.assertEqual(m, k)
+
+    def test_listing_a_saved_wake_writes_its_figures_back_so_it_is_not_decoded_again(self):
+        self.record_session("rak-1")
+        import json
+        path = os.path.join(self.folder, "rak-1.wakes", "1.json")
+        def stats():
+            with open(path) as fh:
+                return json.load(fh)["stats"]
+        self.assertIsNone(stats(), "the session thread must not decode: it saves the words and nothing else")
+        self.call("meter.captures", {"recording": "rak-1"})
+        self.assertAlmostEqual(stats()["wake_at_s"], 0.2, places=9)
+
+    def test_only_the_newest_twenty_are_kept_on_disk(self):
+        store = capture.WakeStore(os.path.join(self.folder, "x.wakes"))
+        for n in range(1, 26):
+            c = capture.Capture(n, float(n), 1e-3)
+            c.chunks.append(n.to_bytes(4, "little") * 8)
+            store.save(c)
+        self.assertEqual(store.numbers(), list(range(6, 26)))
+        loaded = store.load()
+        self.assertEqual(loaded[0].data, (6).to_bytes(4, "little") * 8)
+        self.assertEqual(loaded[0].samples, 8)
+
+    def test_a_wake_with_a_json_always_has_its_words(self):
+        store = capture.WakeStore(os.path.join(self.folder, "x.wakes"))
+        c = capture.Capture(1, 0.0, 1e-3)
+        c.chunks.append(b"abcd" * 4)
+        store.save(c)
+        os.unlink(os.path.join(store.dir, "1.bin"))
+        with self.assertRaises(OSError):
+            store.load()[0].data
+
+    def test_a_disk_that_will_not_take_the_wakes_does_not_stop_the_session_and_says_so(self):
+        open(os.path.join(self.folder, "rak-1.wakes"), "w").close()                      # a file where the folder should be
+        self.record_session("rak-1")
+        self.assertEqual(self.sampler.session()["state"], "idle")
+        self.assertGreaterEqual(self.sampler.session()["wakes_unsaved"], 1)
+        self.assertGreaterEqual(len(self.call("meter.captures").data["captures"]), 3, "the wakes are still held in memory")
+
+    def test_deleting_an_old_recording_deletes_its_wakes_and_stages(self):
+        for k in range(10):
+            base = os.path.join(self.folder, "old-%d" % k)
+            open(base + ".csv", "w").close()
+            os.makedirs(base + ".wakes")
+            with open(base + ".stages.json", "w") as fh:
+                fh.write('{"stages": []}')
+            os.utime(base + ".csv", (1000 + k, 1000 + k))
+        self.sampler.start("record", 60, name="new", source="ppk2")
+        self.sampler.stop()
+        self.assertFalse(os.path.exists(os.path.join(self.folder, "old-0.csv")))
+        self.assertFalse(os.path.exists(os.path.join(self.folder, "old-0.wakes")))
+        self.assertFalse(os.path.exists(os.path.join(self.folder, "old-0.stages.json")))
+        self.assertTrue(os.path.exists(os.path.join(self.folder, "old-1.wakes")))
+
+    def test_an_unknown_recording_is_recording_unknown_for_all_of_them(self):
+        for name, args in (("meter.captures", {"recording": "nope"}), ("meter.capture", {"n": 1, "recording": "nope"}), ("meter.stages", {"recording": "nope"}),
+                           ("meter.stage_set", {"recording": "nope", "name": "a", "start_s": 0.0, "end_s": 1.0}), ("meter.stage_delete", {"recording": "nope", "name": "a"}),
+                           ("meter.captures", {"recording": "../x"})):
+            self.assertEqual(self.call(name, args).code, "recording_unknown", name)
+
+
+class StageRules(unittest.TestCase):
+    def test_a_stage_is_added_changed_and_kept_in_order_of_start(self):
+        s = capture.set_stage([], "radio", 0.05, 0.1)
+        s = capture.set_stage(s, "cpu", 0.0, 0.05)
+        self.assertEqual([x["name"] for x in s], ["cpu", "radio"])
+        s = capture.set_stage(s, "RADIO", 0.05, 0.12)                                  # the same name ignoring case changes it
+        self.assertEqual([(x["name"], x["end_s"]) for x in s], [("cpu", 0.05), ("RADIO", 0.12)])
+
+    def test_the_rules_each_refuse_naming_the_argument(self):
+        base = capture.set_stage([], "a", 0.0, 1.0)
+        for args, field in (((base, "", 2.0, 3.0), "name"), ((base, "x" * 41, 2.0, 3.0), "name"), ((base, "   ", 2.0, 3.0), "name"), ((base, None, 2.0, 3.0), "name"),
+                            ((base, "b", 3.0, 3.0), "end_s"), ((base, "b", 3.0, 2.0), "end_s"), ((base, "b", "x", 2.0), "start_s"), ((base, "b", 2.0, float("inf")), "end_s"),
+                            ((base, "b", True, 2.0), "start_s"), ((base, "b", 0.5, 1.5), "start_s"), ((base, "b", -1.0, 0.1), "start_s")):
+            with self.assertRaises(capture.StageError) as cm:
+                capture.set_stage(*args)
+            self.assertEqual(cm.exception.field, field, args)
+        capture.set_stage(base, "b", 1.0, 2.0)                                         # touching is not overlapping
+
+    def test_no_more_than_twelve(self):
+        s = []
+        for k in range(12):
+            s = capture.set_stage(s, "s%d" % k, k, k + 0.5)
+        with self.assertRaises(capture.StageError):
+            capture.set_stage(s, "s12", 20, 21)
+        self.assertEqual(len(capture.set_stage(s, "s3", 3, 3.2)), 12, "changing one is not adding one")
+
+    def test_removing_and_loading(self):
+        s = capture.set_stage([], "a", 0.0, 1.0)
+        self.assertIsNone(capture.remove_stage(s, "zz"))
+        self.assertEqual(capture.remove_stage(s, "A"), [])
+        d = tempfile_dir()
+        path = os.path.join(d, "x.stages.json")
+        self.assertEqual(capture.load_stages(path), [])
+        with open(path, "w") as fh:
+            fh.write("not json")
+        self.assertEqual(capture.load_stages(path), [])
+        capture.save_stages(path, s)
+        self.assertEqual(capture.load_stages(path), s)
+
+
+def tempfile_dir():
+    import tempfile
+    return tempfile.mkdtemp(prefix="nrfwb-stages-")
+
+
+class TheStageTable(PathBase):
+    def setUp(self):
+        PathBase.setUp(self)
+        self.record_session("rak-1")
+
+    def add(self, name, a, b):
+        return self.call("meter.stage_set", {"recording": "rak-1", "name": name, "start_s": a, "end_s": b})
+
+    def test_each_stage_is_exact_against_the_raw_samples_and_the_shares_add_up(self):
+        self.add("lead", -0.2, 0.0)
+        self.add("burst", 0.0, 0.2)
+        self.add("tail", 0.2, 0.4)
+        t = self.call("meter.stages", {"recording": "rak-1"}).data
+        by = {s["name"]: s for s in t["stages"]}
+        self.assertEqual([s["name"] for s in t["stages"]], ["lead", "burst", "tail"])
+        self.assertEqual(t["wakes"], 4)
+        b = by["burst"]
+        self.assertAlmostEqual(b["mean"], self.wake_a, delta=self.wake_a * 1e-9)
+        self.assertAlmostEqual(b["charge_c"], 0.2 * self.wake_a, delta=1e-12)
+        self.assertEqual(b["peak"], self.wake_a)
+        self.assertEqual(b["wakes"], 4)
+        self.assertAlmostEqual(b["length_s"], 0.2, places=12)
+        self.assertAlmostEqual(by["lead"]["mean"], self.sleep_a, delta=self.sleep_a * 1e-9)
+        self.assertAlmostEqual(sum(s["share"] for s in t["stages"]), 1.0, places=9)
+        self.assertAlmostEqual(b["share"], 0.2 * self.wake_a / (0.2 * self.wake_a + 0.4 * self.sleep_a), places=9)
+        self.assertAlmostEqual(t["untagged_charge_c"], 0.0, delta=1e-12, msg="the three stages cover the whole capture")
+        self.assertAlmostEqual(t["tagged_charge_c"], 0.2 * self.wake_a + 0.4 * self.sleep_a, delta=1e-12)
+
+    def test_a_stage_is_in_seconds_from_the_wake_start_so_a_narrower_one_sees_less_of_it(self):
+        self.add("early", 0.0, 0.05)
+        e = self.call("meter.stages", {"recording": "rak-1"}).data["stages"][0]
+        self.assertAlmostEqual(e["charge_c"], 0.05 * self.wake_a, delta=1e-12)
+        self.assertAlmostEqual(self.call("meter.stages", {"recording": "rak-1"}).data["untagged_charge_c"], 0.15 * self.wake_a + 0.4 * self.sleep_a, delta=1e-12)
+
+    def test_a_stage_outside_every_capture_contributes_nothing(self):
+        self.add("later", 5.0, 6.0)
+        s = self.call("meter.stages", {"recording": "rak-1"}).data["stages"][0]
+        self.assertEqual((s["wakes"], s["mean"], s["charge_c"], s["share"], s["peak"]), (0, None, None, None, None))
+
+    def test_energy_is_charge_times_volts_when_volts_are_given_and_absent_otherwise(self):
+        self.add("burst", 0.0, 0.2)
+        self.assertIsNone(self.call("meter.stages", {"recording": "rak-1"}).data["stages"][0]["energy_j"])
+        j = self.call("meter.stages", {"recording": "rak-1", "volts": 4.0}).data["stages"][0]["energy_j"]
+        self.assertAlmostEqual(j, 0.2 * self.wake_a * 4.0, delta=1e-12)
+
+    def test_stages_are_stored_with_the_recording_and_survive_the_sampler(self):
+        self.add("burst", 0.0, 0.2)
+        from nrf_workbench.instruments import capture as c2
+        self.assertEqual(c2.load_stages(os.path.join(self.folder, "rak-1.stages.json")), [{"name": "burst", "start_s": 0.0, "end_s": 0.2}])
+
+    def test_delete_removes_and_an_unknown_stage_is_stage_unknown(self):
+        self.add("burst", 0.0, 0.2)
+        res = self.call("meter.stage_delete", {"recording": "rak-1", "name": "nope"})
+        self.assertEqual((res.cls, res.code), ("refused", "stage_unknown"))
+        self.assertEqual(self.call("meter.stage_delete", {"recording": "rak-1", "name": "BURST"}).data["stages"], [])
+
+    def test_a_bad_stage_is_a_usage_error_naming_the_argument(self):
+        self.add("burst", 0.0, 0.2)
+        with self.assertRaises(UsageError) as cm:
+            self.add("other", 0.1, 0.3)
+        self.assertEqual(cm.exception.arg, "start_s")
+        with self.assertRaises(UsageError) as cm:
+            self.add("", 1.0, 2.0)
+        self.assertEqual(cm.exception.arg, "name")
+
+    def test_a_recording_with_no_wakes_has_a_table_of_empty_stages(self):
+        open(os.path.join(self.folder, "plain.csv"), "w").close()
+        self.call("meter.stage_set", {"recording": "plain", "name": "x", "start_s": 0.0, "end_s": 0.1})
+        t = self.call("meter.stages", {"recording": "plain"}).data
+        self.assertEqual((t["wakes"], t["stages"][0]["wakes"], t["stages"][0]["mean"]), (0, 0, None))
+
+
+class TheSpreadAcrossWakes(PathBase):
+    def setUp(self):
+        PathBase.setUp(self)
+        # each wake takes a little less than the last: ADC 12000, 11000, 10000, 9000 for the wakes in blocks 3, 13, 23, 33
+        self.unit.profile = lambda i: ((WAKE_ADC - 1000 * ((i // 20000) // 10)) if i < self.BLOCKS * 20000 and (i // 20000) % 10 == 3 else 1000, 0)
+
+    def test_the_stage_gives_the_mean_of_the_wakes_and_how_far_they_differ(self):
+        self.record_session("rak-1")
+        self.call("meter.stage_set", {"recording": "rak-1", "name": "burst", "start_s": 0.0, "end_s": 0.2})
+        s = self.call("meter.stages", {"recording": "rak-1"}).data["stages"][0]
+        per = [reference_amps(self.cal, 0, WAKE_ADC - 1000 * k) for k in range(4)]
+        self.assertEqual(s["wakes"], 4)
+        self.assertAlmostEqual(s["mean"], sum(per) / 4, delta=per[0] * 1e-9)
+        self.assertAlmostEqual(s["lowest_mean"], min(per), delta=per[0] * 1e-9)
+        self.assertAlmostEqual(s["highest_mean"], max(per), delta=per[0] * 1e-9)
+        self.assertAlmostEqual(s["peak"], max(per), delta=per[0] * 1e-9)
+        self.assertGreater(s["highest_mean"] - s["lowest_mean"], 0.2 * per[0], "the wakes must really differ, or this proves nothing")
 
 
 if __name__ == "__main__":

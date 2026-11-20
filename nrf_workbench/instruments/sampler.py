@@ -7,9 +7,11 @@ the power profiler holds its port for the whole session. A fault ends the sessio
 import json
 import os
 import re
+import shutil
 import threading
 import time
 
+from . import capture
 from . import meter as meterlib
 from . import scpi
 from .envelope import Envelope, Stats
@@ -37,6 +39,10 @@ class Missing(Exception):
     """The instrument a session was asked to read is not configured on this bench."""
 
 
+class RecordingUnknown(Exception):
+    """No recording has that name."""
+
+
 class Session(object):
     def __init__(self, number, mode, bound_s, name, wall, mono, source):
         self.number, self.mode, self.bound_s, self.name = number, mode, bound_s, name
@@ -50,6 +56,7 @@ class Session(object):
         self.thread = None
         self.file = None
         self.ended = None
+        self.wakes_dir = None                                # where a recording keeps its wakes (the profiler's source writes them there)
 
 
 def mode_state(mode):
@@ -138,6 +145,7 @@ class Sampler(object):
                 self._prune()
             s = Session(self._count, mode, float(bound_s), name if mode == "record" else None, wall, self._mono(), src)
             if mode == "record":
+                s.wakes_dir = os.path.join(self.folder, name + ".wakes")
                 s.file = open(os.path.join(self.folder, name + ".csv"), "w")
                 s.file.write(HEADER)
                 s.file.flush()
@@ -161,11 +169,12 @@ class Sampler(object):
         """Keep the newest KEEP_RECORDINGS - 1 recordings so that one more fits."""
         files = sorted((f for f in os.listdir(self.folder) if f.endswith(".csv")), key=lambda f: os.path.getmtime(os.path.join(self.folder, f)))
         for old in files[:max(0, len(files) - (KEEP_RECORDINGS - 1))]:
-            for suffix in (".csv", ".json"):
+            for suffix in (".csv", ".json", ".stages.json"):
                 try:
                     os.unlink(os.path.join(self.folder, old[:-4] + suffix))
                 except OSError:
                     pass
+            shutil.rmtree(os.path.join(self.folder, old[:-4] + ".wakes"), ignore_errors=True)
 
     # -- the thread -----------------------------------------------------------------------------------
     def _run(self, s):
@@ -267,25 +276,67 @@ class Sampler(object):
                     "state": s.state if s else "idle", "facts": dict(s.facts) if s else {},
                     "last": list(s.stats._last) if s and s.stats._last else None}      # [t_s, value]: where a page carries the charge on from
 
-    def _capturing(self):
-        """The last session's source if it keeps wakes at full rate (the profiler's does; the multimeter's does not), else None."""
-        s = self._session
-        return s.source if s is not None and hasattr(s.source, "capture") else None
+    # -- the wakes kept at full rate, and their stages (docs/specs/ppk2-stages.md) ----------------------
+    def _wakes(self, recording=None):
+        """The WakeSet to read: a finished (or running) recording's wakes from disk when `recording` is named, else the last session's from memory if its source keeps wakes (the
+        profiler's does; the multimeter's does not). None when there are none. RecordingUnknown for a name that is not a recording."""
+        if recording is None:
+            s = self._session
+            return getattr(s.source, "wakes", None) if s is not None else None
+        self._recording_path(recording)
+        from . import ppk2                                   # here, not at the top: ppk2 is only for a bench that has one
+        return ppk2.stored_wakes(os.path.join(self.folder, recording + ".wakes"))
 
-    def captures(self):
-        s, src = self._session, self._capturing()
-        return {"session": s.number if s else 0, "source": s.source.name if s else None, "captures": src.captures() if src is not None else []}
+    def _recording_path(self, recording):
+        if not NAME.match(recording or "") or not self.folder or not os.path.exists(os.path.join(self.folder, recording + ".csv")):
+            raise RecordingUnknown("there is no recording named %s" % recording)
+        return os.path.join(self.folder, recording + ".csv")
 
-    def capture(self, n, t0=None, t1=None, points=None):
-        """One wake's exact envelope (ppk2.Ppk2Source.capture), or None when this session holds no capture n. ValueError for a bad window or points."""
-        src = self._capturing()
-        if src is None:
-            return None
-        return src.capture(n, t0, t1, points if points is not None else 1000)
+    def captures(self, recording=None):
+        s, ws = self._session, self._wakes(recording)
+        return {"session": s.number if s else 0, "source": s.source.name if s else None, "recording": recording, "captures": ws.rows() if ws is not None else []}
 
-    def held(self):
-        src = self._capturing()
-        return src.numbers() if src is not None else []
+    def capture(self, n, t0=None, t1=None, points=None, recording=None):
+        """One wake's exact envelope, or None when no wake n is held. ValueError for a bad window or points."""
+        ws = self._wakes(recording)
+        return ws.envelope(n, t0, t1, points if points is not None else capture.POINTS_DEFAULT) if ws is not None else None
+
+    def held(self, recording=None):
+        ws = self._wakes(recording)
+        return ws.numbers() if ws is not None else []
+
+    def _stages_path(self, recording):
+        self._recording_path(recording)
+        return os.path.join(self.folder, recording + ".stages.json")
+
+    def stage_list(self, recording):
+        return capture.load_stages(self._stages_path(recording))
+
+    def stage_set(self, recording, name, start_s, end_s):
+        """The recording's stages with this one added or changed (capture.StageError for a rule broken)."""
+        path = self._stages_path(recording)
+        stages = capture.set_stage(capture.load_stages(path), name, start_s, end_s)
+        capture.save_stages(path, stages)
+        return stages
+
+    def stage_delete(self, recording, name):
+        """The stages left, or None if there was no stage of that name."""
+        path = self._stages_path(recording)
+        stages = capture.remove_stage(capture.load_stages(path), name)
+        if stages is not None:
+            capture.save_stages(path, stages)
+        return stages
+
+    def stages(self, recording, volts=None):
+        """The stage table over the recording's saved wakes."""
+        path = self._stages_path(recording)
+        stages = capture.load_stages(path)
+        ws = self._wakes(recording)
+        if ws is None:
+            return {"recording": recording, "wakes": 0, "stages": [dict(s, length_s=s["end_s"] - s["start_s"], wakes=0, mean=None, lowest_mean=None, highest_mean=None, peak=None,
+                                                                         charge_c=None, share=None, energy_j=None) for s in stages],
+                    "tagged_charge_c": 0.0, "untagged_charge_c": None}
+        return dict(ws.stage_table(stages, volts), recording=recording)
 
     def recordings(self):
         """The files in the folder, newest first, with what the sidecar says. A recording whose sidecar has no end was cut short."""
