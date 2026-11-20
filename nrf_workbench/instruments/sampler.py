@@ -267,6 +267,26 @@ class Sampler(object):
                     "state": s.state if s else "idle", "facts": dict(s.facts) if s else {},
                     "last": list(s.stats._last) if s and s.stats._last else None}      # [t_s, value]: where a page carries the charge on from
 
+    def _capturing(self):
+        """The last session's source if it keeps wakes at full rate (the profiler's does; the multimeter's does not), else None."""
+        s = self._session
+        return s.source if s is not None and hasattr(s.source, "capture") else None
+
+    def captures(self):
+        s, src = self._session, self._capturing()
+        return {"session": s.number if s else 0, "source": s.source.name if s else None, "captures": src.captures() if src is not None else []}
+
+    def capture(self, n, t0=None, t1=None, points=None):
+        """One wake's exact envelope (ppk2.Ppk2Source.capture), or None when this session holds no capture n. ValueError for a bad window or points."""
+        src = self._capturing()
+        if src is None:
+            return None
+        return src.capture(n, t0, t1, points if points is not None else 1000)
+
+    def held(self):
+        src = self._capturing()
+        return src.numbers() if src is not None else []
+
     def recordings(self):
         """The files in the folder, newest first, with what the sidecar says. A recording whose sidecar has no end was cut short."""
         if not self.folder or not os.path.isdir(self.folder):

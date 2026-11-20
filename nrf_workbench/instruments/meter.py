@@ -262,6 +262,21 @@ def register(registry, host):
             return Result.refused("recording_unknown", "there is no recording named %s" % name, {"name": name})
         return Result.success({"name": name, "csv": text, "bytes": len(text)}, "%d bytes" % len(text))
 
+    def captures(ctx):
+        data = sampler(ctx).captures()
+        n = len(data["captures"])
+        return Result.success(data, "%d wake%s kept" % (n, "" if n == 1 else "s"))
+
+    def capture_one(ctx, n, t0=None, t1=None, points=None):
+        s = sampler(ctx)
+        try:
+            data = s.capture(n, t0, t1, points)
+        except ValueError as exc:
+            raise UsageError(str(exc), "points" if "points" in str(exc) else "t0")
+        if data is None:
+            return Result.refused("capture_unknown", "no capture %d is held (held: %s)" % (n, ", ".join(str(i) for i in s.held()) or "none"), {"held": s.held()})
+        return Result.success(data, "wake %d: %.4g s, peak %.4g A" % (n, data["t1"] - data["t0"], data["peak"]))
+
     bound = Arg("bound_s", type="float", unit="s", doc="how long to run at most, 1 to 43200 (12 h): nothing runs unbounded")
     source = Arg("source", required=False, doc="the instrument to read: meter (the multimeter, the default when it is configured) or ppk2 (the Nordic Power Profiler)")
     add(Command("meter.watch", "Start a live session: a reading every period, pushed to the page and kept as a chart, nothing written to disk. At most 12 h.",
@@ -275,6 +290,14 @@ def register(registry, host):
                 result="session, state, mode, name, started, elapsed_s, bound_s, reason, function, unit, stats"))
     add(Command("meter.profile", "The whole session so far as buckets of lowest, highest and mean, with the live feed cursor to carry on from. Bounded at 2000 buckets however long it runs.",
                 lambda ctx: Result.success(sampler(ctx).profile(), "ok"), requires=STREAM, result="session, cursor, epoch, unit, function, buckets, stats, state"))
+    add(Command("meter.captures", "The wakes the power profiler kept at its full 100,000 samples a second during the last session (the newest 8): number, when, length, peak and mean. "
+                "A multimeter session keeps none.", captures, requires=STREAM, result="session, source, captures"))
+    add(Command("meter.capture", "One kept wake as an exact lowest/highest/mean envelope of any stretch of it, at any resolution, with times in seconds from the wake's start (negative before it).",
+                capture_one, args=(Arg("n", type="int", doc="the capture's number, from meter.captures"),
+                                   Arg("t0", type="float", required=False, unit="s", doc="start of the stretch, seconds from the wake's start (default: the whole capture)"),
+                                   Arg("t1", type="float", required=False, unit="s", doc="end of the stretch"),
+                                   Arg("points", type="int", required=False, doc="buckets across the stretch, 2 to 2000, default 1000")),
+                requires=STREAM, result="n, wake_at_s, t0, t1, points, buckets, charge_c, mean, peak, samples, lost, truncated"))
     add(Command("meter.recordings", "The recordings on this bench, newest first, with what each holds.", recordings, requires=STORE, result="recordings"))
     add(Command("meter.recording", "One recording's CSV text, for download.", recording, args=(Arg("name", doc="the recording's name, from meter.recordings"),),
                 requires=STORE, result="name, csv, bytes"))

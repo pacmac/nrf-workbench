@@ -5,6 +5,7 @@ query, start and stop. Mode, voltage and the supply switch are writes to the uni
 cannot see what is wired. Every byte written passes `_frame`, which knows exactly six shapes.
 """
 import collections
+import math
 import os
 import select
 import sys
@@ -16,7 +17,7 @@ from ..console import port as portlib
 from ..core.registry import Arg, Command, UsageError
 from ..core.result import Result
 from ..devices import identity
-from . import scpi
+from . import capture, scpi
 from .source import Fault, Reading
 
 VENDOR_PRODUCT = "1915:c00a"
@@ -452,6 +453,8 @@ class Ppk2Source(object):
 
     def __init__(self, ppk2):
         self.ppk2, self.port, self.reducer, self.started, self.claimed = ppk2, None, None, None, False
+        self.capturer = None
+        self._decoded, self._decoded_lock = None, threading.Lock()
 
     def ceiling_s(self, s):
         return BLOCK_CEILING_S + DRAIN_MAX_S + 1.0
@@ -477,6 +480,7 @@ class Ppk2Source(object):
             except OSError as exc:
                 raise Fault("the PPK2's port %s failed: %s" % (node, exc))
             self.reducer, self.started = Reducer(cal), p._mono()
+            self.capturer = capture.Capturer()              # the last session's captures stay readable until the next one begins
         except BaseException:
             self._close()
             raise
@@ -500,10 +504,57 @@ class Ppk2Source(object):
         p, r = self.ppk2, self.reducer
         b = None
         while b is None:                                    # a block whose every sample was held out after a range change says nothing: read the next
-            b = r.block(self._block())
+            data = self._block()
+            before = r.lost
+            b = r.block(data)
+        self.capturer.feed(data, b["t"] - b["dt"], b["mean"], b["hi"], r.lost - before)      # a wake is kept at full rate (docs/specs/ppk2-stages.md)
         elapsed = p._mono() - self.started
-        facts = {"lost": r.lost, "filtered": r.filtered, "rate_low": bool(elapsed >= RATE_AFTER_S and r.words / elapsed < RATE_LOW_HZ)}
+        facts = {"lost": r.lost, "filtered": r.filtered, "rate_low": bool(elapsed >= RATE_AFTER_S and r.words / elapsed < RATE_LOW_HZ), "captures": self.capturer.count}
         return Reading(b["t"], b["mean"], "CURR", "A", range=b["range"], lo=b["lo"], hi=b["hi"], n=b["n"], dt=b["dt"], facts=facts)
+
+    # -- the wakes kept at full rate (docs/specs/ppk2-stages.md) ---------------------------------------
+    def _values(self, c):
+        """A capture's samples in amps and the index of its first sample over the level. One capture is held decoded at a time: 500,000 doubles are 4 MB, eight would be 32."""
+        with self._decoded_lock:
+            if self._decoded is not None and self._decoded[0] is c:
+                return self._decoded[1], self._decoded[2]
+            values = capture.decode(c.data, self.reducer.cal.amps)
+            start = capture.wake_start(values, c.level)
+            self._decoded = (c, values, start)
+            if c.stats is None:
+                c.stats = {"wake_at_s": start / float(SAMPLE_RATE_HZ), "mean": sum(values) / len(values), "peak": max(values)}
+            return values, start
+
+    def numbers(self):
+        return self.capturer.numbers() if self.capturer is not None else []
+
+    def captures(self):
+        rows = []
+        for c in (list(self.capturer.items) if self.capturer is not None else []):
+            if c.stats is None:
+                self._values(c)
+            rows.append({"n": c.n, "t0": round(c.t0, 6), "wake_at_s": c.stats["wake_at_s"], "duration_s": c.samples / float(SAMPLE_RATE_HZ), "samples": c.samples,
+                         "lost": c.lost, "truncated": c.truncated, "peak": c.stats["peak"], "mean": c.stats["mean"]})
+        return rows
+
+    def capture(self, n, t0=None, t1=None, points=capture.POINTS_DEFAULT):
+        """An exact envelope of one wake: times in seconds from the wake's start. None for a number that is not held; ValueError for an empty window or bad points."""
+        c = self.capturer.get(n) if self.capturer is not None else None
+        if c is None:
+            return None
+        if isinstance(points, bool) or not isinstance(points, int) or not 2 <= points <= capture.POINTS_MAX:
+            raise ValueError("points is 2 to %d" % capture.POINTS_MAX)
+        values, start = self._values(c)
+        rate = float(SAMPLE_RATE_HZ)
+        i0 = 0 if t0 is None else max(0, start + int(math.floor(t0 * rate)))
+        i1 = len(values) if t1 is None else min(len(values), start + int(math.ceil(t1 * rate)))
+        if i1 <= i0:
+            raise ValueError("the window holds no samples of capture %d (it runs from %g to %g s)" % (n, -start / rate, (len(values) - start) / rate))
+        buckets, width = capture.window(values, i0, i1, points)
+        seg = values[i0:i1]
+        return {"n": c.n, "wake_at_s": start / rate, "t0": (i0 - start) / rate, "t1": (i1 - start) / rate, "points": len(buckets), "width_s": width / rate,
+                "buckets": [{"t0": (b["a"] - start) / rate, "t1": (b["b"] - start) / rate, "min": b["min"], "max": b["max"], "mean": b["mean"], "n": b["n"]} for b in buckets],
+                "charge_c": sum(seg) / rate, "mean": sum(seg) / len(seg), "peak": max(seg), "samples": len(seg), "lost": c.lost, "truncated": c.truncated}
 
     def _close(self):
         if not self.claimed:
