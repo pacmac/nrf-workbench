@@ -226,8 +226,9 @@ def register(registry, host):
     def sampler(ctx):
         h = ctx.host
         cfg = h.config["instruments"]
-        return h.service("meter_sampler", lambda: samplerlib.Sampler(
-            meter if cfg["meter"] else None, h.streams.meter, h.config["paths"]["meter"], ppk2=h.service("ppk2", lambda: ppk2lib.Ppk2(h)) if cfg["ppk2"] else None))
+        # Host.service holds its lock while a factory runs, so a factory must not ask for another service: the profiler is fetched first.
+        profiler = h.service("ppk2", lambda: ppk2lib.Ppk2(h)) if cfg["ppk2"] else None
+        return h.service("meter_sampler", lambda: samplerlib.Sampler(meter if cfg["meter"] else None, h.streams.meter, h.config["paths"]["meter"], ppk2=profiler))
 
     def starter(mode):
         def handler(ctx, bound_s, name=None, source=None):

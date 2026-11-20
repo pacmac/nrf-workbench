@@ -9,6 +9,7 @@ import random
 import struct
 import sys
 import tempfile
+import threading
 import time
 import types
 import unittest
@@ -157,6 +158,7 @@ class Host(object):
         self.hooks = {"ppk2_open": self._open}
         self.streams = types.SimpleNamespace(meter=Bus(5000, 86400))
         self._services = {}
+        self._guard = threading.Lock()
 
     def _open(self, node):
         self.opened.append(node)
@@ -164,12 +166,20 @@ class Host(object):
         return self.unit
 
     def service(self, name, factory):
-        if name not in self._services:
-            self._services[name] = factory()
-        return self._services[name]
+        """As service.Host.service: one lock held while a factory runs, and not re-entrant. A factory that asks for another service deadlocks the real service (it did,
+        on the bench, 2026-11-20): here it fails at once."""
+        if not self._guard.acquire(timeout=2):
+            raise RuntimeError("Host.service was asked for a service from inside a service factory: that deadlocks the real host")
+        try:
+            if name not in self._services:
+                self._services[name] = factory()
+            return self._services[name]
+        finally:
+            self._guard.release()
 
     def started(self, name):
-        return self._services.get(name)
+        with self._guard:
+            return self._services.get(name)
 
 
 class Base(unittest.TestCase):
