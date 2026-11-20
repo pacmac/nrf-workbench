@@ -17,17 +17,22 @@ class Envelope(object):
         self.buckets = []
         self._cur = None
 
-    def add(self, t, value):
+    def add(self, t, value, lo=None, hi=None, n=1):
+        """One point. A multimeter reading is a point (n 1). A power profiler block stands for `n` samples whose mean is `value`, lowest `lo`, highest `hi`: the bucket
+        keeps them exactly (its sum takes value * n), and `width` counts the points added (`k`), not the samples they stand for."""
+        lo = value if lo is None else lo
+        hi = value if hi is None else hi
         c = self._cur
         if c is None:
-            self._cur = {"t0": t, "t1": t, "min": value, "max": value, "sum": value, "n": 1}
+            self._cur = {"t0": t, "t1": t, "min": lo, "max": hi, "sum": value * n, "n": n, "k": 1}
         else:
             c["t1"] = t
-            c["min"] = min(c["min"], value)
-            c["max"] = max(c["max"], value)
-            c["sum"] += value
-            c["n"] += 1
-        if self._cur["n"] >= self.width:
+            c["min"] = min(c["min"], lo)
+            c["max"] = max(c["max"], hi)
+            c["sum"] += value * n
+            c["n"] += n
+            c["k"] += 1
+        if self._cur["k"] >= self.width:
             self.buckets.append(self._cur)
             self._cur = None
             if len(self.buckets) >= self.max:
@@ -38,16 +43,17 @@ class Envelope(object):
         for i in range(0, len(b) - 1, 2):
             x, y = b[i], b[i + 1]
             merged.append({"t0": x["t0"], "t1": y["t1"], "min": min(x["min"], y["min"]), "max": max(x["max"], y["max"]),
-                           "sum": x["sum"] + y["sum"], "n": x["n"] + y["n"]})
+                           "sum": x["sum"] + y["sum"], "n": x["n"] + y["n"], "k": x["k"] + y["k"]})
         if len(b) % 2:
             merged.append(b[-1])                           # an odd one out stays as it is: it is merged on the next round
         self.buckets = merged
         self.width *= 2
 
     def snapshot(self):
-        """The buckets so far, with the one being filled, each as {t0, t1, min, max, mean, n}. Never more than max_buckets."""
+        """The buckets so far, with the one being filled, each as {t0, t1, min, max, mean, n, k}: `n` the readings or samples it stands for, `k` the points added to it (a page
+        that carries on from a snapshot needs the width, which is the most points a bucket holds). Never more than max_buckets."""
         every = list(self.buckets) + ([self._cur] if self._cur is not None else [])
-        return [{"t0": b["t0"], "t1": b["t1"], "min": b["min"], "max": b["max"], "mean": b["sum"] / b["n"], "n": b["n"]} for b in every]
+        return [{"t0": b["t0"], "t1": b["t1"], "min": b["min"], "max": b["max"], "mean": b["sum"] / b["n"], "n": b["n"], "k": b["k"]} for b in every]
 
 
 class Stats(object):
@@ -58,12 +64,18 @@ class Stats(object):
         self.overloads = 0
         self._last = None
 
-    def add(self, t, value):
-        self.n += 1
-        self.min = value if self.min is None else min(self.min, value)
-        self.max = value if self.max is None else max(self.max, value)
-        self.sum += value
-        if self._last is not None:
+    def add(self, t, value, lo=None, hi=None, n=1, dt=None):
+        """A point (n 1, the charge by the trapezoid rule between points) or a block of `n` samples (`dt` seconds long, mean `value`, lowest `lo`, highest `hi`): then the
+        charge is the block's mean times its duration, which is exact for the samples taken, and `n` counts samples."""
+        lo = value if lo is None else lo
+        hi = value if hi is None else hi
+        self.n += n
+        self.min = lo if self.min is None else min(self.min, lo)
+        self.max = hi if self.max is None else max(self.max, hi)
+        self.sum += value * n
+        if dt is not None:
+            self.charge += value * dt
+        elif self._last is not None:
             lt, lv = self._last
             self.charge += (value + lv) / 2.0 * (t - lt)
         self._last = (t, value)

@@ -56,6 +56,19 @@ class Tree(object):
                 fh.write(majmin + "\n")
         return d
 
+    def ppk2(self, name="1-1.2", serial="E1C5F15B15A3", measuring=("ttyACM1", "166:1"), shell=("ttyACM2", "166:2")):
+        """A Nordic PPK2 as the Pi showed it (2026-11-20): one USB device, two CDC interfaces. Interface 01 speaks the measuring protocol, interface 03 is a Zephyr shell."""
+        d = self.usb(name, ("1915", "c00a"), "PPK2", serial=serial, manufacturer="Nordic Semiconductor")
+        for number, (tty, majmin) in (("1", measuring), ("3", shell)):
+            iface = os.path.join(d, "%s:1.%s" % (name, number))
+            t = os.path.join(iface, "tty", tty)
+            os.makedirs(t, exist_ok=True)
+            with open(os.path.join(iface, "bInterfaceNumber"), "w") as fh:
+                fh.write("%02x\n" % int(number))
+            with open(os.path.join(t, "dev"), "w") as fh:
+                fh.write(majmin + "\n")
+        return d
+
     def unplug(self, name):
         shutil.rmtree(os.path.join(self.sysfs, "bus", "usb", "devices", name), ignore_errors=True)
 

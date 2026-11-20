@@ -218,21 +218,29 @@ def register(registry, host):
                 requires=("meter",), result="points (t_s, value), n, min, max, mean, unit, period_s, duration_s"))
 
     # Sessions (docs/specs/meter-page.md): a watch or a recording for minutes to hours, on the Pi, pushed to the page over the live feed.
+    from . import ppk2 as ppk2lib
     from . import sampler as samplerlib
-    STREAM, STORE = ("meter", "meter_stream"), ("meter", "meter_stream", "meter_store")
+    # Sessions read the multimeter or the power profiler (docs/specs/ppk2.md): the stream is there when either is configured, and a session for one that is not is refused.
+    STREAM, STORE = ("meter_stream",), ("meter_stream", "meter_store")
 
     def sampler(ctx):
         h = ctx.host
-        return h.service("meter_sampler", lambda: samplerlib.Sampler(meter, h.streams.meter, h.config["paths"]["meter"]))
+        cfg = h.config["instruments"]
+        return h.service("meter_sampler", lambda: samplerlib.Sampler(
+            meter if cfg["meter"] else None, h.streams.meter, h.config["paths"]["meter"], ppk2=h.service("ppk2", lambda: ppk2lib.Ppk2(h)) if cfg["ppk2"] else None))
 
     def starter(mode):
-        def handler(ctx, bound_s, name=None):
+        def handler(ctx, bound_s, name=None, source=None):
+            if source is not None and source not in ("meter", "ppk2"):
+                raise UsageError("source is meter or ppk2", "source")
             try:
-                summary = sampler(ctx).start(mode, bound_s, name)
+                summary = sampler(ctx).start(mode, bound_s, name, source)
             except samplerlib.Busy as exc:
                 return Result.refused("meter_busy", "%s: stop it first (meter.stop)" % exc, {"session": exc.session})
             except samplerlib.NameTaken as exc:
                 return Result.refused("name_taken", str(exc), {"name": name})
+            except samplerlib.Missing as exc:
+                return Result.refused("capability_missing", str(exc), {"source": source})
             except ValueError as exc:
                 raise UsageError(str(exc), "name" if "name" in str(exc) else "bound_s")
             return Result.success(summary, "%s started for at most %g s" % ("recording" if mode == "record" else "watch", summary["bound_s"]))
@@ -254,11 +262,12 @@ def register(registry, host):
         return Result.success({"name": name, "csv": text, "bytes": len(text)}, "%d bytes" % len(text))
 
     bound = Arg("bound_s", type="float", unit="s", doc="how long to run at most, 1 to 43200 (12 h): nothing runs unbounded")
+    source = Arg("source", required=False, doc="the instrument to read: meter (the multimeter, the default when it is configured) or ppk2 (the Nordic Power Profiler)")
     add(Command("meter.watch", "Start a live session: a reading every period, pushed to the page and kept as a chart, nothing written to disk. At most 12 h.",
-                starter("watch"), args=(bound,), requires=STREAM, effect="write", result="session, state, mode, started, bound_s, stats"))
+                starter("watch"), args=(bound, source), requires=STREAM, effect="write", result="session, source, state, mode, started, bound_s, stats"))
     add(Command("meter.record", "Start a recording: a live session that also appends every reading to a CSV file on the Pi. At most 12 h; the newest 10 files are kept.",
-                starter("record"), args=(bound, Arg("name", required=False, doc="the file's name: a-z 0-9 . _ -, default the start time")),
-                requires=STORE, effect="write", result="session, state, mode, name, started, bound_s, stats"))
+                starter("record"), args=(bound, Arg("name", required=False, doc="the file's name: a-z 0-9 . _ -, default the start time"), source),
+                requires=STORE, effect="write", result="session, source, state, mode, name, started, bound_s, stats"))
     add(Command("meter.stop", "End the running session now. Already stopped is fine.", stop, requires=STREAM, effect="write", result="the session as it ended"))
     add(Command("meter.session", "The session's state, time and statistics: readings, min, max, mean and, for a current, the charge in mAh.",
                 lambda ctx: Result.success(sampler(ctx).session(), "ok"), requires=STREAM,

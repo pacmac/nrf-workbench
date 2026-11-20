@@ -128,9 +128,12 @@ returned, never a tail. **[brief]**
 | `pins_not_controllable` | refused | releasing or engaging a connection that does not use the Pi's own pins (a USB adapter's lines are its chip's) (`line-release.md`) | the connection |
 | `pins_not_set` | failed | `pinctrl` would not run or set a pin, or the pins did not read back as asked after a release or engage; the link stays held (`line-release.md`) | the connection, what was wanted, the pins as read |
 | `meter_function` | refused | a meter read that named the function it expects (`expect_function`) while the meter is set to another; nothing was read (`meter.md`) | the function it is set to, the one expected |
-| `meter_busy` | refused | a meter session (watch or record) is already running, so a second cannot start; the running one is in the evidence (`meter-page.md`) | the running session |
+| `meter_busy` | refused | an instrument session (watch or record, on the multimeter or the power profiler) is already running, so a second cannot start and the PPK2's own commands wait; the running one is in the evidence (`meter-page.md`, `ppk2.md`) | the running session |
 | `recording_unknown` | refused | no meter recording has that name (`meter-page.md`) | the name |
 | `meter_unreachable` | failed | the multimeter did not accept a connection within the ceiling, or closed it (`meter.md`) | the address, the reason |
+| `ppk2_unreachable` | failed | no PPK2 is attached (or not the one named), it has no measuring serial port, or the port would not open or failed (`ppk2.md`) | the setting, the serial or the port |
+| `ppk2_mode` | refused | the PPK2 is in the other mode: only source mode supplies a board, so switching the output on is refused in ampere mode (`ppk2.md`) | the mode it is in |
+| `supply_unconfirmed` | refused | a change that can cut or apply a board's supply (leaving source mode with the output on or unknown, or switching the output on) without `accept_supply` (`ppk2.md`) | the mode, what is known of the output |
 | `meter_overload` | suspect | a meter reading at SCPI's overload value: the range is too small to trust any number (`meter.md`) | the raw reply, the range |
 | `pin_reserved` | refused | a GPIO assignment to BCM 0 or 1, the HAT ID EEPROM's bus (`gpio.md`), or to a pin the bench's configuration reserves (`pins.reserved`, `pi-uart-move.md`) | the gpio, and `reserved_by: configuration` for a configured one |
 | `pin_not_on_header` | refused | a GPIO assignment to a number that is not on the 40-pin header (0 to 27) | the gpio |

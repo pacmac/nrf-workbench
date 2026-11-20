@@ -1,7 +1,8 @@
-"""Watch and record sessions on the multimeter (docs/specs/meter-page.md).
+"""Watch and record sessions on an instrument (docs/specs/meter-page.md, docs/specs/ppk2.md).
 
-One session at a time: a thread takes a reading, publishes it to the bounded `meter` stream (the browser listens, nothing polls) and, for a recording, appends it to a CSV file.
-Each reading is its own short connection under the meter's one-caller lock, so other meter commands can run between two readings. A fault ends the session, never papers over it.
+One session at a time, whichever instrument it reads: a thread takes a reading, publishes it to the bounded `meter` stream (the browser listens, nothing polls) and, for a
+recording, appends it to a CSV file. The multimeter's reading is its own short connection under its one-caller lock, so other meter commands can run between two readings;
+the power profiler holds its port for the whole session. A fault ends the session, never papers over it.
 """
 import json
 import os
@@ -12,12 +13,14 @@ import time
 from . import meter as meterlib
 from . import scpi
 from .envelope import Envelope, Stats
+from .source import Fault, Reading
 
 MIN_BOUND_S, MAX_BOUND_S = 1, 43200          # 12 h: about 216,000 readings and 13 MB of CSV at NPLC 10 (docs/specs/meter-page.md)
 KEEP_RECORDINGS = 10                         # newest files kept: 10 x 13 MB = 130 MB at most
 SETTING_EVERY = 10                           # re-ask function, range and NPLC every 10 readings: about 2 s at NPLC 10, not 4 extra queries on every reading
 NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
-HEADER = "t_s,wall,value,unit,function,range,nplc,overload\n"
+# The first eight columns are the multimeter's; `min`, `max` and `n` were added for the power profiler's blocks (docs/specs/ppk2.md) and come last, so an older file still reads.
+HEADER = "t_s,wall,value,unit,function,range,nplc,overload,min,max,n\n"
 
 
 class Busy(Exception):
@@ -30,13 +33,19 @@ class NameTaken(Exception):
     pass
 
 
+class Missing(Exception):
+    """The instrument a session was asked to read is not configured on this bench."""
+
+
 class Session(object):
-    def __init__(self, number, mode, bound_s, name, wall, mono):
+    def __init__(self, number, mode, bound_s, name, wall, mono, source):
         self.number, self.mode, self.bound_s, self.name = number, mode, bound_s, name
+        self.source = source
         self.started, self.t0 = wall, mono
         self.state, self.reason = mode_state(mode), ""
         self.stats, self.envelope = Stats(), Envelope()
         self.function = self.unit = self.range = self.nplc = None
+        self.facts = {}                                      # what the source knows about the session so far (the profiler's lost and filtered samples)
         self.stop = threading.Event()
         self.thread = None
         self.file = None
@@ -47,17 +56,65 @@ def mode_state(mode):
     return "recording" if mode == "record" else "watching"
 
 
+class MeterSource(object):
+    """The multimeter as a source: one READ? per reading, each on its own connection; the setting is re-asked every SETTING_EVERY readings."""
+    name = "meter"
+
+    def __init__(self, meter):
+        self.meter = meter
+        self._setting = None
+
+    def begin(self, s):
+        self._setting = None
+
+    def end(self):
+        pass
+
+    def ceiling_s(self, s):
+        """How long to wait for the session's thread after a stop: one reading's give-up time and a second."""
+        return meterlib.reading_ceiling_s(s.nplc) + 1.0
+
+    def _read(self, conn, k):
+        if self._setting is None or k % SETTING_EVERY == 0:
+            self._setting = meterlib.Setting(conn)
+        raw = conn.ask("READ?", ceiling=meterlib.reading_ceiling_s(self._setting.nplc))
+        return self._setting, raw
+
+    def take(self, s, k):
+        try:
+            setting, raw = self.meter.exchange(lambda conn: self._read(conn, k))
+        except scpi.ScpiError as exc:
+            raise Fault(str(exc))
+        value = meterlib._number(raw)
+        if value is None:
+            raise Fault("the meter answered %r, which is not a number" % raw)
+        return Reading(None, value, setting.function, setting.unit, setting.range, setting.nplc, overload=abs(value) >= meterlib.OVERLOAD)
+
+
 class Sampler(object):
-    def __init__(self, meter, bus, folder=None, wall=time.time, mono=time.monotonic):
-        self.meter, self.bus, self.folder = meter, bus, folder
+    def __init__(self, meter, bus, folder=None, wall=time.time, mono=time.monotonic, ppk2=None):
+        """`meter` and `ppk2` are the instruments this bench has (None for one it has not): each becomes a source a session can read."""
+        self.sources = {}
+        if meter is not None:
+            self.sources["meter"] = MeterSource(meter)
+        if ppk2 is not None:
+            self.sources["ppk2"] = ppk2.source()
+        self.bus, self.folder = bus, folder
         self._wall, self._mono = wall, mono
         self._lock = threading.Lock()
         self._session = None
         self._count = 0
 
     # -- control --------------------------------------------------------------------------------------
-    def start(self, mode, bound_s, name=None):
-        """The session's summary dict. Raises Busy, NameTaken, or ValueError for a bad bound or name."""
+    def _source(self, name):
+        if name is None:
+            name = "meter" if "meter" in self.sources else next(iter(sorted(self.sources)), None)
+        if name not in self.sources:
+            raise Missing("this bench has no %s configured" % (name or "instrument"))
+        return self.sources[name]
+
+    def start(self, mode, bound_s, name=None, source=None):
+        """The session's summary dict. Raises Busy, NameTaken, Missing, or ValueError for a bad bound or name."""
         if mode not in ("watch", "record"):
             raise ValueError("mode is watch or record")
         if isinstance(bound_s, bool) or not isinstance(bound_s, (int, float)) or not MIN_BOUND_S <= bound_s <= MAX_BOUND_S:
@@ -65,6 +122,7 @@ class Sampler(object):
         with self._lock:
             if self._session is not None and self._session.thread is not None and self._session.thread.is_alive():
                 raise Busy(self._summary(self._session))
+            src = self._source(source)
             self._count += 1
             wall = self._wall()
             if mode == "record":
@@ -78,7 +136,7 @@ class Sampler(object):
                 if os.path.exists(path):
                     raise NameTaken("a recording named %s already exists" % name)
                 self._prune()
-            s = Session(self._count, mode, float(bound_s), name if mode == "record" else None, wall, self._mono())
+            s = Session(self._count, mode, float(bound_s), name if mode == "record" else None, wall, self._mono(), src)
             if mode == "record":
                 s.file = open(os.path.join(self.folder, name + ".csv"), "w")
                 s.file.write(HEADER)
@@ -91,13 +149,13 @@ class Sampler(object):
             return self._summary(s)
 
     def stop(self):
-        """End the session now and wait for its thread (at most one reading's ceiling). Already stopped is fine."""
+        """End the session now and wait for its thread (at most the source's give-up time). Already stopped is fine."""
         with self._lock:
             s = self._session
         if s is None or s.thread is None:
             return
         s.stop.set()
-        s.thread.join(meterlib.reading_ceiling_s(s.nplc) + 1.0)
+        s.thread.join(s.source.ceiling_s(s))
 
     def _prune(self):
         """Keep the newest KEEP_RECORDINGS - 1 recordings so that one more fits."""
@@ -110,40 +168,36 @@ class Sampler(object):
                     pass
 
     # -- the thread -----------------------------------------------------------------------------------
-    def _read(self, conn, setting, k):
-        if setting is None or k % SETTING_EVERY == 0:
-            setting = meterlib.Setting(conn)
-        raw = conn.ask("READ?", ceiling=meterlib.reading_ceiling_s(setting.nplc))
-        return setting, raw
-
     def _run(self, s):
-        setting, k, reason, state = None, 0, "", "idle"
+        k, reason, state = 0, "", "idle"
+        source = s.source
         try:
-            while not s.stop.is_set():
-                if self._mono() - s.t0 >= s.bound_s:
-                    reason = "the time bound was reached"
-                    break
-                try:
-                    setting, raw = self.meter.exchange(lambda conn: self._read(conn, setting, k))
-                except scpi.ScpiError as exc:
-                    reason, state = str(exc), "error"
-                    break
-                now = self._mono() - s.t0
-                value = meterlib._number(raw)
-                if value is None:
-                    reason, state = "the meter answered %r, which is not a number" % raw, "error"
-                    break
-                if s.function is None:
-                    s.function, s.unit = setting.function, setting.unit
-                elif setting.function != s.function:
-                    reason, state = "the meter's function changed from %s to %s during the session" % (s.function, setting.function), "error"
-                    break
-                s.range, s.nplc = setting.range, setting.nplc
-                self._take(s, now, value, setting)
-                k += 1
-            if state == "idle" and not reason:
-                reason = "stopped"                         # the loop ended because stop() was called
+            try:
+                source.begin(s)
+                while not s.stop.is_set():
+                    if self._mono() - s.t0 >= s.bound_s:
+                        reason = "the time bound was reached"
+                        break
+                    r = source.take(s, k)
+                    if r.t is None:
+                        r.t = self._mono() - s.t0
+                    if s.function is None:
+                        s.function, s.unit = r.function, r.unit
+                    elif r.function != s.function:
+                        raise Fault("the meter's function changed from %s to %s during the session" % (s.function, r.function))
+                    s.range, s.nplc = r.range, r.nplc
+                    self._take(s, r)
+                    k += 1
+                if not reason:
+                    reason = "stopped"                         # the loop ended because stop() was called
+            except Fault as exc:
+                reason, state = str(exc), "error"
         finally:
+            try:
+                source.end()
+            except Exception as exc:                           # closing an instrument must not stop the session's own books being closed
+                if state != "error":
+                    reason, state = "closing the instrument failed: %s" % exc, "error"
             with self._lock:
                 s.state, s.reason, s.ended = state, reason, self._wall()
                 if s.file is not None:
@@ -154,23 +208,25 @@ class Sampler(object):
                     self._sidecar(s, ended=s.ended)
                 self._publish_state(s)
 
-    def _take(self, s, t, value, setting):
-        overload = abs(value) >= meterlib.OVERLOAD
+    def _take(self, s, r):
         wall = self._wall()
         with self._lock:                                   # the stats, the envelope and the feed move together: a snapshot is one moment
-            if overload:
+            if r.overload:
                 s.stats.overload()
             else:
-                s.stats.add(t, value)
-                s.envelope.add(t, value)
+                s.stats.add(r.t, r.value, r.lo, r.hi, r.n, r.dt)
+                s.envelope.add(r.t, r.value, r.lo, r.hi, r.n)
+            s.facts.update(r.facts)
             if s.file is not None:
-                s.file.write("%.3f,%.3f,%s,%s,%s,%s,%s,%d\n" % (
-                    t, wall, "" if overload else repr(value), setting.unit, setting.function,
-                    "" if setting.range is None else setting.range, "" if setting.nplc is None else setting.nplc, 1 if overload else 0))
+                s.file.write("%.3f,%.3f,%s,%s,%s,%s,%s,%d,%s,%s,%d\n" % (
+                    r.t, wall, "" if r.overload else repr(r.value), r.unit, r.function,
+                    "" if r.range is None else r.range, "" if r.nplc is None else r.nplc, 1 if r.overload else 0,
+                    "" if r.overload else repr(r.lo), "" if r.overload else repr(r.hi), 0 if r.overload else r.n))
                 s.file.flush()
             self.bus.publish("meter.reading", "meter", {
-                "session": s.number, "t_s": round(t, 3), "wall": wall, "value": None if overload else value, "overload": overload,
-                "unit": setting.unit, "function": setting.function, "range": setting.range, "nplc": setting.nplc})
+                "session": s.number, "source": s.source.name, "t_s": round(r.t, 3), "wall": wall, "value": None if r.overload else r.value,
+                "min": None if r.overload else r.lo, "max": None if r.overload else r.hi, "n": 0 if r.overload else r.n, "dt": r.dt, "overload": r.overload,
+                "unit": r.unit, "function": r.function, "range": r.range, "nplc": r.nplc})
 
     # -- reading state --------------------------------------------------------------------------------
     def _current(self, s):
@@ -178,9 +234,9 @@ class Sampler(object):
 
     def _summary(self, s):
         elapsed = (s.ended - s.started) if s.ended else self._mono() - s.t0
-        return {"session": s.number, "state": s.state, "mode": s.mode, "name": s.name, "started": s.started, "elapsed_s": round(elapsed, 3),
-                "bound_s": s.bound_s, "reason": s.reason, "function": s.function, "unit": s.unit,
-                "stats": s.stats.to_dict(self._current(s))}
+        return dict({"session": s.number, "source": s.source.name, "state": s.state, "mode": s.mode, "name": s.name, "started": s.started,
+                     "elapsed_s": round(elapsed, 3), "bound_s": s.bound_s, "reason": s.reason, "function": s.function, "unit": s.unit,
+                     "stats": s.stats.to_dict(self._current(s))}, **s.facts)
 
     def _publish_state(self, s):
         self.bus.publish("meter.state", "meter", self._summary(s))
@@ -189,25 +245,25 @@ class Sampler(object):
         """The facts about a recording the CSV does not carry, written when it starts and again when it ends: so a recording a killed service left is known to have been cut short."""
         try:
             with open(os.path.join(self.folder, s.name + ".json"), "w") as fh:
-                json.dump({"name": s.name, "started": s.started, "ended": ended, "reason": s.reason, "bound_s": s.bound_s,
-                           "function": s.function, "unit": s.unit, "stats": s.stats.to_dict(self._current(s))}, fh)
+                json.dump(dict({"name": s.name, "source": s.source.name, "started": s.started, "ended": ended, "reason": s.reason, "bound_s": s.bound_s,
+                                "function": s.function, "unit": s.unit, "stats": s.stats.to_dict(self._current(s))}, **s.facts), fh)
         except OSError:
             pass
 
     def session(self):
         with self._lock:
             return self._summary(self._session) if self._session is not None else {
-                "session": 0, "state": "idle", "mode": None, "name": None, "started": None, "elapsed_s": 0, "bound_s": None, "reason": "",
+                "session": 0, "source": None, "state": "idle", "mode": None, "name": None, "started": None, "elapsed_s": 0, "bound_s": None, "reason": "",
                 "function": None, "unit": None, "stats": Stats().to_dict()}
 
     def profile(self):
         """The session so far as an envelope, and the feed cursor taken at the same instant: events after the cursor continue it with no gap and no repeat."""
         with self._lock:
             s = self._session
-            return {"session": s.number if s else 0, "cursor": self.bus.latest, "epoch": self.bus.epoch,
+            return {"session": s.number if s else 0, "source": s.source.name if s else None, "cursor": self.bus.latest, "epoch": self.bus.epoch,
                     "unit": s.unit if s else None, "function": s.function if s else None,
                     "buckets": s.envelope.snapshot() if s else [], "stats": self._summary(s)["stats"] if s else Stats().to_dict(),
-                    "state": s.state if s else "idle",
+                    "state": s.state if s else "idle", "facts": dict(s.facts) if s else {},
                     "last": list(s.stats._last) if s and s.stats._last else None}      # [t_s, value]: where a page carries the charge on from
 
     def recordings(self):
@@ -228,11 +284,13 @@ class Sampler(object):
                 pass
             if f[:-4] == live:                                  # the sidecar of a running recording is as it was at the start: the session knows better
                 s = self._session
-                meta = dict(meta, started=s.started, function=s.function, unit=s.unit, stats=self._summary(s)["stats"])
-            rows.append({"name": f[:-4], "bytes": os.path.getsize(path), "started": meta.get("started"), "ended": meta.get("ended"),
+                meta = dict(meta, started=s.started, function=s.function, unit=s.unit, stats=self._summary(s)["stats"], **s.facts)
+            rows.append({"name": f[:-4], "source": meta.get("source", "meter"), "bytes": os.path.getsize(path),
+                         "started": meta.get("started"), "ended": meta.get("ended"),
                          "reason": meta.get("reason", ""), "function": meta.get("function"), "unit": meta.get("unit"),
                          "stats": meta.get("stats"), "interrupted": meta.get("ended") is None and f[:-4] != live,
-                         "recording": f[:-4] == live, "mtime": os.path.getmtime(path)})
+                         "recording": f[:-4] == live, "mtime": os.path.getmtime(path),
+                         "lost": meta.get("lost"), "filtered": meta.get("filtered"), "rate_low": meta.get("rate_low")})
         rows.sort(key=lambda r: r["mtime"], reverse=True)
         return rows
 

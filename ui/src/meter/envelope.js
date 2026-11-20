@@ -15,18 +15,22 @@ export class Envelope {
     this.cur = null;
   }
 
-  add(t, value) {
+  // One point: a multimeter reading (n 1), or a power profiler block standing for n samples of mean `value`, lowest lo, highest hi. `width` counts points (k), not samples.
+  add(t, value, lo = null, hi = null, n = 1) {
+    const low = lo === null || lo === undefined ? value : lo;
+    const high = hi === null || hi === undefined ? value : hi;
     const c = this.cur;
     if (c === null) {
-      this.cur = { t0: t, t1: t, min: value, max: value, sum: value, n: 1 };
+      this.cur = { t0: t, t1: t, min: low, max: high, sum: value * n, n, k: 1 };
     } else {
       c.t1 = t;
-      c.min = Math.min(c.min, value);
-      c.max = Math.max(c.max, value);
-      c.sum += value;
-      c.n += 1;
+      c.min = Math.min(c.min, low);
+      c.max = Math.max(c.max, high);
+      c.sum += value * n;
+      c.n += n;
+      c.k += 1;
     }
-    if (this.cur.n >= this.width) {
+    if (this.cur.k >= this.width) {
       this.buckets.push(this.cur);
       this.cur = null;
       if (this.buckets.length >= this.max) this.merge();
@@ -39,7 +43,7 @@ export class Envelope {
     for (let i = 0; i + 1 < b.length; i += 2) {
       const x = b[i];
       const y = b[i + 1];
-      merged.push({ t0: x.t0, t1: y.t1, min: Math.min(x.min, y.min), max: Math.max(x.max, y.max), sum: x.sum + y.sum, n: x.n + y.n });
+      merged.push({ t0: x.t0, t1: y.t1, min: Math.min(x.min, y.min), max: Math.max(x.max, y.max), sum: x.sum + y.sum, n: x.n + y.n, k: x.k + y.k });
     }
     if (b.length % 2) merged.push(b[b.length - 1]);          // an odd one out stays and is merged on the next round
     this.buckets = merged;
@@ -49,18 +53,19 @@ export class Envelope {
   // Each bucket as {t0, t1, min, max, mean, n}, the one still filling last.
   snapshot() {
     const all = this.cur !== null ? [...this.buckets, this.cur] : this.buckets;
-    return all.map((b) => ({ t0: b.t0, t1: b.t1, min: b.min, max: b.max, mean: b.sum / b.n, n: b.n }));
+    return all.map((b) => ({ t0: b.t0, t1: b.t1, min: b.min, max: b.max, mean: b.sum / b.n, n: b.n, k: b.k }));
   }
 
   // Start from a snapshot the server sent (meter.profile): its buckets already carry their mean, so the sum is mean x n.
   static from(buckets, max = MAX_BUCKETS) {
     const e = new Envelope(max);
-    e.buckets = buckets.map((b) => ({ t0: b.t0, t1: b.t1, min: b.min, max: b.max, sum: b.mean * b.n, n: b.n }));
-    // The server's width is not sent: it is the widest bucket, which is what its next bucket will be.
-    e.width = buckets.reduce((w, b) => Math.max(w, b.n), 1);
-    // The last bucket of a snapshot may still be filling (narrower than the width): carry on filling it.
+    const points = (b) => (b.k === undefined ? b.n : b.k);       // an older server sent no k: then a bucket's n was its points
+    e.buckets = buckets.map((b) => ({ t0: b.t0, t1: b.t1, min: b.min, max: b.max, sum: b.mean * b.n, n: b.n, k: points(b) }));
+    // The server's width is not sent: it is the most points a bucket holds, which is what its next bucket will hold.
+    e.width = buckets.reduce((w, b) => Math.max(w, points(b)), 1);
+    // The last bucket of a snapshot may still be filling (fewer points than the width): carry on filling it.
     const last = e.buckets[e.buckets.length - 1];
-    if (last && last.n < e.width) e.cur = e.buckets.pop();
+    if (last && last.k < e.width) e.cur = e.buckets.pop();
     return e;
   }
 }
@@ -77,12 +82,16 @@ export class Stats {
     this.last = null;
   }
 
-  add(t, value) {
-    this.n += 1;
-    this.min = this.min === null ? value : Math.min(this.min, value);
-    this.max = this.max === null ? value : Math.max(this.max, value);
-    this.sum += value;
-    if (this.last !== null) this.charge += ((value + this.last[1]) / 2) * (t - this.last[0]);
+  // A point (n 1, the charge by the trapezoid rule) or a block of n samples dt seconds long (the charge is its mean times dt).
+  add(t, value, lo = null, hi = null, n = 1, dt = null) {
+    const low = lo === null || lo === undefined ? value : lo;
+    const high = hi === null || hi === undefined ? value : hi;
+    this.n += n;
+    this.min = this.min === null ? low : Math.min(this.min, low);
+    this.max = this.max === null ? high : Math.max(this.max, high);
+    this.sum += value * n;
+    if (dt !== null && dt !== undefined) this.charge += value * dt;
+    else if (this.last !== null) this.charge += ((value + this.last[1]) / 2) * (t - this.last[0]);
     this.last = [t, value];
   }
 

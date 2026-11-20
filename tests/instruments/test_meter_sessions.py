@@ -207,12 +207,15 @@ class Recording(Base):
         self.wait_readings(3)
         self.sampler.stop()
         lines = self.lines("night-1")
-        self.assertEqual(lines[0], "t_s,wall,value,unit,function,range,nplc,overload")
+        self.assertEqual(lines[0], "t_s,wall,value,unit,function,range,nplc,overload,min,max,n")
         n = self.sampler.session()["stats"]["readings"]
         self.assertEqual(len(lines) - 1, n)
         cells = lines[1].split(",")
         self.assertEqual((cells[2], cells[3], cells[4], cells[5], cells[6], cells[7]), ("0.001", "A", "CURR", "0.6", "0.02", "0"))
         self.assertEqual(lines[2].split(",")[2], "0.0025")
+        # the columns added for the power profiler come last, and for a multimeter reading (a point) the lowest and the highest are the value and n is 1
+        self.assertEqual((cells[8], cells[9], cells[10]), ("0.001", "0.001", "1"))
+        self.assertEqual(lines[0].split(",")[:8], ["t_s", "wall", "value", "unit", "function", "range", "nplc", "overload"], "the old columns keep their place")
 
     def test_an_overload_line_has_no_value_and_the_flag_set(self):
         self.fake.answers["READ?"] = ["+9.9E+37"]
@@ -220,7 +223,7 @@ class Recording(Base):
         self.wait_readings(1)
         self.sampler.stop()
         row = self.lines("over")[1].split(",")
-        self.assertEqual((row[2], row[7]), ("", "1"))
+        self.assertEqual((row[2], row[7], row[8], row[9], row[10]), ("", "1", "", "", "0"))
 
     def test_the_file_is_flushed_per_reading_so_a_killed_service_loses_nothing_taken(self):
         self.sampler.start("record", 60, name="live")

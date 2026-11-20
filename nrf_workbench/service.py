@@ -44,6 +44,7 @@ from .esp32 import flash as esp32_flash
 from .gpio import commands as gpio_commands
 from .i2c import commands as i2c_commands
 from .instruments import meter as meter_commands
+from .instruments import ppk2 as ppk2_commands
 from .project import commands as project_commands
 from .wiring import commands as wiring_commands
 from .wiring import detect as wiring_detect
@@ -147,11 +148,14 @@ def capabilities(host):
     # The multimeter is on the LAN, so any host with its address configured has it (docs/specs/meter.md). Whether it answers is meter.show's answer.
     if host.config["instruments"]["meter"]:
         caps.add("meter")
-        # Sessions (watch and record) need the readings' bounded stream; recording needs its folder (docs/specs/meter-page.md).
-        if cfgmod.stream_bounds(host.config, "meter") is not None:
-            caps.add("meter_stream")
-            if host.config["paths"]["meter"]:
-                caps.add("meter_store")
+    # The power profiler is on a USB port of this host (docs/specs/ppk2.md). Whether it is plugged in is ppk2.show's answer.
+    if host.config["instruments"]["ppk2"]:
+        caps.add("ppk2")
+    # Sessions (watch and record) read either instrument and need the readings' bounded stream; recording needs its folder (docs/specs/meter-page.md).
+    if ("meter" in caps or "ppk2" in caps) and cfgmod.stream_bounds(host.config, "meter") is not None:
+        caps.add("meter_stream")
+        if host.config["paths"]["meter"]:
+            caps.add("meter_store")
     return caps
 
 
@@ -190,6 +194,7 @@ def build_host(cfg, sysfs="/sys", devroot="/dev", proc="/proc", hooks=None):
     esp32_commands.register(registry, host)
     i2c_commands.register(registry, host)
     meter_commands.register(registry, host)
+    ppk2_commands.register(registry, host)
     bench_commands.register(registry, host)
     project_commands.register(registry, host)
     caps = capabilities(host)
@@ -229,7 +234,7 @@ def build_streams(cfg):
         console = Bus(*bounds)
     bounds = cfgmod.stream_bounds(cfg, "meter")
     if bounds is None:
-        if cfg["instruments"]["meter"]:                    # only a bench that has a meter is told its readings stream is off
+        if cfg["instruments"]["meter"] or cfg["instruments"]["ppk2"]:      # only a bench that has an instrument is told its readings stream is off
             absent["meter"] = "no bound configured: set streams.meter.retain (readings) and streams.meter.max_age_days"
     else:
         meter = Bus(*bounds)
@@ -438,7 +443,7 @@ def main(argv=None, run=None, env=None, make_monitor=DeviceMonitor):
     absent = [c.name for c in registry.commands() if registry.unmet(c, caps)]
     if absent:
         print("absent here (GET /api/capabilities says why): %s" % ", ".join(absent), flush=True)
-    for name in ("events", "activity", "console") + (("meter",) if "meter" in caps else ()):
+    for name in ("events", "activity", "console") + (("meter",) if "meter" in caps or "ppk2" in caps else ()):
         reason = host.streams.absent.get(name)
         print("stream %s: %s" % (name, "OFF (%s)" % reason if reason else "on"), flush=True)
     if host.console is not None:

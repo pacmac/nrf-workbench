@@ -52,6 +52,51 @@ class SameAlgorithm(unittest.TestCase):
             self.assertEqual(len(js), len(py), (count, max_buckets))
             self.assertEqual(js, py, (count, max_buckets))
 
+    def test_blocks_of_samples_give_the_same_buckets_through_every_merge(self):
+        rng = random.Random(8)
+        for count, max_buckets in ((9, 4), (300, 8), (5000, 64)):
+            data = []
+            for _ in range(count):
+                lo = rng.uniform(0, 1e-3)
+                hi = lo + rng.uniform(0, 5e-2)
+                data.append([rng.uniform(lo, hi), lo, hi, rng.randrange(1, 30000)])
+            js = node("const e = new m.Envelope(data.max); data.v.forEach((x, i) => e.add(i * 0.2, x[0], x[1], x[2], x[3])); return e.snapshot();",
+                      {"v": data, "max": max_buckets})
+            e = Envelope(max_buckets)
+            for i, (mean, lo, hi, n) in enumerate(data):
+                e.add(i * 0.2, mean, lo, hi, n)
+            self.assertEqual(js, e.snapshot(), (count, max_buckets))
+
+    def test_a_page_that_starts_from_a_profile_of_blocks_carries_on_with_the_same_width(self):
+        """The width is the most POINTS a bucket holds, not samples: from() takes it from k, and then both sides keep agreeing."""
+        rng = random.Random(4)
+        data = [[rng.uniform(0, 1e-3), 0.0, 2e-3, rng.randrange(1, 30000)] for _ in range(700)]
+        more = [[rng.uniform(0, 1e-3), 0.0, 3e-3, rng.randrange(1, 30000)] for _ in range(300)]
+        e = Envelope(32)
+        for i, (mean, lo, hi, n) in enumerate(data):
+            e.add(i * 0.2, mean, lo, hi, n)
+        snap = e.snapshot()
+        js = node("const e = m.Envelope.from(data.snap, 32); data.more.forEach((x, i) => e.add(1000 + i * 0.2, x[0], x[1], x[2], x[3])); return e.snapshot();",
+                  {"snap": snap, "more": more})
+        for i, (mean, lo, hi, n) in enumerate(more):
+            e.add(1000 + i * 0.2, mean, lo, hi, n)
+        self.assertEqual(js, e.snapshot())
+
+    def test_block_statistics_and_charge_agree(self):
+        rng = random.Random(2)
+        data = [[rng.uniform(0, 1e-3), 0.0, 2e-3, rng.randrange(1, 30000), rng.uniform(0.1, 0.3)] for _ in range(200)]
+        js = node("const s = new m.Stats(); let t = 0; data.v.forEach((x) => { t += x[4]; s.add(t, x[0], x[1], x[2], x[3], x[4]); }); return s.toObject(true);", {"v": data})
+        s = Stats()
+        t = 0.0
+        for mean, lo, hi, n, dt in data:
+            t += dt
+            s.add(t, mean, lo, hi, n, dt)
+        py = s.to_dict(current=True)
+        for key in ("readings", "min", "max"):
+            self.assertEqual(js[key], py[key], key)
+        for key in ("mean", "charge_c", "charge_mah"):
+            self.assertAlmostEqual(js[key], py[key], places=12, msg=key)
+
     def test_the_bound_is_the_same_2000(self):
         self.assertEqual(node("return m.MAX_BUCKETS;", None), 2000)
 

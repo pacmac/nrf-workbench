@@ -32,7 +32,8 @@ DEFAULTS = {
               "gpio": None, "wiring": None, "meter": None},
     # `meter` is the LAN multimeter, host or host:port (docs/specs/meter.md): unset means there are no meter commands. The address is
     # configuration and never an argument, so no caller can aim the service at another machine.
-    "instruments": {"meter": None},
+    # `ppk2` is the Nordic Power Profiler on a USB port of this host (docs/specs/ppk2.md): `auto` (the one that is attached) or its USB serial. Unset means no ppk2 commands.
+    "instruments": {"meter": None, "ppk2": None},
     # `reserved` is a list of BCM pin numbers this bench never hands to anything (docs/specs/pi-uart-move.md): the pins of a UART it gave up, whose old wire
     # may still be connected to a board. gpio.assign refuses them. Empty by default: another bench may still wire those pins.
     "pins": {"reserved": []},
@@ -64,6 +65,7 @@ ENV = {
     "NRFWB_WIRING_DIR": ("paths", "wiring"),
     "NRFWB_METER_DIR": ("paths", "meter"),
     "NRFWB_METER": ("instruments", "meter"),
+    "NRFWB_PPK2": ("instruments", "ppk2"),
 }
 
 ACCESS_MODES = ("token", "open-read", "open")
@@ -196,6 +198,9 @@ def validate(cfg):
             meter_address(meter)
         except ValueError as exc:
             problems.append("instruments.meter: %s" % exc)
+    ppk2 = cfg["instruments"]["ppk2"]
+    if ppk2 is not None and (not isinstance(ppk2, str) or not (ppk2 == "auto" or (1 <= len(ppk2) <= 64 and ppk2.isalnum()))):
+        problems.append("instruments.ppk2 must be auto or the PPK2's USB serial (letters and digits)")
     for name, bounds in cfg["streams"].items():
         retain, days = bounds["retain"], bounds["max_age_days"]
         if retain is None and days is None:

@@ -112,6 +112,79 @@ class Exact(unittest.TestCase):
         self.assertEqual((last["n"], last["max"], last["t0"]), (1, 7.0, 99.0))
 
 
+def blocks(rng, count):
+    """Power profiler blocks: (mean, lowest, highest, samples) with the lowest and highest not at the mean and a different count each time."""
+    out = []
+    for _ in range(count):
+        lo = rng.uniform(0, 1e-3)
+        hi = lo + rng.uniform(0, 5e-2)
+        out.append((rng.uniform(lo, hi), lo, hi, rng.randrange(1, 30000)))
+    return out
+
+
+class Blocks(unittest.TestCase):
+    """A block of n samples keeps its own lowest and highest, and counts n samples: nothing is lost to a merge (docs/specs/ppk2.md)."""
+
+    def fill(self, env, data, step=0.2):
+        for i, (mean, lo, hi, n) in enumerate(data):
+            env.add(i * step, mean, lo, hi, n)
+        return env
+
+    def test_every_bucket_is_what_its_blocks_say_through_every_merge(self):
+        rng = random.Random(21)
+        data = blocks(rng, 3000)
+        env = self.fill(Envelope(max_buckets=16), data)
+        snap = env.snapshot()
+        self.assertLessEqual(len(snap), 16)
+        self.assertEqual(sum(b["n"] for b in snap), sum(d[3] for d in data))
+        self.assertEqual((min(b["min"] for b in snap), max(b["max"] for b in snap)), (min(d[1] for d in data), max(d[2] for d in data)))
+        self.assertAlmostEqual(sum(b["mean"] * b["n"] for b in snap), sum(d[0] * d[3] for d in data), places=9)
+        i = 0
+        for b in snap:                                            # a bucket covers k consecutive blocks, and its figures are exactly theirs
+            part = data[i:i + b["k"]]
+            self.assertEqual(b["n"], sum(d[3] for d in part))
+            self.assertEqual((b["min"], b["max"]), (min(d[1] for d in part), max(d[2] for d in part)))
+            self.assertAlmostEqual(b["mean"], sum(d[0] * d[3] for d in part) / b["n"], places=12)
+            i += b["k"]
+        self.assertEqual(i, len(data))
+
+    def test_the_width_counts_blocks_not_samples(self):
+        """A bucket that held 20,000 samples in one block is still one point: it is not closed early because n is big."""
+        env = Envelope(max_buckets=4)
+        for i in range(6):                                        # the 4th add reaches the bound and merges: width 2, then two more blocks fill one bucket
+            env.add(i, 1.0, 0.5, 2.0, 20000)
+        self.assertEqual([b["k"] for b in env.snapshot()], [2, 2, 2])
+        self.assertEqual([b["n"] for b in env.snapshot()], [40000, 40000, 40000])
+
+    def test_a_short_burst_is_the_top_of_its_bucket_however_far_it_merges(self):
+        env = Envelope(max_buckets=8)
+        for i in range(1000):
+            env.add(i * 0.2, 1e-6, 1e-6, 1e-6 if i != 637 else 4e-2, 20000)       # one block holds a 40 mA burst
+        self.assertEqual(max(b["max"] for b in env.snapshot()), 4e-2)
+        self.assertEqual(min(b["min"] for b in env.snapshot()), 1e-6)
+
+    def test_a_point_given_no_lowest_or_highest_is_its_own_value_and_one_sample(self):
+        env = Envelope(max_buckets=4)
+        env.add(0.0, 3.0)
+        b = env.snapshot()[0]
+        self.assertEqual((b["min"], b["max"], b["n"], b["k"]), (3.0, 3.0, 1, 1))
+
+    def test_charge_of_blocks_is_mean_times_duration_and_counts_samples(self):
+        s = Stats()
+        s.add(0.2, 1e-3, 5e-4, 2e-3, 20000, 0.2)                  # 1 mA mean for 0.2 s
+        s.add(0.4, 3e-3, 1e-3, 9e-3, 20000, 0.2)                  # 3 mA mean for 0.2 s
+        d = s.to_dict(current=True)
+        self.assertAlmostEqual(d["charge_c"], 1e-3 * 0.2 + 3e-3 * 0.2, places=15)
+        self.assertEqual((d["readings"], d["min"], d["max"]), (40000, 5e-4, 9e-3))
+        self.assertAlmostEqual(d["mean"], 2e-3, places=15)
+
+    def test_a_block_does_not_use_the_trapezoid_between_points(self):
+        a = Stats()
+        a.add(0.2, 0.0, None, None, 20000, 0.2)
+        a.add(5.0, 1.0, None, None, 20000, 0.2)                   # a long gap before the second block must not be integrated as a ramp
+        self.assertAlmostEqual(a.to_dict(current=True)["charge_c"], 0.2)
+
+
 class Statistics(unittest.TestCase):
     def test_min_max_mean_and_count(self):
         s = Stats()
