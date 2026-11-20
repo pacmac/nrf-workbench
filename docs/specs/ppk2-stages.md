@@ -27,19 +27,35 @@ Stages 2 to 4 are designed here only to the point that stage 1 does not close th
 **What a capture is:** the raw 4-byte words of one wake, from sleep before it started to the first block back near sleep after it, with where it began on the unit's sample clock. Raw words keep the range, the counter and the logic bits;
 the current is decoded from them on request with the unit's calibration, exactly as the session's blocks are.
 
+**The wake profile: what a wake is.** This tool is for any firmware, so nothing about what a wake looks like is built in for one device. A wake is defined by one profile, the same for every session of the profiler, and each of its fields is
+found from the data unless the person sets it (Peter, 2026-11-20: "this is supposed to be for anybody to use, not just me"). A block is **0.2 s** (20,000 samples), the finest grain at which a wake starts or ends.
+
+| field (`meter.watch` and `meter.record` argument) | meaning | default, and where it comes from |
+|---|---|---|
+| sleep level (`wake_sleep_a`, amps) | the current the board sleeps at | **found: the lowest tenth of the block means that read above zero**, from 20 blocks (4 s) on. Not the median: the median fails for a device awake over half the time, the lowest tenth only over nine tenths; at 20 blocks the tenth is the second lowest, so one stray block cannot set it. A histogram of 16 bins a decade from 1 nA to 10 A (160 bins, constant memory however long a session runs; a bin is 10^(1/16) = 1.155 wide, so the level is known to ±7.5 %) |
+| awake level (`wake_awake_a`, amps) | a block is awake when its **mean** is over this | **twice the sleep level** (the page's rule: noise on a steady load is a few per cent, a radio burst is a thousand times). Must be over the sleep level if both are given |
+| hold-off (`wake_hold_s`) | a wake ends only after the board has been at or under the awake level this long; a shorter dip is part of the wake | **0.2 s**, one block: the finest the capture can see. Up to the longest wake |
+| lead-in (`wake_lead_s`) | sleep kept before the wake | **0.2 s**, one block, so it starts from sleep. 0 up to the longest wake |
+| longest wake (`wake_max_s`) | a wake still going is closed here, marked `truncated`, and the next block opens another | **40 s**: the bench RAK is awake 21.6 s plus a lead-in, so 1.8 times that. 1 to 120 s: 120 s is 48 MB raw, 21 MB held compressed, 167 MB for the newest 8, 4 % of a 4 GB Pi |
+
+Left out, a field is automatic; the session reports the profile as given (`wake`: `null` for a level that is found) and the levels in force (`sleep_a`, `awake_a`, to four figures, on every reading once the data gives a sleep level, so a recording's sidecar says what a wake meant).
+A value out of range is a usage error naming its field; a multimeter session given any is a usage error (it keeps no wakes). Setting `wake_awake_a` needs no sleep level, so a wake that is in the first 4 s is not missed.
+
 **When one is taken.** On the Pi, in the profiler's source, as the session runs (a watch or a recording):
-- **The level.** A wake is a block whose *highest* sample is over `level = sleep + (peak - sleep) / 2`, the rule the page uses (`meter-page.md`, "Battery life"), kept as a running figure: `sleep` is the median of the block means so far and `peak` the highest sample so far.
-  The median is held as a histogram of 16 bins a decade from 1 nA to 10 A (160 bins, constant memory however long a session runs); a bin is 10^(1/16) = 1.155 wide, so the sleep level is known to ±7.5 %, which moves the level by under 4 % of the gap from sleep to peak.
-  There is no wake until `peak` is at least **twice** `sleep` (the page's rule: noise on a steady load is a few per cent, a radio burst is a thousand times).
-- **The window.** The last 5 blocks are always held. When a block goes over the level, the capture starts with the blocks before it that were already awake (a mean over twice the sleep level: a CPU up before its radio) back to and including the first quiet one, at most 5 (1 s of lead-in, 400 KB of ring),
-  so a wake starts from sleep and not part-way through. **It ends at the first block whose mean is back to twice the sleep level or under** (0.2 s of tail), the same "awake" rule as the lead-in: the level only *starts* a capture.
-  **Correction, 2026-11-20 (Peter: "a wake is currently about 20 seconds").** The first build also ended a capture at the first block whose highest sample was under the level, so the 20.8 s a RAK spends at 6.5 mA listening between its two radio bursts
-  was left out, and one awake period of 24 s was kept as two wakes of 1.4 to 4.4 s, 21 s apart (device-cmdwake-2: 16 wakes in 8 pairs). A wake is the whole awake period: a stretch far above sleep but under the level is part of it.
-- **The ceiling:** a capture is at most **200 blocks (40 s)**: 200 × 20,000 words × 4 bytes = 16 MB raw. The bench RAK is awake 21.6 s and the lead-in is up to 1 s, so 40 s is 1.8 times that. A wake still going at 40 s is closed as `truncated` and the next one is looked for once it falls near sleep.
+- **Start.** The first block whose mean is over the awake level opens a wake, with `lead_s` of the blocks before it. The same rule starts and ends a wake, so the two cannot disagree. (The first build opened a wake on a block whose *highest sample* passed half the
+  *peak so far*: a bar that moves, that one early spike raised for every later wake, and that a CPU waking alone never reached.) A wake's time origin is separate: the first sample over half of its own highest sample (below).
+- **End.** A wake ends at the first block back at or under the awake level that is followed by `hold_s` of the same (one such block, the first, is kept as its tail; the rest of the hold-off is not the wake's). The blocks of a dip shorter than the hold-off are part of the wake.
+  **Correction, 2026-11-20 (Peter: "a wake is currently about 20 seconds").** The first build ended a capture at the first block whose highest sample was under half the peak, so the 20.8 s a RAK spends at 6.5 mA listening between its two radio bursts
+  was left out, and one awake period of 24 s was kept as two wakes of 1.4 to 4.4 s, 21 s apart (device-cmdwake-2: 16 wakes in 8 pairs). A wake is the whole awake period: a stretch far above sleep but under a radio's level is part of it.
+- **Where the rule has to be told.** A device whose idle state is over twice its deep sleep (a light sleep of 50 µA over 10 µA) is awake by the found levels, so a wake opens in its first block of it and does not close: it runs to the longest wake. Setting the awake level over the
+  light sleep fixes it (tested). The 4 s before a sleep level can be found are not searched unless the sleep or the awake level is given.
+- **The ceiling:** `wake_max_s`, 40 s by default (200 blocks × 20,000 words × 4 bytes = 16 MB raw).
 - **How many are kept:** the newest **8**, held compressed (each block is compressed with zlib level 1 as it joins: 2.9 ms on the Pi, where a 24 s wake compressed at its close takes 0.35 s, more than the 160 ms the kernel buffers, so samples would be lost;
   the ratio is 2.3 on the RAK's wakes), so at most 56 MB, about 1.5 % of the bench Pi's 3.8 GB. They live in memory for the session and until the next session on that unit starts;
   a recording also keeps its wakes on disk (stage 2, below), where the stream is written as it is.
-- A wake closer than a block to the one before it simply extends that capture.
+- A wake closer than the hold-off to the one before it extends that capture.
+- **Not changed here:** the cycle table in the browser (`cycle.js`) still has its own rule (a bucket whose highest sample is over half the peak; wakes joined when the gap is under half the longest gap). It reads the session's 0.2 s envelope, not the captures, and it does not yet use the profile:
+  parked as its own task, so the two can disagree for a device that is not the bench RAK.
 - **What it costs to read one:** a wake of 24 s is 2.4 million words; decoding is about 0.7 µs a word on the Pi, so the first view of one takes about 2 s (then it is held decoded, one at a time) and the stage table over 20 of them about 40 s. A table-lookup decode was tried (the lookup table costs 0.2 s a wake and the decode was only 10 % faster) and dropped; the stage table's speed is parked.
 - Lost samples (the counter) are counted per capture and said; the time axis counts samples received.
 

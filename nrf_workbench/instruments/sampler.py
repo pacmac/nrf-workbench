@@ -43,6 +43,10 @@ class RecordingUnknown(Exception):
     """No recording has that name."""
 
 
+class ProfileNotWanted(Exception):
+    """A wake profile was given to a session of an instrument that keeps no wakes (the multimeter)."""
+
+
 class Session(object):
     def __init__(self, number, mode, bound_s, name, wall, mono, source):
         self.number, self.mode, self.bound_s, self.name = number, mode, bound_s, name
@@ -57,6 +61,7 @@ class Session(object):
         self.file = None
         self.ended = None
         self.wakes_dir = None                                # where a recording keeps its wakes (the profiler's source writes them there)
+        self.wake = None                                     # the capture.WakeProfile this session was started with (None: everything found from the data)
 
 
 def mode_state(mode):
@@ -120,8 +125,8 @@ class Sampler(object):
             raise Missing("this bench has no %s configured" % (name or "instrument"))
         return self.sources[name]
 
-    def start(self, mode, bound_s, name=None, source=None):
-        """The session's summary dict. Raises Busy, NameTaken, Missing, or ValueError for a bad bound or name."""
+    def start(self, mode, bound_s, name=None, source=None, wake=None):
+        """The session's summary dict. Raises Busy, NameTaken, Missing, or ValueError for a bad bound or name. `wake` is a capture.WakeProfile (the profiler's sessions only)."""
         if mode not in ("watch", "record"):
             raise ValueError("mode is watch or record")
         if isinstance(bound_s, bool) or not isinstance(bound_s, (int, float)) or not MIN_BOUND_S <= bound_s <= MAX_BOUND_S:
@@ -130,6 +135,8 @@ class Sampler(object):
             if self._session is not None and self._session.thread is not None and self._session.thread.is_alive():
                 raise Busy(self._summary(self._session))
             src = self._source(source)
+            if wake is not None and src.name != "ppk2":
+                raise ProfileNotWanted("a multimeter session keeps no wakes, so it has no wake profile")
             self._count += 1
             wall = self._wall()
             if mode == "record":
@@ -144,6 +151,7 @@ class Sampler(object):
                     raise NameTaken("a recording named %s already exists" % name)
                 self._prune()
             s = Session(self._count, mode, float(bound_s), name if mode == "record" else None, wall, self._mono(), src)
+            s.wake = wake
             if mode == "record":
                 s.wakes_dir = os.path.join(self.folder, name + ".wakes")
                 s.file = open(os.path.join(self.folder, name + ".csv"), "w")

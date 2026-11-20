@@ -15,13 +15,17 @@ from array import array
 
 SAMPLE_RATE_HZ = 100000
 WORD_MASK = 0x1FFFF                          # bits 0..13 the ADC, 14..16 the range (the rest are the counter and the logic inputs)
-WAKE_FACTOR = 2                              # a wake must at least double the sleep current (the page's rule: noise is a few per cent, a radio burst a thousand times)
-BINS_PER_DECADE = 16                         # a bin is 10^(1/16) = 1.155 wide: the sleep level is known to +-7.5 %, which moves the level by under 4 % of sleep-to-peak
+WAKE_FACTOR = 2                              # a block is awake when its mean is over twice the sleep level (noise on a steady load is a few per cent, so 2 is far from it, and a radio is a thousand times)
+BINS_PER_DECADE = 16                         # a bin is 10^(1/16) = 1.155 wide: the sleep level is known to +-7.5 %
 LOW_EXP, HIGH_EXP = -9, 1                    # 1 nA to 10 A: 10 decades, 160 bins, constant memory however long a session runs
 BINS = (HIGH_EXP - LOW_EXP) * BINS_PER_DECADE
-MAX_CAPTURE_BLOCKS = 200                     # 40 s: the bench RAK is awake 21.6 s (TX, a 20.8 s receive window at 6.5 mA, TX) plus a 1 s lead-in, so 40 s is 1.8 times that; 200 blocks x 80 KB = 16 MB raw
-KEEP = 8                                     # the newest 8, enough to compare wake with wake; held compressed (2.3 times smaller on the RAK), so 56 MB at the cap, on a Pi with 3.8 GB
-LEAD_BLOCKS_MAX = 5                          # the lead-in goes back at most 5 blocks (1 s, 400 KB of ring): a CPU awake for longer than that before its radio is a stage of its own, seen in the session's chart
+SLEEP_QUANTILE = 0.10                        # the sleep level is the lowest tenth of the block means: the median would fail for a device awake over half the time, this fails only over nine tenths
+MIN_SLEEP_BLOCKS = 20                        # 4 s of blocks before a sleep level is claimed: at 20 the tenth is the second lowest, so one stray low block cannot set it
+BLOCK_S = 0.2                                # a profiler block: 20,000 samples at 100,000 a second, the finest grain at which a wake starts or ends
+HOLD_S_DEFAULT = BLOCK_S                     # a wake ends at the first block back asleep: the finest the capture can see; longer is a choice (a device that dips to sleep inside one wake)
+LEAD_S_DEFAULT = BLOCK_S                     # one block of sleep before the wake, so it starts from sleep
+MAX_S_DEFAULT, MAX_S_MIN, MAX_S_MAX = 40.0, 1.0, 120.0       # the longest wake kept whole: the bench RAK is awake 21.6 s plus a lead-in, so 40 s is 1.8 times that; 120 s is 48 MB raw, 21 MB held, 167 MB for the newest 8, 4 % of a 4 GB Pi
+KEEP = 8                                     # the newest 8, enough to compare wake with wake; held compressed (2.3 times smaller on the RAK), so 56 MB at 40 s, on a Pi with 3.8 GB
 POINTS_DEFAULT, POINTS_MAX = 1000, 2000      # a wide chart's pixels; the envelope's own bound (about twice that)
 KEEP_DISK = 20                               # wakes kept on disk per recording: the stage table needs the spread across wakes and 20 shows it; worst case 20 x 7 MB compressed (24 GB free on the Pi)
 MAX_STAGES = 12                              # a wake has a handful of stages: more would not fit a table a person reads
@@ -31,42 +35,85 @@ ZLIB_LEVEL = 1                               # a wake is mostly flat, so the fas
                                              # compressed as it arrives, 2.9 ms on the Pi (0.063 s for the 22 blocks of a 4.4 s wake, measured), where a 24 s wake compressed at its close takes 0.35 s
 
 
+class ProfileError(ValueError):
+    def __init__(self, message, field):
+        ValueError.__init__(self, message)
+        self.field = field
+
+
+def _number(value, field, what):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ProfileError("%s is a number (%s)" % (field, what), field)
+    return float(value)
+
+
+class WakeProfile(object):
+    """What a wake is, for the device on the bench (docs/specs/ppk2-stages.md, "The wake profile"). Every field but the three times can be left to the data:
+    `sleep_a` (amps; None = found as the lowest tenth of the block means), `awake_a` (amps; None = twice the sleep level), `hold_s` (a wake ends after this long back at or under the awake level;
+    a shorter dip is part of the wake), `lead_s` (sleep kept before it), `max_s` (the longest wake kept whole)."""
+
+    def __init__(self, sleep_a=None, awake_a=None, hold_s=None, lead_s=None, max_s=None):
+        self.sleep_a = None if sleep_a is None else _number(sleep_a, "wake_sleep_a", "amps, above 0")
+        self.awake_a = None if awake_a is None else _number(awake_a, "wake_awake_a", "amps, above 0")
+        for value, field in ((self.sleep_a, "wake_sleep_a"), (self.awake_a, "wake_awake_a")):
+            if value is not None and not value > 0:
+                raise ProfileError("%s is above 0 amps" % field, field)
+        if self.sleep_a is not None and self.awake_a is not None and not self.awake_a > self.sleep_a:
+            raise ProfileError("wake_awake_a is above wake_sleep_a: a block cannot be awake at or under the sleep level", "wake_awake_a")
+        self.max_s = MAX_S_DEFAULT if max_s is None else _number(max_s, "wake_max_s", "seconds")
+        if not MAX_S_MIN <= self.max_s <= MAX_S_MAX:
+            raise ProfileError("wake_max_s is %g to %g seconds" % (MAX_S_MIN, MAX_S_MAX), "wake_max_s")
+        self.hold_s = HOLD_S_DEFAULT if hold_s is None else _number(hold_s, "wake_hold_s", "seconds")
+        if not BLOCK_S - 1e-9 <= self.hold_s <= self.max_s:
+            raise ProfileError("wake_hold_s is %g seconds (one block) up to the longest wake, %g" % (BLOCK_S, self.max_s), "wake_hold_s")
+        self.lead_s = LEAD_S_DEFAULT if lead_s is None else _number(lead_s, "wake_lead_s", "seconds")
+        if not 0 <= self.lead_s <= self.max_s:
+            raise ProfileError("wake_lead_s is 0 up to the longest wake, %g seconds" % self.max_s, "wake_lead_s")
+
+    @staticmethod
+    def blocks(seconds):
+        """Whole blocks that cover `seconds` (a hair of float error is not a block)."""
+        return int(math.ceil(seconds / BLOCK_S - 1e-9))
+
+    @property
+    def hold_blocks(self):
+        return max(1, self.blocks(self.hold_s))
+
+    @property
+    def lead_blocks(self):
+        return self.blocks(self.lead_s)
+
+    @property
+    def max_blocks(self):
+        return int(math.floor(self.max_s / BLOCK_S + 1e-9))
+
+    def to_dict(self):
+        return {"sleep_a": self.sleep_a, "awake_a": self.awake_a, "hold_s": self.hold_s, "lead_s": self.lead_s, "max_s": self.max_s}
+
+
 class Level(object):
-    """The sleep level and the peak so far, from each block's mean and highest sample: sleep = the median of the means (a histogram, so memory is constant), peak = the highest."""
+    """The sleep level from each block's mean: the lowest tenth of the blocks that read above zero (a histogram, so memory is constant). None until MIN_SLEEP_BLOCKS blocks have."""
 
     def __init__(self):
         self.counts = [0] * BINS
         self.n = 0
-        self.peak = 0.0
 
-    def add(self, mean, high):
-        if mean > 0:
+    def add(self, mean):
+        if mean > 0:                                    # a block that reads zero or less says nothing about a level
             b = int((math.log10(mean) - LOW_EXP) * BINS_PER_DECADE)
-            b = 0 if b < 0 else BINS - 1 if b >= BINS else b
-        else:
-            b = 0
-        self.counts[b] += 1
-        self.n += 1
-        if high > self.peak:
-            self.peak = high
+            self.counts[0 if b < 0 else BINS - 1 if b >= BINS else b] += 1
+            self.n += 1
 
     def sleep(self):
-        """The middle bin's centre in amps, or None before anything was added or when the middle block read zero or less."""
-        if not self.n:
+        """The centre in amps of the bin that holds the SLEEP_QUANTILE-th block, or None before MIN_SLEEP_BLOCKS blocks (or if that bin is the floor)."""
+        if self.n < MIN_SLEEP_BLOCKS:
             return None
-        half, seen = (self.n + 1) // 2, 0
+        want, seen = int(math.ceil(self.n * SLEEP_QUANTILE)), 0
         for b, c in enumerate(self.counts):
             seen += c
-            if seen >= half:
+            if seen >= want:
                 return None if b == 0 else 10 ** ((b + 0.5) / BINS_PER_DECADE + LOW_EXP)
         return None
-
-    def level(self):
-        """Halfway from sleep to peak, or None when there is no wake yet (no sleep level, or a peak under twice it)."""
-        s = self.sleep()
-        if s is None or self.peak < WAKE_FACTOR * s:
-            return None
-        return s + (self.peak - s) / 2.0
 
 
 class Capture(object):
@@ -112,53 +159,72 @@ class Capture(object):
 
 
 class Capturer(object):
-    """Fed every block as the session reads it: `feed(data, t0, mean, high, lost)`. Holds the last block, and the newest KEEP captures."""
+    """Fed every block as the session reads it: `feed(data, t0, mean, high, lost)`. A block is awake when its mean is over the awake level (`profile`, docs/specs/ppk2-stages.md): the first
+    awake block opens a wake, with `lead_s` of sleep before it, and the wake ends at the first block that has been asleep for `hold_s` (one quiet block is kept as its tail), or when it
+    reaches `max_s`. Holds the last `lead_s` of blocks, and the newest `keep` captures."""
 
-    def __init__(self, keep=KEEP, max_blocks=MAX_CAPTURE_BLOCKS):
-        self.keep, self.max_blocks = keep, max_blocks
+    def __init__(self, profile=None, keep=KEEP):
+        self.profile = profile or WakeProfile()
+        self.keep = keep
+        self.max_blocks, self.hold_blocks = self.profile.max_blocks, self.profile.hold_blocks
         self.level = Level()
         self.items = collections.deque(maxlen=keep)
         self.count = 0                                        # captures begun so far, which is also the number of the last
         self.kept = 0                                         # captures finished and kept: what the feed reports, so a page asks only once a wake can be read
-        self._ring = collections.deque(maxlen=LEAD_BLOCKS_MAX)       # (data, t0, lost, mean) of the last blocks, newest last: where a capture's lead-in comes from
+        self._ring = collections.deque(maxlen=self.profile.lead_blocks)      # (data, t0, lost, mean) of the last blocks, newest last: where a capture's lead-in comes from
         self._open = None
+        self._pending = []                                    # (data, lost, high) of the quiet blocks of an open wake that have not yet lasted hold_s: part of it if it wakes again
         self.on_close = None                                  # called with each capture as it is kept (the profiler's source saves it to disk here)
 
+    def sleep_a(self):
+        """The sleep level in force: the profile's, or the one found, or None while there is not enough data."""
+        return self.profile.sleep_a if self.profile.sleep_a is not None else self.level.sleep()
+
+    def awake_a(self):
+        """The level a block's mean must pass to be awake: the profile's, or twice the sleep level, or None while there is no sleep level."""
+        if self.profile.awake_a is not None:
+            return self.profile.awake_a
+        sleep = self.sleep_a()
+        return None if sleep is None else WAKE_FACTOR * sleep
+
+    def levels(self):
+        """What the capture is using now, for the page to say in words: the two levels and whether each was set or found."""
+        return {"sleep_a": self.sleep_a(), "sleep_auto": self.profile.sleep_a is None, "awake_a": self.awake_a(), "awake_auto": self.profile.awake_a is None}
+
     def feed(self, data, t0, mean, high, lost=0):
-        self.level.add(mean, high)
-        level = self.level.level()
-        hot = level is not None and high > level
+        self.level.add(mean)
+        limit = self.awake_a()
+        awake = limit is not None and mean > limit
         o = self._open
         if o is None:
-            if hot:
+            if awake:
                 self.count += 1
-                lead = self._lead_in()
-                o = self._open = Capture(self.count, lead[0][1] if lead else t0, level)
+                lead = list(self._ring)[-(self.max_blocks - 1):]          # the wake itself needs at least one block of the longest wake
+                o = self._open = Capture(self.count, lead[0][1] if lead else t0, limit)
+                self._pending = []
                 for blk in lead:
                     self._add(o, blk[0], blk[2], high=None)
                 self._add(o, data, lost, high)
+                self._check_cap(o)
+        elif awake:
+            room = self.max_blocks - o.blocks
+            for d, l, h in (self._pending + [(data, lost, high)])[:room]:         # a dip that did not last hold_s is part of the wake
+                self._add(o, d, l, h)
+            self._pending = []
+            self._check_cap(o)
         else:
-            self._add(o, data, lost, high)
-            sleep = self.level.sleep()
-            if sleep is None or mean <= WAKE_FACTOR * sleep:
-                self._close()                                  # the first block back near sleep: the tail. Not the first under the half-peak level: a radio burst ends far above sleep
-                                                               # and the receive window after it (20.8 s at 6.5 mA on the RAK) is part of the wake
-            elif o.blocks >= self.max_blocks:
-                o.truncated = True
+            self._pending.append((data, lost, high))
+            if len(self._pending) >= self.hold_blocks:
+                d, l, h = self._pending[0]
+                self._add(o, d, l, h)                          # the first block back asleep is the tail; the rest of the quiet is not the wake's
+                self._pending = []
                 self._close()
         self._ring.append((data, t0, lost, mean))
 
-    def _lead_in(self):
-        """The blocks before the one that revealed the wake, oldest first: back through any that were already awake (a mean over twice the sleep level, like a CPU waking before its
-        radio), to and including the first quiet one, and at most LEAD_BLOCKS_MAX. So a wake starts from sleep, not part-way through."""
-        sleep = self.level.sleep()
-        lead = []
-        for blk in reversed(self._ring):
-            lead.append(blk)
-            if sleep is None or blk[3] <= WAKE_FACTOR * sleep:
-                break
-        lead.reverse()
-        return lead
+    def _check_cap(self, o):
+        if o.blocks >= self.max_blocks and self._open is o:
+            o.truncated = True
+            self._close()
 
     def _add(self, o, data, lost, high):
         o.add(data)

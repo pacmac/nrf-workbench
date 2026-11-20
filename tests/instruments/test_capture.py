@@ -40,38 +40,103 @@ def hot(n):
     return [(WAKE / 2, WAKE)] * n
 
 
+def given(**kw):
+    """A profile with the sleep level given, so a short plan need not first feed the 20 blocks the data needs to find it."""
+    return capture.WakeProfile(sleep_a=SLEEP, **kw)
+
+
 class TheLevel(unittest.TestCase):
-    def test_the_sleep_level_is_the_middle_block_to_within_7_5_percent(self):
+    def test_the_sleep_level_is_the_lowest_tenth_of_the_blocks_to_within_7_5_percent(self):
         lv = capture.Level()
+        rng = random.Random(7)
         for _ in range(100):
-            lv.add(SLEEP, SLEEP * 1.01)
+            lv.add(SLEEP * (1 + rng.uniform(-0.03, 0.03)))
         self.assertAlmostEqual(lv.sleep(), SLEEP, delta=SLEEP * 0.075)
-        self.assertIsNone(lv.level(), "a peak under twice the sleep is no wake")
-        lv.add(WAKE / 2, WAKE)
-        self.assertAlmostEqual(lv.level(), lv.sleep() + (WAKE - lv.sleep()) / 2, delta=1e-12)
 
-    def test_the_middle_block_not_the_mean_is_the_sleep_level(self):
+    def test_there_is_no_sleep_level_until_twenty_blocks_have_been_seen(self):
         lv = capture.Level()
-        for _ in range(90):
-            lv.add(SLEEP, SLEEP)
-        for _ in range(10):
-            lv.add(WAKE, WAKE)                                          # a tenth of the blocks awake would drag a mean to 2 mA
-        self.assertLess(lv.sleep(), SLEEP * 1.1)
+        for _ in range(19):
+            lv.add(SLEEP)
+        self.assertIsNone(lv.sleep(), "at 19 the lowest tenth is the single lowest block, which one stray block could set")
+        lv.add(SLEEP)
+        self.assertAlmostEqual(lv.sleep(), SLEEP, delta=SLEEP * 0.075)
 
-    def test_a_block_that_reads_zero_or_less_gives_no_sleep_level(self):
+    def test_one_stray_low_block_does_not_set_the_level(self):
         lv = capture.Level()
-        for _ in range(10):
-            lv.add(-1e-6, 1e-6)
-        lv.add(0.0, 0.0)                                                # exactly zero has no logarithm: it must not raise
+        lv.add(SLEEP / 100)
+        for _ in range(30):
+            lv.add(SLEEP)
+        self.assertAlmostEqual(lv.sleep(), SLEEP, delta=SLEEP * 0.075, msg="at 31 blocks the lowest tenth is the third lowest")
+
+    def test_a_device_awake_most_of_the_time_still_has_its_sleep_level_where_the_median_would_not(self):
+        lv = capture.Level()
+        for _ in range(20):
+            lv.add(SLEEP)
+        for _ in range(80):
+            lv.add(WAKE)                                                # awake four fifths of the time: the median block is awake
+        self.assertAlmostEqual(lv.sleep(), SLEEP, delta=SLEEP * 0.075)
+        lv2 = capture.Level()
+        for _ in range(5):
+            lv2.add(SLEEP)
+        for _ in range(95):
+            lv2.add(WAKE)
+        self.assertAlmostEqual(lv2.sleep(), WAKE, delta=WAKE * 0.075, msg="over nine tenths awake there is no sleep to find: the level is what it mostly does")
+
+    def test_blocks_that_read_zero_or_less_say_nothing_about_a_level(self):
+        lv = capture.Level()
+        for _ in range(40):
+            lv.add(-1e-6)
+        lv.add(0.0)                                                     # exactly zero has no logarithm: it must not raise
+        self.assertEqual(lv.n, 0)
         self.assertIsNone(lv.sleep())
-        self.assertIsNone(lv.level())
+        for _ in range(25):
+            lv.add(SLEEP)
+        self.assertAlmostEqual(lv.sleep(), SLEEP, delta=SLEEP * 0.075, msg="the blocks that read above zero give it")
 
-    def test_the_median_is_a_constant_size_histogram(self):
+    def test_the_histogram_is_a_constant_size(self):
         lv = capture.Level()
         for i in range(5000):
-            lv.add(10 ** (-8 + (i % 70) / 10.0), 1.0)
+            lv.add(10 ** (-8 + (i % 70) / 10.0))
         self.assertEqual(len(lv.counts), 160)
         self.assertEqual(sum(lv.counts), 5000)
+
+
+class TheWakeProfile(unittest.TestCase):
+    def test_nothing_given_is_everything_found_and_the_defaults_are_derived_ones(self):
+        p = capture.WakeProfile()
+        self.assertEqual(p.to_dict(), {"sleep_a": None, "awake_a": None, "hold_s": 0.2, "lead_s": 0.2, "max_s": 40.0})
+        self.assertEqual((p.hold_blocks, p.lead_blocks, p.max_blocks), (1, 1, 200))
+
+    def test_seconds_become_whole_blocks_without_float_error(self):
+        p = capture.WakeProfile(hold_s=0.6, lead_s=0.4, max_s=120)
+        self.assertEqual((p.hold_blocks, p.lead_blocks, p.max_blocks), (3, 2, 600), "0.6 / 0.2 is 2.9999999999999996 in floats")
+        self.assertEqual(capture.WakeProfile(lead_s=0).lead_blocks, 0)
+        self.assertEqual(capture.WakeProfile(hold_s=0.3).hold_blocks, 2, "a part of a block is a whole one: a wake ends no sooner than asked")
+        self.assertEqual(3 * 0.2, 0.6000000000000001)
+        self.assertEqual(capture.WakeProfile(hold_s=3 * 0.2).hold_blocks, 3, "0.6000000000000001 / 0.2 is 3.0000000000000004: not four blocks")
+        self.assertEqual(capture.WakeProfile(max_s=1.4).max_blocks, 7, "1.4 / 0.2 is 6.999999999999999: not six blocks")
+
+    def test_each_bad_value_names_its_field(self):
+        for kw, field in (({"sleep_a": 0}, "wake_sleep_a"), ({"sleep_a": -1e-6}, "wake_sleep_a"), ({"awake_a": 0}, "wake_awake_a"), ({"sleep_a": 1e-3, "awake_a": 1e-3}, "wake_awake_a"),
+                          ({"max_s": 0.9}, "wake_max_s"), ({"max_s": 121}, "wake_max_s"), ({"hold_s": 0.1}, "wake_hold_s"), ({"hold_s": 41}, "wake_hold_s"),
+                          ({"lead_s": -0.1}, "wake_lead_s"), ({"lead_s": 41}, "wake_lead_s"), ({"sleep_a": True}, "wake_sleep_a"), ({"max_s": "40"}, "wake_max_s"),
+                          ({"awake_a": float("nan")}, "wake_awake_a"), ({"hold_s": float("inf")}, "wake_hold_s")):
+            with self.assertRaises(capture.ProfileError, msg=str(kw)) as cm:
+                capture.WakeProfile(**kw)
+            self.assertEqual(cm.exception.field, field, kw)
+
+    def test_the_hold_and_the_lead_may_be_as_long_as_the_longest_wake_and_no_longer(self):
+        capture.WakeProfile(hold_s=10, lead_s=10, max_s=10)
+        with self.assertRaises(capture.ProfileError):
+            capture.WakeProfile(hold_s=10.2, max_s=10)
+        with self.assertRaises(capture.ProfileError):
+            capture.WakeProfile(lead_s=10.2, max_s=10)
+
+    def test_the_memory_a_wake_may_take_is_bounded_at_the_longest_setting(self):
+        p = capture.WakeProfile(max_s=capture.MAX_S_MAX)
+        raw = p.max_blocks * 20000 * 4
+        self.assertEqual(raw, 48000000, "120 s is 48 MB raw")
+        self.assertLess(raw / 2.3 * capture.KEEP, 0.05 * 3.8e9, "held compressed (2.3 times, measured), the newest 8 stay under 5 % of the bench Pi's 3.8 GB")
 
 
 class WhenAWakeIsKept(unittest.TestCase):
@@ -82,7 +147,7 @@ class WhenAWakeIsKept(unittest.TestCase):
         self.assertEqual(c.count, 0)
 
     def test_the_window_runs_from_the_block_before_to_the_first_quiet_block_after(self):
-        c = capture.Capturer()
+        c = capture.Capturer(given())
         feed_blocks(c, quiet(5) + hot(2) + quiet(3))                    # blocks 0-4 asleep, 5 and 6 awake, 7-9 asleep
         self.assertEqual(c.count, 1)
         cap = c.get(1)
@@ -91,38 +156,107 @@ class WhenAWakeIsKept(unittest.TestCase):
         self.assertFalse(cap.truncated)
         self.assertEqual(cap.peak, WAKE)
 
-    def test_the_lead_in_goes_back_over_blocks_that_were_already_awake_to_the_first_quiet_one(self):
-        c = capture.Capturer()
-        awake = [(SLEEP * 4, SLEEP * 4.5)] * 3                          # a CPU up (4x the sleep current) before its radio: above twice the sleep, far under the wake level
-        # a first wake sets the session's peak, so that the level is the radio's and a CPU alone is not a wake: blocks 0-99 asleep, 100 the first wake, 101-106 asleep,
-        # 107-109 awake, 110 the second wake, 111-112 asleep
-        feed_blocks(c, quiet(100) + hot(1) + quiet(6) + awake + hot(1) + quiet(2))
-        self.assertEqual(c.count, 2)
-        self.assertEqual(c.get(2).data, b"".join(block(k) for k in range(106, 112)))
-        self.assertEqual(c.get(2).t0, 106.0)
+    def test_the_lead_in_is_lead_s_of_sleep_before_the_first_awake_block(self):
+        c = capture.Capturer(given(lead_s=0.6))
+        feed_blocks(c, quiet(10) + hot(2) + quiet(3))                   # 0-9 asleep, 10 and 11 awake, 12-14 asleep
+        self.assertEqual(c.get(1).data, b"".join(block(k) for k in (7, 8, 9, 10, 11, 12)), "three blocks of lead-in (0.6 s), the wake, the first quiet block")
+        self.assertEqual(c.get(1).t0, 7.0)
+        c = capture.Capturer(given(lead_s=0))
+        feed_blocks(c, quiet(10) + hot(2) + quiet(3))
+        self.assertEqual(c.get(1).data, b"".join(block(k) for k in (10, 11, 12)), "no lead-in: it starts at the first awake block")
 
-    def test_the_lead_in_is_never_longer_than_the_ring(self):
-        c = capture.Capturer()
-        awake = [(SLEEP * 4, SLEEP * 4.5)] * 9
-        feed_blocks(c, quiet(100) + hot(1) + quiet(6) + awake + hot(1) + quiet(2))          # 107-115 awake, 116 the second wake, 117-118 asleep
-        self.assertEqual(c.get(2).data, b"".join(block(k) for k in range(116 - capture.LEAD_BLOCKS_MAX, 118)))
-        self.assertEqual(capture.LEAD_BLOCKS_MAX, 5)
+    def test_a_lead_in_longer_than_the_data_before_it_is_what_there_is(self):
+        c = capture.Capturer(given(lead_s=1.0))
+        feed_blocks(c, quiet(2) + hot(1) + quiet(2))
+        self.assertEqual(c.get(1).data, b"".join(block(k) for k in (0, 1, 2, 3)))
 
-    def test_the_first_block_has_no_block_before_it(self):
+    def test_a_wake_in_the_first_block_has_no_lead_in_when_the_sleep_level_is_given_and_is_not_seen_when_it_is_not(self):
+        c = capture.Capturer(given())
+        feed_blocks(c, [(WAKE / 2, WAKE)] + quiet(3))
+        self.assertEqual((c.count, c.get(1).data), (1, block(0) + block(1)), "awake from its first block: it starts there, and ends at the first quiet one")
         c = capture.Capturer()
         feed_blocks(c, [(WAKE / 2, WAKE)] + quiet(3))
-        self.assertEqual(c.count, 0, "with nothing to be asleep against there is no level yet")
+        self.assertEqual(c.count, 0, "with nothing to be asleep against there is no level to be awake over")
 
-    def test_a_wake_longer_than_the_ceiling_is_truncated_and_the_next_is_found(self):
-        c = capture.Capturer()
-        over = capture.MAX_CAPTURE_BLOCKS + 30
-        feed_blocks(c, quiet(1000) + hot(over) + quiet(4) + hot(2) + quiet(2))   # a long history: the sleep level is the middle block, so a wake early in a session would pull it up
+    def test_a_wake_longer_than_the_longest_is_truncated_and_the_next_is_found(self):
+        c = capture.Capturer(given(max_s=1))
+        self.assertEqual(c.max_blocks, 5)
+        feed_blocks(c, quiet(30) + hot(12) + quiet(3) + hot(2) + quiet(2))
         first = c.get(1)
         self.assertTrue(first.truncated)
-        self.assertEqual(first.blocks, capture.MAX_CAPTURE_BLOCKS)
-        self.assertGreaterEqual(c.count, 2)
+        self.assertEqual(first.blocks, 5)
+        self.assertGreaterEqual(c.count, 3)
         self.assertFalse(c.get(c.count).truncated)
         self.assertEqual(c.get(c.count).peak, WAKE)
+
+    def test_a_lead_in_as_long_as_the_longest_wake_still_leaves_room_for_the_wake(self):
+        c = capture.Capturer(given(lead_s=1, max_s=1))
+        feed_blocks(c, quiet(30) + hot(1) + quiet(3))
+        self.assertEqual((c.get(1).blocks, c.get(1).truncated), (5, True), "four blocks of lead-in and the wake's first: five, the longest, not six")
+
+    def test_a_block_exactly_at_the_awake_level_is_asleep(self):
+        c = capture.Capturer(capture.WakeProfile(awake_a=5e-3))
+        feed_blocks(c, quiet(3) + [(5e-3, 5e-3)] * 2 + quiet(2))
+        self.assertEqual(c.count, 0, "over the level is awake, at it is not")
+        feed_blocks(c, quiet(3) + [(5.0001e-3, 5.0001e-3)] + quiet(2))
+        self.assertEqual(c.count, 1)
+
+    def test_the_default_longest_wake_is_forty_seconds(self):
+        c = capture.Capturer(given())
+        feed_blocks(c, quiet(30) + hot(230) + quiet(3))
+        self.assertEqual((c.get(1).blocks, c.get(1).truncated), (200, True))
+
+    def test_a_dip_shorter_than_hold_s_does_not_end_a_wake_and_one_as_long_does(self):
+        plan = quiet(30) + hot(2) + quiet(2) + hot(2) + quiet(5)
+        c = capture.Capturer(given(hold_s=0.6))                        # three quiet blocks end it: the dip of two is part of it
+        feed_blocks(c, plan)
+        self.assertEqual((c.count, c.get(1).blocks), (1, 1 + 2 + 2 + 2 + 1), "a block of lead-in, the burst, the dip, the burst, the first block back asleep")
+        self.assertEqual(c.get(1).data, b"".join(block(k) for k in range(29, 37)))
+        c = capture.Capturer(given())                                  # one quiet block ends it: two wakes
+        feed_blocks(c, plan)
+        self.assertEqual(c.count, 2)
+
+    def test_the_blocks_of_a_dip_that_ended_it_are_not_kept_beyond_the_first(self):
+        c = capture.Capturer(given(hold_s=0.6))
+        feed_blocks(c, quiet(30) + hot(1) + quiet(6))
+        self.assertEqual(c.get(1).data, b"".join(block(k) for k in (29, 30, 31)), "the tail is one block, not the whole hold-off")
+
+    def test_a_cpu_alone_is_a_wake_and_a_spike_early_on_does_not_hide_the_ones_after_it(self):
+        cpu = [(SLEEP * 50, SLEEP * 60)]                                # 500 uA for 0.2 s: far over twice the sleep, far under any radio
+        c = capture.Capturer()
+        feed_blocks(c, quiet(30) + cpu * 3 + quiet(2) + [(1.0, 2.0)] + quiet(3) + hot(2) + quiet(2))      # then a one-block 1 A spike, then a 20 mA wake
+        self.assertEqual(c.count, 3, "the CPU's, the spike's and the radio's: no running peak sets a level that hides the later ones")
+        self.assertEqual(c.get(1).blocks, 1 + 3 + 1)
+        self.assertEqual(c.get(3).peak, WAKE)
+
+    def test_a_device_with_a_light_sleep_over_twice_its_deep_sleep_needs_the_awake_level_given(self):
+        light = [(SLEEP * 5, SLEEP * 5.2)]                              # 50 uA between deep sleeps of 10 uA
+        plan = quiet(30) + light * 20 + hot(2) + light * 20
+        c = capture.Capturer()
+        feed_blocks(c, plan)
+        self.assertEqual((c.count, c.kept), (1, 0), "found from the data, a light sleep is awake: the first block of it opens a wake that never closes")
+        c = capture.Capturer(capture.WakeProfile(awake_a=1e-4))        # 100 uA: over the light sleep, under any wake
+        feed_blocks(c, plan)
+        self.assertEqual((c.count, c.kept), (1, 1))
+        self.assertEqual(c.get(1).blocks, 1 + 2 + 1)
+
+    def test_the_levels_say_what_was_set_and_what_was_found(self):
+        c = capture.Capturer()
+        self.assertEqual(c.levels(), {"sleep_a": None, "sleep_auto": True, "awake_a": None, "awake_auto": True})
+        feed_blocks(c, quiet(25))
+        lv = c.levels()
+        self.assertAlmostEqual(lv["sleep_a"], SLEEP, delta=SLEEP * 0.075)
+        self.assertAlmostEqual(lv["awake_a"], 2 * lv["sleep_a"], delta=1e-15)
+        self.assertEqual((lv["sleep_auto"], lv["awake_auto"]), (True, True))
+        lv = capture.Capturer(capture.WakeProfile(sleep_a=1e-5, awake_a=3e-5)).levels()
+        self.assertEqual(lv, {"sleep_a": 1e-5, "sleep_auto": False, "awake_a": 3e-5, "awake_auto": False})
+        lv = capture.Capturer(capture.WakeProfile(sleep_a=1e-5)).levels()
+        self.assertEqual((lv["awake_a"], lv["awake_auto"]), (2e-5, True), "the awake level follows a given sleep level")
+
+    def test_an_awake_level_given_needs_no_sleep_level(self):
+        c = capture.Capturer(capture.WakeProfile(awake_a=5e-3))
+        feed_blocks(c, quiet(3) + hot(2) + quiet(2))
+        self.assertEqual((c.count, c.get(1).blocks), (1, 1 + 2 + 1))
 
     def test_a_receive_window_between_two_bursts_is_part_of_the_one_wake(self):
         """The bench RAK: TX 1 (120 mA), a 20.8 s receive window at 6.5 mA, TX 2 (120 mA), then sleep. The window is under half the peak but far over twice the sleep."""
@@ -136,10 +270,9 @@ class WhenAWakeIsKept(unittest.TestCase):
         self.assertIsNotNone(cap.blob, "closing a wake closes its stream, so the store has the bytes to write without compressing anything")
         self.assertEqual(cap.data, b"".join(block(k) for k in range(999, 999 + 107)))
 
-    def test_a_wake_ends_when_the_blocks_that_made_the_sleep_level_turn_to_zero_under_it(self):
-        c = capture.Capturer()
-        zero = [(0.0, 0.0)]
-        feed_blocks(c, zero * 2 + quiet(2) + hot(1) + zero)               # the last block is the third that reads nothing: the middle block now reads zero, there is no sleep level
+    def test_a_block_that_reads_zero_or_less_is_asleep_and_ends_a_wake(self):
+        c = capture.Capturer(given())
+        feed_blocks(c, quiet(30) + hot(1) + [(-1e-6, 1e-6)])              # the unit's noise at the floor can read below zero
         self.assertEqual((c.count, c.kept), (1, 1))
 
     def test_a_wake_closes_on_the_first_block_back_near_sleep_not_on_one_just_under_the_level(self):
@@ -165,7 +298,7 @@ class WhenAWakeIsKept(unittest.TestCase):
         self.assertEqual(cap.samples, 30 * 20000)
 
     def test_only_the_newest_are_kept_and_numbers_keep_rising(self):
-        c = capture.Capturer()
+        c = capture.Capturer(given())
         plan = quiet(4)
         for _ in range(12):
             plan += hot(1) + quiet(3)
@@ -175,10 +308,14 @@ class WhenAWakeIsKept(unittest.TestCase):
         self.assertIsNone(c.get(4))
 
     def test_lost_samples_are_counted_per_capture(self):
-        c = capture.Capturer()
+        c = capture.Capturer(given())
         for k, (mean, high) in enumerate(quiet(4) + hot(2) + quiet(2)):
             c.feed(block(k), float(k), mean, high, 3 if k in (4, 5) else 0)
-        self.assertEqual(c.get(1).lost, 6, "the block before the wake and the wake block both lost 3")
+        self.assertEqual(c.get(1).lost, 6, "both awake blocks lost 3")
+        c = capture.Capturer(given(hold_s=0.6))
+        for k, (mean, high) in enumerate(quiet(4) + hot(1) + quiet(1) + hot(1) + quiet(4)):
+            c.feed(block(k), float(k), mean, high, 2 if k in (3, 5, 9) else 0)
+        self.assertEqual(c.get(1).lost, 4, "block 3 (the lead-in) and block 5 (a dip the wake went on after) count; block 9 is in the hold-off after the tail, which is not the wake's")
 
     def test_a_wake_is_counted_as_kept_only_when_it_has_finished_and_after_it_was_handed_on(self):
         c = capture.Capturer()
@@ -214,13 +351,17 @@ class PathBase(Base):
         meter.register(self.reg, self.host)
         self.sleep_a, self.wake_a = reference_amps(self.cal, 0, 1000), reference_amps(self.cal, 0, WAKE_ADC)
 
+    def wake(self):
+        """The wake profile of the session: the sleep level is given, so the first wake of a short test is not lost to the 4 s the data needs to find it (AWakeOfTwentySeconds finds it)."""
+        return capture.WakeProfile(sleep_a=self.sleep_a)
+
     def run_session(self):
-        self.sampler.start("watch", 60, source="ppk2")
+        self.sampler.start("watch", 60, source="ppk2", wake=self.wake())
         self.assertTrue(until(lambda: self.sampler.session()["stats"]["readings"] >= self.BLOCKS * 20000, 30))
         self.sampler.stop()
 
     def record_session(self, name):
-        self.sampler.start("record", 60, name=name, source="ppk2")
+        self.sampler.start("record", 60, name=name, source="ppk2", wake=self.wake())
         self.assertTrue(until(lambda: self.sampler.session()["stats"]["readings"] >= self.BLOCKS * 20000, 30))
         self.sampler.stop()
 
@@ -334,6 +475,9 @@ class AWakeOfTwentySeconds(PathBase):
     WINDOW_ADC = 3000
     TX1, WINDOW, TX2 = 131, 134, 234                                        # the first block of each: 131-133 burst, 134-233 window (20 s), 234-235 burst
 
+    def wake(self):
+        return None                                                         # nothing given: the 125 quiet blocks before the wake are what the sleep level is found from
+
     def setUp(self):
         PathBase.setUp(self)
         t = self
@@ -383,6 +527,71 @@ class AWakeOfTwentySeconds(PathBase):
         back = self.call("meter.capture", {"n": 1, "points": 50, "recording": "rak-1"}).data
         self.assertEqual(mem, back)
         self.assertLess(os.path.getsize(os.path.join(self.folder, "rak-1.wakes", "1.bin")), 107 * 20000 * 4 / 3)
+
+
+class TheWakeProfileOfASession(PathBase):
+    """The profile is chosen when a session starts (meter.watch and meter.record take wake_*), reaches the capture, and is reported with the session and in the recording's sidecar."""
+
+    def start(self, command="meter.watch", **args):
+        res = self.call(command, dict({"bound_s": 60, "source": "ppk2"}, **args))
+        self.assertTrue(res.ok, res.message if hasattr(res, "message") else res)
+        self.assertTrue(until(lambda: self.sampler.session()["stats"]["readings"] >= self.BLOCKS * 20000, 30))
+        self.sampler.stop()
+
+    def test_nothing_given_says_everything_was_found_and_the_found_levels_are_reported(self):
+        self.start()
+        s = self.sampler.session()
+        self.assertEqual(s["wake"], {"sleep_a": None, "awake_a": None, "hold_s": 0.2, "lead_s": 0.2, "max_s": 40.0})
+        self.assertAlmostEqual(s["sleep_a"], self.sleep_a, delta=self.sleep_a * 0.075, msg="the sleep level the data gave")
+        self.assertAlmostEqual(s["awake_a"], 2 * s["sleep_a"], delta=s["sleep_a"] * 1e-3)
+        self.assertEqual(len(self.call("meter.captures").data["captures"]), 2, "the wakes of blocks 23 and 33: the first 20 blocks (4 s) are what the sleep level is found from")
+
+    def test_what_is_given_reaches_the_capture_and_is_reported_as_given(self):
+        self.start(wake_sleep_a=self.sleep_a, wake_hold_s=0.6, wake_lead_s=0.4, wake_max_s=30)
+        s = self.sampler.session()
+        self.assertEqual(s["wake"], {"sleep_a": self.sleep_a, "awake_a": None, "hold_s": 0.6, "lead_s": 0.4, "max_s": 30.0})
+        rows = self.call("meter.captures").data["captures"]
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(rows[0]["samples"], (2 + 1 + 1) * 20000, "two blocks of lead-in (0.4 s, though only 3 blocks came before the first wake), the wake, and one tail block: the rest of the hold-off is not kept")
+        self.assertEqual(self.sampler.sources["ppk2"].capturer.max_blocks, 150, "30 s")
+
+    def test_an_awake_level_given_finds_wakes_from_the_first_block(self):
+        self.start(wake_awake_a=(self.sleep_a + self.wake_a) / 2)
+        rows = self.call("meter.captures").data["captures"]
+        self.assertEqual(len(rows), 4, "no sleep level to wait for")
+
+    def test_a_bad_value_is_a_usage_error_that_names_its_field(self):
+        for args, field in (({"wake_max_s": 0.5}, "wake_max_s"), ({"wake_hold_s": 0.05}, "wake_hold_s"), ({"wake_sleep_a": -1.0}, "wake_sleep_a"),
+                            ({"wake_sleep_a": 1e-3, "wake_awake_a": 1e-4}, "wake_awake_a"), ({"wake_lead_s": 99.0}, "wake_lead_s")):
+            with self.assertRaises(UsageError, msg=str(args)) as cm:
+                self.call("meter.watch", dict({"bound_s": 60, "source": "ppk2"}, **args))
+            self.assertEqual(cm.exception.arg, field, args)
+        self.assertEqual(self.sampler.session()["state"], "idle", "nothing started")
+
+    def test_a_multimeter_session_has_no_wake_profile_to_set(self):
+        self.sampler.sources["meter"] = types.SimpleNamespace(name="meter")
+        with self.assertRaises(UsageError) as cm:
+            self.call("meter.watch", {"bound_s": 60, "source": "meter", "wake_max_s": 30.0, "wake_hold_s": 1.0})
+        self.assertEqual(cm.exception.arg, "wake_hold_s")
+        self.assertEqual(self.sampler.session()["state"], "idle")
+
+    def test_a_recording_keeps_the_profile_and_the_levels_found_in_its_sidecar(self):
+        import json
+        self.start("meter.record", name="rak-1", wake_hold_s=0.4)
+        with open(os.path.join(self.folder, "rak-1.json")) as fh:
+            side = json.load(fh)
+        self.assertEqual(side["wake"]["hold_s"], 0.4)
+        self.assertAlmostEqual(side["sleep_a"], self.sleep_a, delta=self.sleep_a * 0.075)
+        self.assertIn("awake_a", side)
+
+    def test_the_levels_ride_every_reading_to_four_figures(self):
+        self.start()
+        reads = [e.payload for e in self.host.streams.meter.since(0).events if e.type == "meter.reading"]
+        with_levels = [r["facts"] for r in reads if "awake_a" in r["facts"]]
+        self.assertTrue(with_levels)
+        self.assertNotIn("awake_a", reads[0]["facts"], "none before the data can give a sleep level")
+        for f in with_levels:
+            self.assertEqual(float("%.4g" % f["awake_a"]), f["awake_a"])
 
 
 class KeptWithTheRecording(PathBase):

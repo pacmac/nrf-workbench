@@ -232,11 +232,21 @@ def register(registry, host):
         return h.service("meter_sampler", lambda: samplerlib.Sampler(meter if cfg["meter"] else None, h.streams.meter, h.config["paths"]["meter"], ppk2=profiler))
 
     def starter(mode):
-        def handler(ctx, bound_s, name=None, source=None):
+        def handler(ctx, bound_s, name=None, source=None, wake_sleep_a=None, wake_awake_a=None, wake_hold_s=None, wake_lead_s=None, wake_max_s=None):
             if source is not None and source not in ("meter", "ppk2"):
                 raise UsageError("source is meter or ppk2", "source")
+            given = {"wake_sleep_a": wake_sleep_a, "wake_awake_a": wake_awake_a, "wake_hold_s": wake_hold_s, "wake_lead_s": wake_lead_s, "wake_max_s": wake_max_s}
+            given = dict((k, v) for k, v in given.items() if v is not None)          # an argument not given arrives as None: it is left to the data
+            wake = None
+            if given:
+                try:
+                    wake = capturelib.WakeProfile(wake_sleep_a, wake_awake_a, wake_hold_s, wake_lead_s, wake_max_s)
+                except capturelib.ProfileError as exc:
+                    raise UsageError(str(exc), exc.field)
             try:
-                summary = sampler(ctx).start(mode, bound_s, name, source)
+                summary = sampler(ctx).start(mode, bound_s, name, source, wake)
+            except samplerlib.ProfileNotWanted as exc:
+                raise UsageError(str(exc), sorted(given)[0])
             except samplerlib.Busy as exc:
                 return Result.refused("meter_busy", "%s: stop it first (meter.stop)" % exc, {"session": exc.session})
             except samplerlib.NameTaken as exc:
@@ -316,10 +326,16 @@ def register(registry, host):
 
     bound = Arg("bound_s", type="float", unit="s", doc="how long to run at most, 1 to 43200 (12 h): nothing runs unbounded")
     source = Arg("source", required=False, doc="the instrument to read: meter (the multimeter, the default when it is configured) or ppk2 (the Nordic Power Profiler)")
+    # What a wake is, for the power profiler's sessions (docs/specs/ppk2-stages.md, "The wake profile"). Left out, every one is found from the data.
+    wake_args = (Arg("wake_sleep_a", type="float", required=False, unit="A", doc="the profiler's wake rule: the current the board sleeps at, in amps; left out it is found as the lowest tenth of the readings"),
+                 Arg("wake_awake_a", type="float", required=False, unit="A", doc="the current a 0.2 s block must average over to be awake, in amps; left out, twice the sleep level"),
+                 Arg("wake_hold_s", type="float", required=False, unit="s", doc="a wake ends after the board has been asleep this long, 0.2 up to wake_max_s (default 0.2); a shorter dip is part of the wake"),
+                 Arg("wake_lead_s", type="float", required=False, unit="s", doc="sleep kept before a wake, 0 up to wake_max_s (default 0.2)"),
+                 Arg("wake_max_s", type="float", required=False, unit="s", doc="the longest wake kept whole, 1 to 120 (default 40); a longer one is cut there and marked"))
     add(Command("meter.watch", "Start a live session: a reading every period, pushed to the page and kept as a chart, nothing written to disk. At most 12 h.",
-                starter("watch"), args=(bound, source), requires=STREAM, effect="write", result="session, source, state, mode, started, bound_s, stats"))
+                starter("watch"), args=(bound, source) + wake_args, requires=STREAM, effect="write", result="session, source, state, mode, started, bound_s, stats"))
     add(Command("meter.record", "Start a recording: a live session that also appends every reading to a CSV file on the Pi. At most 12 h; the newest 10 files are kept.",
-                starter("record"), args=(bound, Arg("name", required=False, doc="the file's name: a-z 0-9 . _ -, default the start time"), source),
+                starter("record"), args=(bound, Arg("name", required=False, doc="the file's name: a-z 0-9 . _ -, default the start time"), source) + wake_args,
                 requires=STORE, effect="write", result="session, source, state, mode, name, started, bound_s, stats"))
     add(Command("meter.stop", "End the running session now. Already stopped is fine.", stop, requires=STREAM, effect="write", result="the session as it ended"))
     add(Command("meter.session", "The session's state, time and statistics: readings, min, max, mean and, for a current, the charge in mAh.",
