@@ -342,7 +342,7 @@ export default function MeterPage({ commands, onDone }) {
       </Card>
 
       {(shownSource === "ppk2" || openRec) && (
-        <Scope commands={commands} count={session ? session.captures || 0 : 0} session={session}
+        <Scope key={`${openRec || ""}:${session ? session.session : 0}`} commands={commands} count={session ? session.captures || 0 : 0} session={session}
           recording={openRec || (session && session.mode === "record" && session.name ? session.name : null)} />
       )}
 

@@ -276,6 +276,51 @@ def meter_page(page, bench, fake, tag, shot):
     bench.unit.profile = lambda i: (1000 + (i % 7), 0)
     bench.unit.index = bench.unit.counter = 0
 
+    # stages are named on a recording's wakes and kept with it (docs/specs/ppk2-stages.md, stage 2)
+    bench.unit.profile = lambda i: (30000 if (i // 20000) % 10 == 3 else 1000, 0)
+    bench.unit.index = bench.unit.counter = 0
+    page.get_by_label("Name for the recording").fill("stage-1")
+    page.get_by_role("button", name="Record", exact=True).click()
+    page.get_by_text(re.compile(r"^recording, .*to stage-1\.csv")).wait_for()
+    pick = page.get_by_label("Wake", exact=True)
+    pick.locator("option").nth(2).wait_for(state="attached", timeout=40000)
+    check("%s with a recording behind the wakes the page says how to name a stage, and there are none yet" % tag,
+          "Drag across the chart to select a stretch, then name it" in page.inner_text("body") and page.get_by_role("table", name="Stages across the wakes").count() == 0)
+    trace = page.get_by_role("img", name=re.compile(r"^Current of wake"))
+    trace.scroll_into_view_if_needed()
+    box = trace.bounding_box()
+    page.mouse.move(box["x"] + box["width"] * 0.30, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] * 0.45, box["y"] + box["height"] / 2)
+    page.mouse.up()
+    page.get_by_text(re.compile(r"^Selected: ")).wait_for()
+    sel = page.get_by_label("Selected stretch").inner_text()
+    check("%s the selected stretch is shown in milliseconds from the wake's start" % tag, re.match(r"^Selected: -?[0-9.]+ ms to -?[0-9.]+ ms$", sel) is not None, sel)
+    check("%s a stage cannot be added without a name" % tag, page.get_by_role("button", name="Add as a stage").is_disabled())
+    page.get_by_label("Stage name").fill("burst")
+    page.get_by_role("button", name="Add as a stage").click()
+    stages = page.get_by_role("table", name="Stages across the wakes")
+    stages.wait_for()
+    st = stages.inner_text().replace("\n", " ")
+    check("%s the stage appears in a table with its stretch, average, peak, charge and share" % tag,
+          "burst" in st and re.search(r"[0-9.]+ ms to [0-9.]+ ms", st) is not None and "of the named stages" in st and "100 %" in st, st)
+    check("%s the stage is shaded on the trace and named in the colour legend" % tag,
+          page.get_by_test_id("stage-span").count() == 1 and page.get_by_label("Stage colours").inner_text().strip() == "burst")
+    check("%s no sideways scroll with the stage table" % tag, no_sideways_scroll(page))
+    page.get_by_text("The wake at full rate", exact=True).scroll_into_view_if_needed()
+    shot("5c-stages")
+    page.get_by_role("button", name="Show all of it").click()
+    page.get_by_role("button", name="Remove the stage burst").click()
+    page.get_by_role("table", name="Stages across the wakes").wait_for(state="detached")
+    check("%s removing the stage takes it off the table and the trace" % tag, page.get_by_test_id("stage-span").count() == 0)
+    page.get_by_role("button", name="Stop").click()
+    page.get_by_text(re.compile(r"^ended: stopped")).wait_for()
+    page.get_by_role("button", name="Open the wakes of stage-1").click()
+    page.get_by_label("Wake", exact=True).locator("option").nth(2).wait_for(state="attached")
+    check("%s a finished recording's wakes open from the Recordings list" % tag, page.get_by_label("Wake", exact=True).locator("option").count() >= 3)
+    bench.unit.profile = lambda i: (1000 + (i % 7), 0)
+    bench.unit.index = bench.unit.counter = 0
+
     # back to the multimeter
     page.get_by_role("group", name="Instrument").get_by_role("button", name="Multimeter").click()
     page.get_by_text("The meter", exact=True).wait_for()

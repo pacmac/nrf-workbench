@@ -240,8 +240,7 @@ export function Scope({ commands, count, session, recording }) {
                           <th scope="col" className="py-1 pr-3 font-normal">Stage</th>
                           <th scope="col" className="py-1 pr-3 font-normal">Average current</th>
                           <th scope="col" className="py-1 pr-3 font-normal">Peak</th>
-                          <th scope="col" className="py-1 pr-3 font-normal">Charge per wake</th>
-                          <th scope="col" className="py-1 font-normal"><span className="sr-only">Remove</span></th>
+                          <th scope="col" className="py-1 font-normal">Charge per wake</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -250,18 +249,16 @@ export function Scope({ commands, count, session, recording }) {
                             <th scope="row" className="py-2 pr-3 align-top font-normal">
                               <span className={`rounded px-2 py-0.5 text-[13px] font-semibold ${TINTS[i % TINTS.length].chip}`}>{s.name}</span>
                               <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">{timeLabel(s.start_s, s.length_s)} to {timeLabel(s.end_s, s.length_s)}, {timeLabel(s.length_s, s.length_s)} long</div>
+                              {delStage && <div className="mt-1"><Button tone="quiet" disabled={busy} onClick={() => write(delStage, { recording, name: s.name })} aria-label={`Remove the stage ${s.name}`}>Remove</Button></div>}
                             </th>
                             <td className="py-2 pr-3 align-top text-[15px] font-medium">
                               {s.mean === null ? "—" : si(s.mean, "A")}
                               {s.wakes > 1 && s.lowest_mean !== s.highest_mean && <div className="text-xs font-normal text-slate-600 dark:text-slate-400">{si(s.lowest_mean, "A")} to {si(s.highest_mean, "A")} across {s.wakes} wakes</div>}
                             </td>
                             <td className="py-2 pr-3 align-top text-[15px] font-medium">{s.peak === null ? "—" : si(s.peak, "A")}</td>
-                            <td className="py-2 pr-3 align-top text-[15px] font-medium">
+                            <td className="py-2 align-top text-[15px] font-medium">
                               {s.charge_c === null ? "—" : chargeText(s.charge_c)}
                               <div className="text-xs font-normal text-slate-600 dark:text-slate-400">{share(s.share)} of the named stages</div>
-                            </td>
-                            <td className="py-2 align-top">
-                              {delStage && <Button tone="quiet" disabled={busy} onClick={() => write(delStage, { recording, name: s.name })} aria-label={`Remove the stage ${s.name}`}>Remove</Button>}
                             </td>
                           </tr>
                         ))}
