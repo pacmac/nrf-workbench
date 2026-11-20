@@ -59,7 +59,7 @@ is refused `capability_missing`. On the bench `streams.meter.retain` stays 20,00
 
 | command | effect | what it does |
 |---|---|---|
-| `ppk2.show` | read | `{reachable, serial, port, mode: ampere/source/unknown, vdd_mv, vdd_from, calibrated, hw, supply: on/off/unknown}`; opens the port only for the metadata query, never starts a stream. While a session is using the PPK2 it is refused `meter_busy` and the session carries the facts |
+| `ppk2.show` | read | `{reachable, serial, port, mode: ampere/source/unknown, vdd_mv, vdd_from, calibrated, hw, supply: on/off/unknown}`; opens the port only for the metadata query, never starts a stream. While a session is using the PPK2 it is refused `meter_busy` and the session carries the facts (below), and the refusal's evidence says what the service remembers |
 | `ppk2.mode` `mode`, `accept_supply`? | write | ampere or source, by the rule above; the mode is read back from the metadata (which does report it: `no_reply` if it did not take) |
 | `ppk2.supply` `on`, `mv`?, `accept_supply`? | write | the voltage and the switch, by the rule above; the unit reports neither back, so the answer says what was set |
 | `meter.watch` / `meter.record` | write | gain a `source` argument: `meter` (the default when the multimeter is configured) or `ppk2` (the default when only it is) |
@@ -76,7 +76,11 @@ unit and **ends the session** (`state: error`, the file kept as far as it got), 
 A reading event gains `min`, `max`, `n` and `source` (a multimeter reading has `min == max == value` and `n == 1`). The envelope takes `min`/`max` for a bucket's edges and `value * n` into its sum, so a merged bucket's mean stays exact;
 the **page's envelope does the same** (envelope.js and envelope.py are cross-checked by a test). Statistics: `readings` counts samples (the page says "samples" for the PPK2); `charge` for a PPK2 block is the block's mean times its
 duration `n / 100,000` summed, which is exact for the samples taken (the multimeter keeps its trapezoid between readings). CSV columns become `t_s,wall,value,unit,function,range,nplc,overload,min,max,n`: the old columns keep their place,
-so an older file still reads. For the PPK2, `range` is the highest range index seen in the block (0 to 4, not an amp value: the full-scale of each range is not asserted) and `nplc` is empty. The sidecar and each row of `meter.recordings` carry `source`.
+so an older file still reads. **What the session reports of the unit it holds** (Peter, 2026-11-20: "the output voltage in mv is not displayed once it has been enabled and the unit is powered and under test"; this was promised above and not built, so the page showed only that a session
+was using the unit): when a profiler session begins, its facts gain `unit_mode` (ampere, source or unknown), `vdd_mv`, `vdd_from` and `supply` (on, off or unknown), the same words and the same honesty as `ppk2.show`: the voltage is what this service set if it set one, else the unit's own figure from the metadata it
+just read (a snapshot of the last time something connected), and `supply` is only what this service last switched it to, `unknown` after a restart. The unit cannot be changed while the session holds it, so they stay true for the session. They ride `meter.session`, the `meter.state` events and the recording's sidecar (so a recording says what powered the board). The `meter_busy`
+refusal of `ppk2.show`, `ppk2.mode` and `ppk2.supply` carries what the service remembers (`supply`, `vdd_mv`, `vdd_from`) in its evidence. The Meter page's profiler card shows them while a session runs: "source mode, 4000 mV, output on" in the same words as when idle, with the voltage's source named when it is not what this
+service set. For the PPK2, `range` is the highest range index seen in the block (0 to 4, not an amp value: the full-scale of each range is not asserted) and `nplc` is empty. The sidecar and each row of `meter.recordings` carry `source`.
 
 ## The page
 

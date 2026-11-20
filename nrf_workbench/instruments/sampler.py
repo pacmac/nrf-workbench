@@ -183,6 +183,9 @@ class Sampler(object):
         try:
             try:
                 source.begin(s)
+                if s.facts:                                     # what the source learned of its instrument when it opened it (the profiler's mode, voltage and output): announce it, as the
+                    with self._lock:                            # state sent when the session was created could not have it
+                        self._publish_state(s)
                 while not s.stop.is_set():
                     if self._mono() - s.t0 >= s.bound_s:
                         reason = "the time bound was reached"

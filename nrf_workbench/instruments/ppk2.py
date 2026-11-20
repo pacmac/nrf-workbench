@@ -349,7 +349,11 @@ class Ppk2(object):
         """Locate, open, run `work(port)`, close; under the one-caller lock and never during a session. A Result comes back for any failure."""
         with self._lock:
             if self._busy:
-                return Result.refused("meter_busy", "a session is using the PPK2: its mode and supply are in meter.session until it ends", {})
+                # what the service remembers, so a caller that is refused still sees the voltage and the output state (the session's own facts have the unit's mode too)
+                remembered = {"supply": self._supply_word()}
+                if self._vdd is not None:
+                    remembered.update(vdd_mv=self._vdd, vdd_from="set by this service")
+                return Result.refused("meter_busy", "a session is using the PPK2: its mode, source voltage and output state are in meter.session until it ends", remembered)
             node, serial, problem = self.locate()
             if problem is not None:
                 return problem
@@ -371,6 +375,13 @@ class Ppk2(object):
 
     def _supply_word(self):
         return "unknown" if self._supply is None else ("on" if self._supply else "off")
+
+    def unit_facts(self, cal):
+        """What is known of the unit's mode, source voltage and output, in the words ppk2.show uses: the voltage is what this service set if it set one, else the unit's own figure
+        from the metadata read (a snapshot of the last time something connected), and `supply` is only what this service last switched it to ("unknown" after a restart). A session
+        puts these in its facts when it begins, because the unit cannot be asked while the session holds it (docs/specs/ppk2.md)."""
+        return {"unit_mode": cal.mode or "unknown", "vdd_mv": self._vdd if self._vdd is not None else cal.vdd_mv,
+                "vdd_from": "set by this service" if self._vdd is not None else "the unit's own figure when it was read", "supply": self._supply_word()}
 
     def _facts(self, cal, node, serial):
         return {"reachable": True, "serial": serial, "port": node, "mode": cal.mode or "unknown",
@@ -481,6 +492,7 @@ class Ppk2Source(object):
             except OSError as exc:
                 raise Fault("the PPK2's port %s failed: %s" % (node, exc))
             self.reducer, self.started = Reducer(cal), p._mono()
+            s.facts.update(p.unit_facts(cal))                # the unit's mode, voltage and output state, for as long as the session holds it
             self.capturer = capture.Capturer()              # the last session's captures stay readable until the next one begins
             capturer = self.capturer
             self.wakes = capture.WakeSet(lambda: list(capturer.items), cal.amps, hold=SPIKE_SAMPLES)

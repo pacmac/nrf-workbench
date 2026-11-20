@@ -284,6 +284,18 @@ class TheTable(unittest.TestCase):
 
 
 @unittest.skipUnless(NODE, "node is not installed")
+class WhatTheUnitIsSetTo(unittest.TestCase):
+    """The profiler card's sentence, from the unit's answer when idle and from the session's facts while a session holds the unit (Peter, 2026-11-20: the voltage was not shown under test)."""
+
+    def test_the_sentence_says_the_mode_the_voltage_and_what_is_known_of_the_output(self):
+        got = run("return [f.unitSentence({mode: 'source', vdd_mv: 4000, supply: 'on'}), f.unitSentence({mode: 'source', vdd_mv: 3300, supply: 'off'}),"
+                  " f.unitSentence({mode: 'source', vdd_mv: 4000, supply: 'unknown'}), f.unitSentence({mode: 'ampere', vdd_mv: 4000, supply: 'unknown'}),"
+                  " f.unitSentence({mode: 'unknown', vdd_mv: 4000, supply: 'unknown'}), f.headline('ppk2.show', {serial: 'E1C5F15B15A3', mode: 'source', vdd_mv: 4000, supply: 'on'})];", {})
+        self.assertEqual(got, ["source mode, output on at 4000 mV", "source mode, output off (3300 mV when on)", "source mode, output state unknown (4000 mV when on)", "ampere mode",
+                               "mode not known, output state unknown (4000 mV when on)", "Power profiler E1C5F15B15A3: source mode, output on at 4000 mV"])
+
+
+@unittest.skipUnless(NODE, "node is not installed")
 class MarksOnTheChart(unittest.TestCase):
     def test_marks_are_x_positions_inside_the_chart_and_only_for_times_it_shows(self):
         buckets = envelope(pattern(60, 1, 1800, offset_s=5))

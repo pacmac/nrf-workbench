@@ -208,7 +208,10 @@ export default function MeterPage({ commands, onDone }) {
   const capacityMah = Number(capacity);
   const buckets = env.current.snapshot();
   const unitFacts = profiler && profiler.body && profiler.body.data;           // what the unit said when last asked (it cannot be asked while a session holds it)
-  const volts = shownSource === "ppk2" && unitFacts && unitFacts.mode === "source" && unitFacts.supply === "on" ? unitFacts.vdd_mv / 1000 : null;
+  // The supply voltage, for an energy figure: from the session's facts when it has them (what the unit was set to when the session began), else from what the unit last said.
+  const volts = shownSource !== "ppk2" ? null
+    : session && session.unit_mode ? (session.unit_mode === "source" && session.supply === "on" ? session.vdd_mv / 1000 : null)
+      : unitFacts && unitFacts.mode === "source" && unitFacts.supply === "on" ? unitFacts.vdd_mv / 1000 : null;
   const cyc = current && lifeBy === "cycle" ? findCycle(buckets) : null;
   const life = current ? batteryLife(lifeBy === "cycle" ? (cyc && cyc.found ? cyc.mean : null) : figures.mean, capacityMah) : "";
   const sd = setting && setting.body && setting.body.data && Object.keys(setting.body.data).length ? setting.body : null;

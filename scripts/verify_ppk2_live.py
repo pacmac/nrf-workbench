@@ -157,6 +157,11 @@ def meter_page(page, bench, fake, tag, shot):
           page.get_by_role("group", name="Instrument").get_by_role("button", name="Multimeter").is_disabled()
           and "cannot be asked or changed until it ends" in page.get_by_label("Profiler").inner_text() and page.get_by_role("button", name="Ampere mode").count() == 0)
     page.wait_for_function("document.querySelector('[aria-label=\"Session\"]').innerText.match(/[1-9][0-9,]* samples/)")
+    held = page.get_by_label("Profiler").inner_text()
+    check("%s while a session holds the unit the card still says what it is set to, with the source voltage in mV (Peter, 2026-11-20)" % tag,
+          held.startswith("source mode, output state unknown (4000 mV when on). A session is using the unit, so it cannot be asked or changed until it ends."), held)
+    check("%s and it names where that voltage came from, since this service did not set it" % tag,
+          "4000 mV is the unit's own figure when it was read" in page.inner_text("body"))
     shot("2-watching")
     page.get_by_role("button", name="Stop").click()
     page.get_by_text(re.compile(r"^ended: stopped")).wait_for()

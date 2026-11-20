@@ -2,7 +2,7 @@ import { useState } from "react";
 import { readJson, writeJson } from "../api.js";
 import { Button, Card, Field, cx, inputClass } from "../ui.jsx";
 import { ResultView } from "../Commands.jsx";
-import { headline } from "./format.js";
+import { headline, unitSentence } from "./format.js";
 
 // The Nordic Power Profiler on the bench's USB (docs/specs/ppk2.md). Two pieces: a quick check for Devices and Home, and the card on the Meter page that shows the unit
 // and carries the two writes. In SOURCE mode the unit powers whatever is wired to its output, and it does not say whether its output is on, so a change that can cut or
@@ -68,8 +68,12 @@ export function Profiler({ commands, shown, running, session, reload, onDone }) 
     }
   }
 
-  const facts = running && session && session.source === "ppk2"
-    ? "A session is using the unit, so it cannot be asked or changed until it ends."
+  // While a session holds the unit it cannot be asked, so what it was set to when the session began is shown from the session's facts (docs/specs/ppk2.md): the mode, the source
+  // voltage and what this service last switched the output to.
+  const held = running && session && session.source === "ppk2";
+  const sessionUnit = held && session.unit_mode ? { mode: session.unit_mode, vdd_mv: session.vdd_mv, supply: session.supply } : null;
+  const facts = held
+    ? `${sessionUnit ? `${unitSentence(sessionUnit)}. ` : ""}A session is using the unit, so it cannot be asked or changed until it ends.`
     : d ? headline("ppk2.show", d) : null;
   return (
     <Card title="The power profiler" aside={<Button tone="quiet" onClick={reload} disabled={running}>Check again</Button>}>
@@ -78,6 +82,9 @@ export function Profiler({ commands, shown, running, session, reload, onDone }) 
           : shown ? <ResultView outcome={shown} /> : <p className="text-[13px] text-slate-600 dark:text-slate-400">Asking the profiler…</p>}
         {d && !running && d.vdd_from && d.supply !== "on" && (
           <p className="text-[13px] text-slate-600 dark:text-slate-400">The unit reports its supply voltage only when something connects to it, so {d.vdd_mv} mV is {d.vdd_from}.</p>
+        )}
+        {sessionUnit && session.vdd_from && session.supply !== "on" && (
+          <p className="text-[13px] text-slate-600 dark:text-slate-400">The unit reports its supply voltage only when something connects to it, so {session.vdd_mv} mV is {session.vdd_from}.</p>
         )}
         <p className="text-[13px] text-slate-600 dark:text-slate-400">
           <strong>Ampere mode</strong> measures a board that has its own supply, wired through the unit. <strong>Source mode</strong> lets the unit power the board, and it does not

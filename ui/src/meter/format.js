@@ -21,13 +21,7 @@ export function headline(command, d) {
     const range = d.range != null ? `, range ${si(d.range, unit)}${d.autorange ? " (auto)" : ""}` : "";
     return `${String(d.identity).split(",").join(", ")}: ${mode}${range}`;      // the meter's comma-joined id has no spaces, so it would not wrap
   }
-  if (command === "ppk2.show" || command === "ppk2.mode" || command === "ppk2.supply") {
-    const mode = d.mode === "source" ? "source mode" : d.mode === "ampere" ? "ampere mode" : "mode not known";
-    // The unit does not say whether its output is on: "off" and "on" are only what this service last switched it to.
-    const output = d.mode === "ampere" ? "" : d.supply === "on" ? `, output on at ${d.vdd_mv} mV` : d.supply === "off" ? `, output off (${d.vdd_mv} mV when on)`
-      : `, output state unknown (${d.vdd_mv} mV when on)`;
-    return `Power profiler ${d.serial}: ${mode}${output}`;
-  }
+  if (command === "ppk2.show" || command === "ppk2.mode" || command === "ppk2.supply") return `Power profiler ${d.serial}: ${unitSentence(d)}`;
   if (command === "meter.read") return d.overload ? `Overload on the ${si(d.range, unit)} range` : (unit ? si(d.value, unit) : `${d.value} (unit not known for ${d.function})`);
   if (command === "meter.sample") {
     if (d.mean == null) return `${d.n} readings, all overload`;
@@ -67,6 +61,15 @@ export function clock(seconds) {
   const r = s % 60;
   const two = (n) => String(n).padStart(2, "0");
   return h > 0 ? `${h}:${two(m)}:${two(r)}` : `${m}:${two(r)}`;
+}
+
+// What the power profiler is set to, from {mode, vdd_mv, supply}: "source mode, output on at 4000 mV". The unit does not say whether its output is on: "off" and "on" are only what this
+// service last switched it to, and it forgets that when it restarts. Used by the idle card and, from the session's facts, while a session holds the unit and it cannot be asked.
+export function unitSentence(d) {
+  const mode = d.mode === "source" ? "source mode" : d.mode === "ampere" ? "ampere mode" : "mode not known";
+  const output = d.mode === "ampere" ? "" : d.supply === "on" ? `, output on at ${d.vdd_mv} mV` : d.supply === "off" ? `, output off (${d.vdd_mv} mV when on)`
+    : `, output state unknown (${d.vdd_mv} mV when on)`;
+  return `${mode}${output}`;
 }
 
 // A duration for a person: 90 -> "1 min 30 s", 3600 -> "1 h", 43200 -> "12 h".

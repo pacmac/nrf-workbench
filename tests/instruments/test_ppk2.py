@@ -985,5 +985,104 @@ class Config(unittest.TestCase):
         self.assertIsNone(cfg["instruments"]["ppk2"])
 
 
+class WhatASessionReportsOfTheUnit(Base):
+    """Peter, 2026-11-20: "the output voltage in mv is not displayed once it has been enabled and the unit is powered and under test". The unit cannot be asked while a session holds
+    it, so the session carries what is known when it begins (docs/specs/ppk2.md)."""
+
+    def watch(self, name=None):
+        s = self.start_sampler()
+        if name:
+            s.start("record", 60, name=name, source="ppk2")
+        else:
+            s.start("watch", 60, source="ppk2")
+        self.assertTrue(until(lambda: s.session()["stats"]["readings"] >= 20000))
+        return s
+
+    def test_a_session_carries_the_voltage_this_service_set_and_the_output_it_switched_on(self):
+        self.assertTrue(self.ppk.set_supply(self.ctx(), True, mv=3300, accept_supply=True).ok)
+        s = self.watch()
+        got = s.session()
+        s.stop()
+        self.assertEqual((got["unit_mode"], got["vdd_mv"], got["vdd_from"], got["supply"]), ("source", 3300, "set by this service", "on"))
+
+    def test_the_voltage_this_service_set_wins_over_the_units_stale_snapshot(self):
+        self.unit.ignore_voltage = True                              # the real unit's metadata does not follow a voltage change until something connects (ppk2.md)
+        self.ppk.set_supply(self.ctx(), True, mv=3300, accept_supply=True)
+        s = self.watch()
+        got = s.session()
+        s.stop()
+        self.assertEqual((got["vdd_mv"], got["vdd_from"]), (3300, "set by this service"), "not the 4000 the unit still reports")
+
+    def test_after_a_restart_it_says_the_voltage_is_the_units_own_figure_and_the_output_is_unknown(self):
+        s = self.watch()
+        got = s.session()
+        s.stop()
+        self.assertEqual((got["unit_mode"], got["vdd_mv"], got["vdd_from"], got["supply"]), ("source", 4000, "the unit's own figure when it was read", "unknown"))
+
+    def test_an_output_this_service_switched_off_is_said_to_be_off(self):
+        self.ppk.set_supply(self.ctx(), True, mv=3300, accept_supply=True)
+        self.ppk.set_supply(self.ctx(), False)
+        s = self.watch()
+        got = s.session()
+        s.stop()
+        self.assertEqual((got["supply"], got["vdd_mv"]), ("off", 3300))
+
+    def test_ampere_mode_is_said_to_be_ampere(self):
+        self.unit.meta["mode"] = "1"
+        s = self.watch()
+        got = s.session()
+        s.stop()
+        self.assertEqual((got["unit_mode"], got["supply"]), ("ampere", "unknown"))
+
+    def test_they_stay_in_the_summary_when_the_session_has_ended_and_do_not_clash_with_its_own_keys(self):
+        self.ppk.set_supply(self.ctx(), True, mv=3300, accept_supply=True)
+        s = self.watch()
+        before = s.session()
+        s.stop()
+        after = s.session()
+        for k in ("unit_mode", "vdd_mv", "vdd_from", "supply"):
+            self.assertEqual(before[k], after[k], k)
+        self.assertEqual((after["mode"], after["unit"], after["source"]), ("watch", "A", "ppk2"), "the session's own mode, unit and source are not overwritten")
+
+    def test_the_refusals_carry_what_the_service_remembers_and_point_at_something_that_is_there(self):
+        self.ppk.set_supply(self.ctx(), True, mv=3300, accept_supply=True)
+        s = self.watch()
+        for res in (self.ppk.show(self.ctx()), self.ppk.set_mode(self.ctx(), "ampere", accept_supply=True), self.ppk.set_supply(self.ctx(), False)):
+            self.assertEqual((res.cls, res.code), ("refused", "meter_busy"))
+            self.assertEqual((res.evidence["supply"], res.evidence["vdd_mv"], res.evidence["vdd_from"]), ("on", 3300, "set by this service"))
+            self.assertIn("meter.session", res.message)
+            self.assertIn("source voltage", res.message)
+        s.stop()
+
+    def test_a_refusal_before_the_service_has_set_anything_does_not_invent_a_voltage(self):
+        s = self.watch()
+        res = self.ppk.show(self.ctx())
+        s.stop()
+        self.assertEqual(res.evidence, {"supply": "unknown"})
+
+    def test_a_recording_keeps_them_in_its_sidecar_so_it_says_what_powered_the_board(self):
+        self.ppk.set_supply(self.ctx(), True, mv=3300, accept_supply=True)
+        s = self.watch("powered")
+        s.stop()
+        with open(os.path.join(self.folder, "powered.json")) as fh:
+            meta = json.load(fh)
+        self.assertEqual((meta["unit_mode"], meta["vdd_mv"], meta["supply"]), ("source", 3300, "on"))
+        row = [r for r in s.recordings() if r["name"] == "powered"][0]
+        self.assertEqual(row["source"], "ppk2")
+
+
+class TheSessionCommandCarriesThem(SessionCommands):
+    def test_meter_session_returns_them_while_the_session_runs(self):
+        self.ppk.set_supply(self.ctx(), True, mv=3300, accept_supply=True)
+        self.assertTrue(self.call("meter.watch", {"bound_s": 60}).ok)
+        self.assertTrue(until(lambda: self.call("meter.session").data["stats"]["readings"] >= 20000))
+        data = self.call("meter.session").data
+        self.assertEqual((data["state"], data["unit_mode"], data["vdd_mv"], data["supply"]), ("watching", "source", 3300, "on"))
+        self.assertEqual(self.call("meter.profile").data["facts"]["vdd_mv"], 3300, "a page that opens during the session reads them from the profile too")
+        events = [e.payload for e in self.host.streams.meter.since(0).events if e.type == "meter.state"]
+        self.assertEqual(events[-1]["vdd_mv"], 3300, "and from the state event")
+        self.call("meter.stop")
+
+
 if __name__ == "__main__":
     unittest.main()
