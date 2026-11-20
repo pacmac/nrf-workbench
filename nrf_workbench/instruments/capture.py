@@ -21,6 +21,7 @@ LOW_EXP, HIGH_EXP = -9, 1                    # 1 nA to 10 A: 10 decades, 160 bin
 BINS = (HIGH_EXP - LOW_EXP) * BINS_PER_DECADE
 MAX_CAPTURE_BLOCKS = 25                      # 25 blocks x 20,000 words x 4 bytes = 2 MB a capture, 5 s
 KEEP = 8                                     # the newest 8: 16 MB at most, enough to compare wake with wake
+LEAD_BLOCKS_MAX = 5                          # the lead-in goes back at most 5 blocks (1 s, 400 KB of ring): a CPU awake for longer than that before its radio is a stage of its own, seen in the session's chart
 POINTS_DEFAULT, POINTS_MAX = 1000, 2000      # a wide chart's pixels; the envelope's own bound (about twice that)
 KEEP_DISK = 20                               # wakes kept on disk per recording: the stage table needs the spread across wakes and 20 shows it; worst case 20 x 2 MB before compression
 MAX_STAGES = 12                              # a wake has a handful of stages: more would not fit a table a person reads
@@ -97,7 +98,7 @@ class Capturer(object):
         self.items = collections.deque(maxlen=keep)
         self.count = 0                                        # captures begun so far, which is also the number of the last
         self.kept = 0                                         # captures finished and kept: what the feed reports, so a page asks only once a wake can be read
-        self._prev = None                                     # (data, t0, lost) of the block before the current one
+        self._ring = collections.deque(maxlen=LEAD_BLOCKS_MAX)       # (data, t0, lost, mean) of the last blocks, newest last: where a capture's lead-in comes from
         self._open = None
         self.on_close = None                                  # called with each capture as it is kept (the profiler's source saves it to disk here)
 
@@ -109,9 +110,10 @@ class Capturer(object):
         if o is None:
             if hot:
                 self.count += 1
-                o = self._open = Capture(self.count, self._prev[1] if self._prev else t0, level)
-                if self._prev:
-                    self._add(o, self._prev[0], self._prev[2], high=None)
+                lead = self._lead_in()
+                o = self._open = Capture(self.count, lead[0][1] if lead else t0, level)
+                for blk in lead:
+                    self._add(o, blk[0], blk[2], high=None)
                 self._add(o, data, lost, high)
         else:
             self._add(o, data, lost, high)
@@ -120,7 +122,19 @@ class Capturer(object):
             elif o.blocks >= self.max_blocks:
                 o.truncated = True
                 self._close()
-        self._prev = (data, t0, lost)
+        self._ring.append((data, t0, lost, mean))
+
+    def _lead_in(self):
+        """The blocks before the one that revealed the wake, oldest first: back through any that were already awake (a mean over twice the sleep level, like a CPU waking before its
+        radio), to and including the first quiet one, and at most LEAD_BLOCKS_MAX. So a wake starts from sleep, not part-way through."""
+        sleep = self.level.sleep()
+        lead = []
+        for blk in reversed(self._ring):
+            lead.append(blk)
+            if sleep is None or blk[3] <= WAKE_FACTOR * sleep:
+                break
+        lead.reverse()
+        return lead
 
     def _add(self, o, data, lost, high):
         o.chunks.append(data)
@@ -176,7 +190,9 @@ def decode(data, amps, hold=0):
 
 
 def wake_start(values, level):
-    """The index of the first sample over `level`, or 0 if none is (a capture is taken because one is, so that is not expected)."""
+    """The index of the first sample over `level`, or 0 if none is. A wake's time origin is the first sample over half of its own highest sample (held out of the glitch), so every wake of a
+    device is lined up on the same edge: the level in force when a capture began is not used, because it rose as the session's peak did (on the RAK, the first wake's origin was 0.2 s
+    before its radio edge and the second's on it)."""
     for i, v in enumerate(values):
         if v > level:
             return i
@@ -288,7 +304,7 @@ class WakeSet(object):
             if self._decoded is not None and self._decoded[0] is c:
                 return self._decoded[1], self._decoded[2]
             values, held = decode(c.data, self._amps, self._hold)
-            start = wake_start(values, c.level)
+            start = wake_start(values, max(values) / 2.0)
             self._decoded = (c, values, start)
             if c.stats is None or "held" not in c.stats:
                 c.stats = {"wake_at_s": start / float(SAMPLE_RATE_HZ), "mean": sum(values) / len(values), "peak": max(values), "held": held}

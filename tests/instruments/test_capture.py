@@ -91,6 +91,23 @@ class WhenAWakeIsKept(unittest.TestCase):
         self.assertFalse(cap.truncated)
         self.assertEqual(cap.peak, WAKE)
 
+    def test_the_lead_in_goes_back_over_blocks_that_were_already_awake_to_the_first_quiet_one(self):
+        c = capture.Capturer()
+        awake = [(SLEEP * 4, SLEEP * 4.5)] * 3                          # a CPU up (4x the sleep current) before its radio: above twice the sleep, far under the wake level
+        # a first wake sets the session's peak, so that the level is the radio's and a CPU alone is not a wake: blocks 0-99 asleep, 100 the first wake, 101-106 asleep,
+        # 107-109 awake, 110 the second wake, 111-112 asleep
+        feed_blocks(c, quiet(100) + hot(1) + quiet(6) + awake + hot(1) + quiet(2))
+        self.assertEqual(c.count, 2)
+        self.assertEqual(c.get(2).data, b"".join(block(k) for k in range(106, 112)))
+        self.assertEqual(c.get(2).t0, 106.0)
+
+    def test_the_lead_in_is_never_longer_than_the_ring(self):
+        c = capture.Capturer()
+        awake = [(SLEEP * 4, SLEEP * 4.5)] * 9
+        feed_blocks(c, quiet(100) + hot(1) + quiet(6) + awake + hot(1) + quiet(2))          # 107-115 awake, 116 the second wake, 117-118 asleep
+        self.assertEqual(c.get(2).data, b"".join(block(k) for k in range(116 - capture.LEAD_BLOCKS_MAX, 118)))
+        self.assertEqual(capture.LEAD_BLOCKS_MAX, 5)
+
     def test_the_first_block_has_no_block_before_it(self):
         c = capture.Capturer()
         feed_blocks(c, [(WAKE / 2, WAKE)] + quiet(3))
@@ -357,6 +374,32 @@ class KeptWithTheRecording(PathBase):
                            ("meter.stage_set", {"recording": "nope", "name": "a", "start_s": 0.0, "end_s": 1.0}), ("meter.stage_delete", {"recording": "nope", "name": "a"}),
                            ("meter.captures", {"recording": "../x"})):
             self.assertEqual(self.call(name, args).code, "recording_unknown", name)
+
+
+class EveryWakeIsLinedUpOnTheSameEdge(PathBase):
+    """On the RAK the first wake's CPU phase made the session's peak 9 mA, so its capture's level was 4.5 mA and its time origin the CPU's start; by the second the peak was the radio's. Every wake's
+    origin is the first sample over half of its OWN highest sample, so the radio edge is t = 0 in both."""
+
+    def setUp(self):
+        PathBase.setUp(self)
+        cpu, radio = 3000, 12000
+        # wake A: block 3 is the CPU alone, block 4 the radio. Wake B, later, is the radio alone (block 13)
+        self.unit.profile = lambda i: ((cpu, 0) if 3 * 20000 <= i < 4 * 20000 else (radio, 0) if (4 * 20000 <= i < 5 * 20000 or 13 * 20000 <= i < 14 * 20000) else (1000, 0))
+        self.cpu_a, self.radio_a = reference_amps(self.cal, 0, cpu), reference_amps(self.cal, 0, radio)
+
+    def test_the_radio_edge_is_time_zero_in_a_wake_that_began_with_the_cpu_and_in_one_that_did_not(self):
+        self.run_session()
+        rows = self.call("meter.captures").data["captures"]
+        self.assertEqual([r["n"] for r in rows[:2]], [1, 2])
+        self.assertAlmostEqual(rows[0]["wake_at_s"], 0.4, places=9, msg="blocks 2 (asleep) and 3 (the CPU) come first, then the radio")
+        self.assertAlmostEqual(rows[1]["wake_at_s"], 0.2, places=9)
+        for n in (1, 2):
+            env = self.call("meter.capture", {"n": n, "t0": -0.0002, "t1": 0.0002, "points": 4}).data
+            before, after = env["buckets"][0], env["buckets"][-1]
+            self.assertLess(before["max"], self.radio_a / 2, "before time zero it is not the radio")
+            self.assertAlmostEqual(after["min"], self.radio_a, delta=self.radio_a * 1e-9)
+        self.assertAlmostEqual(self.call("meter.capture", {"n": 1, "t0": -0.0002, "t1": -0.0001, "points": 2}).data["peak"], self.cpu_a, delta=self.cpu_a * 1e-9,
+                               msg="in the first wake the CPU phase is just before the edge")
 
 
 class HoldingOutTheRangeGlitch(unittest.TestCase):

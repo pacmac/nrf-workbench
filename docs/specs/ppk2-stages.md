@@ -31,8 +31,9 @@ the current is decoded from them on request with the unit's calibration, exactly
 - **The level.** A wake is a block whose *highest* sample is over `level = sleep + (peak - sleep) / 2`, the rule the page uses (`meter-page.md`, "Battery life"), kept as a running figure: `sleep` is the median of the block means so far and `peak` the highest sample so far.
   The median is held as a histogram of 16 bins a decade from 1 nA to 10 A (160 bins, constant memory however long a session runs); a bin is 10^(1/16) = 1.155 wide, so the sleep level is known to ±7.5 %, which moves the level by under 4 % of the gap from sleep to peak.
   There is no wake until `peak` is at least **twice** `sleep` (the page's rule: noise on a steady load is a few per cent, a radio burst is a thousand times).
-- **The window.** The last block is always held. When a block goes over the level, the capture starts with the block before it (0.2 s of lead-in, since the wake began somewhere inside the block that revealed it), takes every block while the level is exceeded,
-  and ends with the first quiet block after (0.2 s of tail).
+- **The window.** The last 5 blocks are always held. When a block goes over the level, the capture starts with the blocks before it that were already awake (a mean over twice the sleep level: a CPU up before its radio) back to and including the first quiet one, at most 5 (1 s of lead-in, 400 KB of ring),
+  so a wake starts from sleep and not part-way through; it takes every block while the level is exceeded, and ends with the first quiet block after (0.2 s of tail). A stretch that is awake but under the level, such as the 20 s a RAK spends at 6.6 mA between its two radio bursts, is not in
+  a capture: the session's chart has it, at 0.2 s a point.
 - **The ceiling:** a capture is at most **25 blocks (5 s)**: 25 × 20,000 words × 4 bytes = 2 MB. A wake still going at 5 s is closed as `truncated` and the next one is looked for once it falls quiet.
 - **How many are kept:** the newest **8**, at most 16 MB in memory: enough to compare wake with wake and see whether a stage drifts, about 1 % of the bench Pi's memory. They live in memory for the session and until the next session on that unit starts;
   a recording also keeps its wakes on disk (stage 2, below).
@@ -43,8 +44,9 @@ the current is decoded from them on request with the unit's calibration, exactly
 then the 120 mA plateau. The session's own reduction holds 3 samples out from the one where the range changes (`ppk2.md`). A decoded wake does the same: those samples take the value before them, so a wake keeps its length and its **peak, average and charge are the
 session's, not the glitch's**; `held` says how many were held (3 for each range change in the wake). This is also the first real-load look at the hold-out ppk2.md called unproven: the glitch was 2 samples, inside the 3 held.
 
-**Time.** A capture's `t0` is the sample clock (seconds since the session began) of its first sample. Its **wake start** is the first sample over the level, found when it is decoded, and every time shown to a person is
-relative to that (negative before it), so the same stage is at the same time in every wake.
+**Time.** A capture's `t0` is the sample clock (seconds since the session began) of its first sample. Its **wake start** is the first sample over **half of its own highest sample** (after the glitch hold), found when it is decoded, and every time shown to a person is
+relative to that (negative before it), so the same stage is at the same time in every wake: it is the edge of the biggest burst. It is not the level the capture was triggered at, which rises as the session's peak does: on the RAK the first wake was triggered by its CPU phase (9 mA),
+so its trigger level was 4.5 mA and its origin 0.2 s before the radio edge, while the second wake's was on the edge. A device whose bursts are of different heights is lined up on each wake's own tallest.
 
 **Commands** (read; need the readings stream like the other session commands):
 
@@ -109,7 +111,7 @@ A stage that breaks a rule above (an empty, too long or duplicate name, a start 
 
 Unit (`tests/instruments/test_capture.py`): the level rule (median to ±7.5 %, nothing under twice the sleep, a steady load never triggers, noise never triggers); the window starts one block before and ends one quiet block after; a wake longer than
 25 blocks is truncated and the next is found; two wakes closer than a block are one capture; only the newest 8 are kept and numbers keep rising; raw words are stored whole (compared byte for byte with what the unit sent); the decoded window equals a per-sample decode,
-exactly, in every bucket, at any zoom, with the lowest and highest sample kept; the wake start is the first sample over the level; the whole path over the fake unit with a wake profile gives the captures and the right peak; a multimeter session has none;
+exactly, in every bucket, at any zoom, with the lowest and highest sample kept; the wake start is the first sample over half the wake's own peak, so a wake begun by its CPU and one that was not share the radio edge as time zero; the lead-in goes back over blocks already awake, to the first quiet one, never more than 5; the 3 samples after a range change are held out of a wake, as the session's are; the whole path over the fake unit with a wake profile gives the captures and the right peak; a multimeter session has none;
 `meter.captures` and `meter.capture` over the registry, `capture_unknown`, a bad window; mutants on each rule. Browser: the scope appears under the chart, the wake is chosen, the log switch changes the axis note, a drag zooms and Reset returns, both themes, phone and desktop.
 Chart maths (`tests/dashboard/test_meter_scope.py`, Node): linear puts zero at the bottom and the peak at the top; log lifts a 3 mA stage well off the floor where linear leaves a sliver, and falls back to linear with nothing above zero;
 the band's top edge is the highest sample and its bottom edge the lowest; the wake start is marked only when in view; time reads in ms under a second; ticks are 1, 2 or 5 times a power of ten inside the range; a drag position maps back to a time and is held inside the chart; 10 mutants, the one
