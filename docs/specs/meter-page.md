@@ -68,6 +68,26 @@ duration choice (1 min, 10 min, 1 h, 4 h, 12 h) and a name for a recording; the 
 the mean as a line, zero always on the axis, the time axis in minutes or hours); **the figures**: min, max, mean, and for current the charge in mAh; **battery life**: a capacity in mAh the person types gives
 "at this average it lasts N days"; **Recordings** with a download for each. A failure is shown as the whole result with its code. The note about averaging (decision 3) is on the page.
 
+## Battery life: the whole recording, or one wake/sleep cycle
+
+Peter, 2026-11-20: "there should be a toggle switch for that, because if a device sleeps for a period, then wakes and sleeps again, you would want to know what the battery life would be based on that wake / sleep cycle".
+The first build divided the capacity by the **average of the whole recording**. That is right only if the recording holds whole cycles: a 30 s window that misses a once-a-minute burst overstates the life, one that catches
+two bursts understates it. The page now has a two-way choice beside the capacity, **Whole recording** (the Average figure, as before, and the default) and **Wake/sleep cycle**.
+
+**The cycle estimate** is the mean current from the first wake to the last wake in the recording, so it holds only whole cycles. It is computed in the browser from the envelope (`ui/src/meter/cycle.js`), so it follows
+a live session, and it is exact to within one bucket at each end (a bucket is 0.2 s for the profiler and doubles as a long session grows). It is derived like this:
+1. **Sleep level** = the median of the buckets' means: a device asleep most of the time has its sleep level in the middle. (A device awake more than half the time has no sleep level to find: no cycle is found, and the page says so.)
+2. **Wake** = a run of buckets whose *highest* sample is above the level halfway between the sleep level and the highest sample of the recording. The highest is used, not the mean, so a burst shorter than a bucket counts.
+   Nothing is found unless the highest sample is at least **twice** the sleep level: noise on a steady load is a few per cent, a wake that does not double the draw changes the average by less than the noise, and a radio burst is a thousand times.
+3. **One wake** = runs of wake closer together than half the longest gap are joined (a wake made of a CPU burst and a radio burst 0.4 s later is one wake, not two).
+4. **The estimate** = the charge from the start of the first wake to the start of the last, divided by that time. Charge is each bucket's mean times the time to the next bucket, so it is exact for what was sampled. Wakes counted
+   minus one is the number of whole cycles, shown. A wake still in progress at the end of the recording is left out.
+5. **The period** shown is that time divided by the number of cycles. If the gaps between wakes differ by more than two buckets (each end of a gap is placed to one bucket) the page says the cycle is not regular and gives
+   the shortest and longest, and the estimate still stands: it is the mean over complete intervals, whatever their pattern.
+
+With fewer than two wakes the page says how many it found and that a cycle needs two, and shows no life. In cycle mode the chart marks each wake's start with a thin vertical line, so what was found can be seen.
+This does not model the battery (a cell's voltage falls as it drains, and its capacity depends on the load): it is capacity divided by the current, as before.
+
 ## Deferred: `meter.configure`
 
 Set function (`dcv acv dci aci res fres freq cap`), range (a number or `auto`) and integration time from the page. Needs: the guard (while the meter is in a current function, leaving it or changing the range can open the
@@ -82,7 +102,14 @@ on known readings; the envelope keeps min, max, mean and count exact through eve
 every line any meter command sends still ends in `?`. Feed: a client resumes by cursor, and `meter.profile`'s cursor joins it with no gap and no repeat. Mutants on each. Browser: both themes, phone and desktop,
 the Meter menu item, a watch with a live figure and a chart, a recording and its download, the figures, a failure shown. Live: watch and record on the real meter in the function it is already in.
 
+Battery life (`tests/dashboard/test_meter_cycle.py`, Node on envelopes the server's own `Envelope` builds): the mean is exact against the raw readings over whole cycles, through merged buckets and
+with unevenly spaced readings (time-weighted); it differs from the window average when the window holds part of a cycle; a burst shorter than a bucket is found by the highest sample; a two-burst wake is one wake;
+noise on a steady load, noise on the sleep level, one wake, a negative current, a device awake most of the time and a small rise over a 3 mA baseline each give no cycle or no false wakes, with the reason; irregular gaps are
+said to be so and the estimate stands; a wake in progress at the end changes nothing; too few buckets and a bucket still filling do not crash; the chart marks only times it shows. 15 mutants of `cycle.js`, none survive.
+Browser (`scripts/verify_ppk2_live.py`): the choice starts on the whole recording, pressing the cycle shows "Wakes every 2 s (3 cycles counted)" with the average and life, the chart marks the four wakes, pressing the
+whole recording drops them, no sideways scroll, both themes, phone and desktop.
+
 ## Files this spec allows
 
-`nrf_workbench/instruments/{sampler,meter}.py`, `nrf_workbench/core/{config,events,status}.py`, `nrf_workbench/api/feed.py`, `nrf_workbench/service.py`, `ui/src/{App.jsx,Meter.jsx,help.js,Home.jsx,Devices.jsx}`,
-`ui/src/meter/*`, `docs/specs/{meter-page,meter,core,api}.md`, `tests/instruments/`, `tests/api/`, `tests/dashboard/`, `scripts/verify_meter_live.py`.
+`nrf_workbench/instruments/{sampler,meter}.py`, `nrf_workbench/core/{config,events,status}.py`, `nrf_workbench/api/feed.py`, `nrf_workbench/service.py`, `ui/src/{App.jsx,Meter.jsx,MeterPage.jsx,help.js,Home.jsx,Devices.jsx}`,
+`ui/src/meter/*`, `docs/specs/{meter-page,meter,core,api}.md`, `tests/instruments/`, `tests/api/`, `tests/dashboard/`, `scripts/verify_meter_live.py`, `scripts/verify_ppk2_live.py`.

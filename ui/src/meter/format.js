@@ -77,7 +77,7 @@ export function words(seconds) {
   return `${Math.floor(s / 3600)} h${Math.floor((s % 3600) / 60) ? ` ${Math.floor((s % 3600) / 60)} min` : ""}`;
 }
 
-// How long a battery of `capacityMah` lasts at an average of `meanAmps`: hours, or days from 48 h. "" when either is missing or the draw is zero.
+// How long a battery of `capacityMah` lasts at an average (the whole recording's, or one wake/sleep cycle's: cycle.js) of `meanAmps`: hours, or days from 48 h. "" when either is missing or the draw is zero.
 export function batteryLife(meanAmps, capacityMah) {
   if (!(meanAmps > 0) || !(capacityMah > 0)) return "";
   const hours = capacityMah / (meanAmps * 1000);
@@ -88,7 +88,8 @@ export function batteryLife(meanAmps, capacityMah) {
 
 // The chart of a session's envelope: a band from each bucket's lowest to its highest reading and a line through the means. Zero is always on the vertical axis
 // (a steady current is a flat band, a real spike stands out). x is time. Returns null when there is nothing to draw.
-export function bandChart(buckets, width, height, unit = "") {
+// `marks` are times to draw a vertical line at (the starts of the wakes found); `marks` in the answer are their x positions.
+export function bandChart(buckets, width, height, unit = "", marks = []) {
   if (!buckets || buckets.length === 0) return null;
   const lo = Math.min(...buckets.map((b) => b.min));
   const hi = Math.max(...buckets.map((b) => b.max));
@@ -103,5 +104,6 @@ export function bandChart(buckets, width, height, unit = "") {
   const top = buckets.map((b, i) => `${mid(b, i).toFixed(1)},${y(b.max).toFixed(1)}`);
   const bottom = buckets.map((b, i) => `${mid(b, i).toFixed(1)},${y(b.min).toFixed(1)}`).reverse();
   const mean = buckets.map((b, i) => `${mid(b, i).toFixed(1)},${y(b.mean).toFixed(1)}`).join(" ");
-  return { band: [...top, ...bottom].join(" "), mean, axisLo: si(axisLo, unit), axisHi: si(axisHi, unit), lo: si(lo, unit), hi: si(hi, unit), span };
+  const at = marks.filter((t) => t >= t0 && t <= t0 + span).map((t) => Number(x(t, 0).toFixed(1)));
+  return { band: [...top, ...bottom].join(" "), mean, marks: at, axisLo: si(axisLo, unit), axisHi: si(axisHi, unit), lo: si(lo, unit), hi: si(hi, unit), span };
 }

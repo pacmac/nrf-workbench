@@ -200,6 +200,34 @@ def meter_page(page, bench, fake, tag, shot):
     check("%s no sideways scroll on the Meter page" % tag, no_sideways_scroll(page))
     shot("4-recorded")
 
+    # battery life from the wake/sleep cycle (docs/specs/meter-page.md): a unit that sleeps and wakes for one block (0.2 s) every 2 s
+    bench.unit.profile = lambda i: (30000 if (i // 20000) % 10 == 3 else 1000, 0)
+    bench.unit.index = bench.unit.counter = 0
+    bench.unit.lost_at = {}
+    page.get_by_role("button", name="Watch", exact=True).click()
+    page.get_by_text(re.compile(r"^watching, ")).wait_for()
+    page.get_by_label("Battery capacity in milliamp hours").fill("1000")
+    life = page.get_by_label("Battery life")
+    page.wait_for_function("(() => { const m = document.querySelector('[aria-label=\"Session\"]').innerText.match(/([0-9,]+) samples/); return m && Number(m[1].replace(/,/g, '')) >= 850000; })()", timeout=30000)
+    check("%s the choice starts on the whole recording" % tag,
+          page.get_by_role("button", name="Whole recording").get_attribute("aria-pressed") == "true" and "whole recording it lasts" in life.inner_text(), life.inner_text())
+    page.get_by_role("button", name="Wake/sleep cycle").click()
+    check("%s choosing the cycle presses that button and not the other" % tag,
+          page.get_by_role("button", name="Wake/sleep cycle").get_attribute("aria-pressed") == "true" and page.get_by_role("button", name="Whole recording").get_attribute("aria-pressed") == "false")
+    page.get_by_label("Battery life").filter(has_text=re.compile(r"^Wakes every 2 s \(3 cycles counted")).wait_for()
+    check("%s the cycle line gives the period, the cycles, the average over them and the life" % tag,
+          re.match(r"^Wakes every 2 s \(3 cycles counted\)\. Average over them [0-9.]+ [nµm]A\. It lasts [0-9.]+ (hours|days|years)\.$", life.inner_text()) is not None, life.inner_text())
+    check("%s the chart marks each wake it found" % tag, page.get_by_test_id("wake-mark").count() == 4, page.get_by_test_id("wake-mark").count())
+    check("%s no sideways scroll with the cycle line" % tag, no_sideways_scroll(page))
+    shot("5-cycle")
+    page.get_by_role("button", name="Stop").click()
+    page.get_by_text(re.compile(r"^ended: stopped")).wait_for()
+    page.get_by_role("button", name="Whole recording").click()
+    check("%s going back to the whole recording drops the marks and says so" % tag,
+          page.get_by_test_id("wake-mark").count() == 0 and "whole recording it lasts" in life.inner_text(), life.inner_text())
+    bench.unit.profile = lambda i: (1000 + (i % 7), 0)
+    bench.unit.index = bench.unit.counter = 0
+
     # back to the multimeter
     page.get_by_role("group", name="Instrument").get_by_role("button", name="Multimeter").click()
     page.get_by_text("The meter", exact=True).wait_for()

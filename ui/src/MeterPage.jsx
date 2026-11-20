@@ -4,7 +4,8 @@ import { createFeed } from "./feed.js";
 import { Button, Card, Field, Json, PageHeader, cx, inputClass } from "./ui.jsx";
 import { ResultView } from "./Commands.jsx";
 import { Envelope, Stats } from "./meter/envelope.js";
-import { batteryLife, bandChart, clock, headline, si } from "./meter/format.js";
+import { findCycle } from "./meter/cycle.js";
+import { batteryLife, bandChart, clock, headline, si, words } from "./meter/format.js";
 import { Profiler } from "./meter/Profiler.jsx";
 
 // The Meter page (docs/specs/meter-page.md, docs/specs/ppk2.md): power over minutes to hours, from the multimeter or the Nordic Power Profiler. A session runs on the Pi;
@@ -16,8 +17,8 @@ const isCurrent = (fn) => /^CURR/i.test(fn || "");
 const RUNNING = ["watching", "recording"];
 const SOURCES = { meter: "Multimeter", ppk2: "Power profiler" };
 
-function Chart({ buckets, unit }) {
-  const c = bandChart(buckets, 480, 120, unit);
+function Chart({ buckets, unit, marks = [] }) {
+  const c = bandChart(buckets, 480, 120, unit, marks);
   if (!c) return <p className="rounded-md bg-slate-100 px-3 py-6 text-center text-[13px] text-slate-600 dark:bg-slate-950 dark:text-slate-400">No readings yet. Press Watch or Record.</p>;
   return (
     <figure className="space-y-1">
@@ -25,6 +26,9 @@ function Chart({ buckets, unit }) {
         className="h-40 w-full rounded-md bg-slate-100 dark:bg-slate-950">
         <polygon points={c.band} className="fill-blue-200 stroke-blue-300 dark:fill-blue-900 dark:stroke-blue-700" strokeWidth="1" vectorEffect="non-scaling-stroke" />
         <polyline points={c.mean} fill="none" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" className="stroke-blue-700 dark:stroke-blue-300" />
+        {c.marks.map((x) => (
+          <line key={x} x1={x} x2={x} y1="0" y2="120" strokeWidth="1" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" data-testid="wake-mark" className="stroke-amber-600 dark:stroke-amber-400" />
+        ))}
       </svg>
       <figcaption className="flex flex-wrap justify-between gap-x-4 text-xs text-slate-600 dark:text-slate-400">
         <span>bottom of the chart: {c.axisLo}</span>
@@ -33,6 +37,23 @@ function Chart({ buckets, unit }) {
       </figcaption>
     </figure>
   );
+}
+
+const span = (s) => (s < 10 ? `${Number(s.toFixed(1))} s` : words(s));
+
+// What the battery-life line says: the whole recording's average, or the wake/sleep cycle found in it (cycle.js), and why none was found when none was.
+function lifeSentence(lifeBy, cyc, life, unit) {
+  if (lifeBy === "whole") return life ? `At the average of the whole recording it lasts ${life}.` : "Type a capacity to see how long it lasts at the average above.";
+  if (!cyc) return "";
+  if (cyc.found) {
+    const gaps = cyc.regular ? "" : `, gaps from ${span(cyc.shortest)} to ${span(cyc.longest)}, so not regular`;
+    return `Wakes every ${span(cyc.period)} (${cyc.cycles} ${cyc.cycles === 1 ? "cycle" : "cycles"} counted${gaps}). Average over them ${si(cyc.mean, unit)}. `
+      + (life ? `It lasts ${life}.` : "Type a capacity to see how long it lasts.");
+  }
+  if (cyc.reason === "short") return "Record a little longer: a cycle needs at least two wakes.";
+  if (cyc.reason === "no_sleep") return "The sleep current reads zero or less, so no cycle can be found. Check the leads.";
+  if (cyc.reason === "steady") return "The current never rises to twice its sleep level, so no wake was found. Use the whole recording.";
+  return `Found ${cyc.wakes} ${cyc.wakes === 1 ? "wake" : "wakes"}: a cycle needs two. Record for longer than one cycle.`;
 }
 
 function Figure({ label, value }) {
@@ -56,6 +77,7 @@ export default function MeterPage({ commands, onDone }) {
   const [bound, setBound] = useState("600");
   const [recName, setRecName] = useState("");
   const [capacity, setCapacity] = useState("");
+  const [lifeBy, setLifeBy] = useState("whole");                       // "whole": the Average figure; "cycle": the mean over whole wake/sleep cycles (cycle.js)
   const [chosen, setChosen] = useState(null);
   const [feedState, setFeedState] = useState({ state: "connecting" });
   const env = useRef(new Envelope());
@@ -180,7 +202,9 @@ export default function MeterPage({ commands, onDone }) {
   const current = isCurrent(fn);
   const figures = stats.current.toObject(current);
   const capacityMah = Number(capacity);
-  const life = current ? batteryLife(figures.mean, capacityMah) : "";
+  const buckets = env.current.snapshot();
+  const cyc = current && lifeBy === "cycle" ? findCycle(buckets) : null;
+  const life = current ? batteryLife(lifeBy === "cycle" ? (cyc && cyc.found ? cyc.mean : null) : figures.mean, capacityMah) : "";
   const sd = setting && setting.body && setting.body.data && Object.keys(setting.body.data).length ? setting.body : null;
   const word = shownSource === "ppk2" ? "samples" : "readings";
   const count = figures.readings.toLocaleString("en-US");
@@ -260,7 +284,7 @@ export default function MeterPage({ commands, onDone }) {
           </div>
           {outcome && !outcome.pending && <ResultView outcome={outcome} />}
 
-          <Chart buckets={env.current.snapshot()} unit={unit} />
+          <Chart buckets={buckets} unit={unit} marks={cyc && cyc.found ? cyc.starts : []} />
 
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4" aria-label="Figures">
             <Figure label="Lowest" value={figures.min === null ? "—" : si(figures.min, unit)} />
@@ -290,9 +314,16 @@ export default function MeterPage({ commands, onDone }) {
             </p>
           )}
           {current && (
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="w-44"><Field label="Battery capacity, mAh"><input className={inputClass} inputMode="decimal" value={capacity} onChange={(e) => setCapacity(e.target.value)} aria-label="Battery capacity in milliamp hours" /></Field></div>
-              <p className="pb-2 text-[15px]" aria-label="Battery life">{life ? `At this average it lasts ${life}.` : "Type a capacity to see how long it lasts at the average above."}</p>
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="w-44"><Field label="Battery capacity, mAh"><input className={inputClass} inputMode="decimal" value={capacity} onChange={(e) => setCapacity(e.target.value)} aria-label="Battery capacity in milliamp hours" /></Field></div>
+                <div role="group" aria-label="Worked out from" className="flex gap-2 pb-px">
+                  {[["whole", "Whole recording"], ["cycle", "Wake/sleep cycle"]].map(([key, text]) => (
+                    <Button key={key} tone={lifeBy === key ? "primary" : "quiet"} aria-pressed={lifeBy === key} onClick={() => setLifeBy(key)}>{text}</Button>
+                  ))}
+                </div>
+              </div>
+              <p className="break-words text-[15px]" aria-label="Battery life">{lifeSentence(lifeBy, cyc, life, unit)}</p>
             </div>
           )}
           <p className="text-[13px] text-slate-600 dark:text-slate-400">
