@@ -1,7 +1,7 @@
 """Single wakes kept at the unit's full sample rate (docs/specs/ppk2-stages.md, stage 1).
 
 The session's envelope is 0.2 s a point; a wake's stages (a CPU wake, then a radio burst) are milliseconds. So as the profiler's blocks go by, a wake is noticed and its raw
-words are kept: from the block before it to the first quiet block after. `Capturer` decides and holds; `decode` and `window` turn a capture's words into amps and into an exact
+words are kept: from sleep before it to the first block back near sleep after (a wake is the whole awake period, a radio burst and the receive window after it). `Capturer` decides and holds; `decode` and `window` turn a capture's words into amps and into an exact
 lowest/highest/mean envelope of any stretch of it, at any resolution.
 """
 import collections
@@ -19,15 +19,16 @@ WAKE_FACTOR = 2                              # a wake must at least double the s
 BINS_PER_DECADE = 16                         # a bin is 10^(1/16) = 1.155 wide: the sleep level is known to +-7.5 %, which moves the level by under 4 % of sleep-to-peak
 LOW_EXP, HIGH_EXP = -9, 1                    # 1 nA to 10 A: 10 decades, 160 bins, constant memory however long a session runs
 BINS = (HIGH_EXP - LOW_EXP) * BINS_PER_DECADE
-MAX_CAPTURE_BLOCKS = 25                      # 25 blocks x 20,000 words x 4 bytes = 2 MB a capture, 5 s
-KEEP = 8                                     # the newest 8: 16 MB at most, enough to compare wake with wake
+MAX_CAPTURE_BLOCKS = 200                     # 40 s: the bench RAK is awake 21.6 s (TX, a 20.8 s receive window at 6.5 mA, TX) plus a 1 s lead-in, so 40 s is 1.8 times that; 200 blocks x 80 KB = 16 MB raw
+KEEP = 8                                     # the newest 8, enough to compare wake with wake; held compressed (2.3 times smaller on the RAK), so 56 MB at the cap, on a Pi with 3.8 GB
 LEAD_BLOCKS_MAX = 5                          # the lead-in goes back at most 5 blocks (1 s, 400 KB of ring): a CPU awake for longer than that before its radio is a stage of its own, seen in the session's chart
 POINTS_DEFAULT, POINTS_MAX = 1000, 2000      # a wide chart's pixels; the envelope's own bound (about twice that)
-KEEP_DISK = 20                               # wakes kept on disk per recording: the stage table needs the spread across wakes and 20 shows it; worst case 20 x 2 MB before compression
+KEEP_DISK = 20                               # wakes kept on disk per recording: the stage table needs the spread across wakes and 20 shows it; worst case 20 x 7 MB compressed (24 GB free on the Pi)
 MAX_STAGES = 12                              # a wake has a handful of stages: more would not fit a table a person reads
 MAX_EVERY = 8                                # a device that alternates between kinds of wake has two or three; 8 is room for more
 NAME_MAX = 40
-ZLIB_LEVEL = 1                               # a wake is mostly flat, so the fastest level already shrinks it a lot, and the session thread must not stall (the kernel buffers 160 ms)
+ZLIB_LEVEL = 1                               # a wake is mostly flat, so the fastest level already shrinks it a lot, and the session thread must not stall (the kernel buffers 160 ms): each block is
+                                             # compressed as it arrives, 2.9 ms on the Pi (0.063 s for the 22 blocks of a 4.4 s wake, measured), where a 24 s wake compressed at its close takes 0.35 s
 
 
 class Level(object):
@@ -69,11 +70,12 @@ class Level(object):
 
 
 class Capture(object):
-    """A wake: in memory (chunks of raw words) or on disk (`loader` gives the words back, `samples` is what was saved)."""
+    """A wake: in memory or on disk (`loader` gives the words back, `samples` is what was saved). In memory its words are compressed as each block joins (`add`), so a wake of 24 s
+    costs about 3 ms a block instead of a stall at its close, and a third of the memory; `finish` closes the stream and `blob` is then the same bytes the store writes."""
 
     def __init__(self, n, t0, level, loader=None, samples=0):
         self.n, self.t0, self.level = n, t0, level            # the number, the sample clock of the first word, the level in force when it began
-        self.chunks = []
+        self._z, self._pieces, self._words, self._blob = zlib.compressobj(ZLIB_LEVEL), [], 0, None
         self.lost = 0
         self.truncated = False
         self.peak = 0.0
@@ -81,13 +83,32 @@ class Capture(object):
         self.stats = None                                     # wake_at_s, mean and peak of the decoded samples, worked out the first time they are asked for
         self._loader, self._samples = loader, samples
 
+    def add(self, data):
+        """One block's raw words, compressed now."""
+        self._pieces.append(self._z.compress(data))
+        self._words += len(data) // 4
+
+    def finish(self):
+        """Close the stream. Idempotent."""
+        if self._blob is None and self._loader is None:
+            self._pieces.append(self._z.flush())
+            self._blob, self._pieces, self._z = b"".join(self._pieces), [], None
+
+    @property
+    def blob(self):
+        """The wake as one zlib stream (what the store writes), or None for a wake read back from disk or one not finished."""
+        return self._blob
+
     @property
     def data(self):
-        return self._loader() if self._loader is not None else b"".join(self.chunks)
+        if self._loader is not None:
+            return self._loader()
+        self.finish()
+        return zlib.decompress(self._blob)
 
     @property
     def samples(self):
-        return self._samples if self._loader is not None else sum(len(c) for c in self.chunks) // 4
+        return self._samples if self._loader is not None else self._words
 
 
 class Capturer(object):
@@ -118,8 +139,10 @@ class Capturer(object):
                 self._add(o, data, lost, high)
         else:
             self._add(o, data, lost, high)
-            if not hot:
-                self._close()                                  # this was the first quiet block: the tail
+            sleep = self.level.sleep()
+            if sleep is None or mean <= WAKE_FACTOR * sleep:
+                self._close()                                  # the first block back near sleep: the tail. Not the first under the half-peak level: a radio burst ends far above sleep
+                                                               # and the receive window after it (20.8 s at 6.5 mA on the RAK) is part of the wake
             elif o.blocks >= self.max_blocks:
                 o.truncated = True
                 self._close()
@@ -138,7 +161,7 @@ class Capturer(object):
         return lead
 
     def _add(self, o, data, lost, high):
-        o.chunks.append(data)
+        o.add(data)
         o.lost += lost
         o.blocks += 1
         if high is not None and high > o.peak:
@@ -146,6 +169,7 @@ class Capturer(object):
 
     def _close(self):
         done, self._open = self._open, None
+        done.finish()
         self.items.append(done)
         if self.on_close is not None:
             self.on_close(done)                                # saved before it is counted: when the feed says it exists, it can be read
@@ -225,10 +249,11 @@ class WakeStore(object):
     def save(self, c):
         """Write a capture (OSError if the disk will not take it). The json goes last and by rename, so a wake with a json always has its words."""
         os.makedirs(self.dir, exist_ok=True)
-        raw = c.data
+        c.finish()
+        packed = c.blob if c.blob is not None else zlib.compress(c.data, ZLIB_LEVEL)
         with open(self._path(c.n, "bin"), "wb") as fh:
-            fh.write(zlib.compress(raw, ZLIB_LEVEL))
-        meta = {"n": c.n, "t0": c.t0, "level": c.level, "lost": c.lost, "truncated": c.truncated, "peak": c.peak, "samples": len(raw) // 4, "stats": c.stats}
+            fh.write(packed)
+        meta = {"n": c.n, "t0": c.t0, "level": c.level, "lost": c.lost, "truncated": c.truncated, "peak": c.peak, "samples": c.samples, "stats": c.stats}
         tmp = self._path(c.n, "json.tmp")
         with open(tmp, "w") as fh:
             json.dump(meta, fh)

@@ -115,13 +115,54 @@ class WhenAWakeIsKept(unittest.TestCase):
 
     def test_a_wake_longer_than_the_ceiling_is_truncated_and_the_next_is_found(self):
         c = capture.Capturer()
-        feed_blocks(c, quiet(100) + hot(30) + quiet(4) + hot(2) + quiet(2))      # a long history: the sleep level is the middle block, so a wake early in a session would pull it up
+        over = capture.MAX_CAPTURE_BLOCKS + 30
+        feed_blocks(c, quiet(1000) + hot(over) + quiet(4) + hot(2) + quiet(2))   # a long history: the sleep level is the middle block, so a wake early in a session would pull it up
         first = c.get(1)
         self.assertTrue(first.truncated)
         self.assertEqual(first.blocks, capture.MAX_CAPTURE_BLOCKS)
         self.assertGreaterEqual(c.count, 2)
         self.assertFalse(c.get(c.count).truncated)
         self.assertEqual(c.get(c.count).peak, WAKE)
+
+    def test_a_receive_window_between_two_bursts_is_part_of_the_one_wake(self):
+        """The bench RAK: TX 1 (120 mA), a 20.8 s receive window at 6.5 mA, TX 2 (120 mA), then sleep. The window is under half the peak but far over twice the sleep."""
+        c = capture.Capturer()
+        window = [(1e-3, 1.1e-3)] * 100                                  # 20 s of 1 mA, 100 times the sleep and a twentieth of the burst's peak
+        feed_blocks(c, quiet(1000) + hot(3) + window + hot(2) + quiet(3))
+        self.assertEqual(c.count, 1, "two short wakes 21 s apart would be the old reading")
+        cap = c.get(1)
+        self.assertEqual(cap.blocks, 1 + 3 + 100 + 2 + 1, "one block of lead-in, the bursts, the window, and the first block back near sleep")
+        self.assertFalse(cap.truncated)
+        self.assertIsNotNone(cap.blob, "closing a wake closes its stream, so the store has the bytes to write without compressing anything")
+        self.assertEqual(cap.data, b"".join(block(k) for k in range(999, 999 + 107)))
+
+    def test_a_wake_ends_when_the_blocks_that_made_the_sleep_level_turn_to_zero_under_it(self):
+        c = capture.Capturer()
+        zero = [(0.0, 0.0)]
+        feed_blocks(c, zero * 2 + quiet(2) + hot(1) + zero)               # the last block is the third that reads nothing: the middle block now reads zero, there is no sleep level
+        self.assertEqual((c.count, c.kept), (1, 1))
+
+    def test_a_wake_closes_on_the_first_block_back_near_sleep_not_on_one_just_under_the_level(self):
+        c = capture.Capturer()
+        near = [(SLEEP * 1.5, SLEEP * 3)]                                # under twice the sleep: asleep, whatever its highest sample (the sleep level is good to 7.5 %, so not 1.9)
+        over = [(SLEEP * 2.5, SLEEP * 3)]                                # over twice the sleep: still awake
+        feed_blocks(c, quiet(100) + hot(1) + over * 4 + near + hot(1) + quiet(2))
+        self.assertEqual(c.count, 2, "the block under twice the sleep ended the first wake, so the next burst is another")
+        self.assertEqual(c.get(1).blocks, 1 + 1 + 4 + 1)
+
+    def test_the_words_are_compressed_as_each_block_arrives_and_come_back_whole(self):
+        import zlib
+        cap = capture.Capture(1, 0.0, 1e-3)
+        raw = [bytes([k % 7]) * 80000 for k in range(30)]
+        for b in raw:
+            cap.add(b)
+        self.assertLess(sum(len(p) for p in cap._pieces), sum(len(b) for b in raw) / 20, "a flat wake holds a twentieth of its size while open")
+        self.assertIsNone(cap.blob, "no stream until it is finished")
+        cap.finish()
+        cap.finish()
+        self.assertEqual(zlib.decompress(cap.blob), b"".join(raw), "one ordinary zlib stream: the store writes it as it is, and older files read the same")
+        self.assertEqual(cap.data, b"".join(raw))
+        self.assertEqual(cap.samples, 30 * 20000)
 
     def test_only_the_newest_are_kept_and_numbers_keep_rising(self):
         c = capture.Capturer()
@@ -287,6 +328,63 @@ class TheWholePath(PathBase):
         self.assertEqual(self.call("meter.capture", {"n": 1}).code, "capture_unknown")
 
 
+class AWakeOfTwentySeconds(PathBase):
+    """The bench RAK's awake period: a radio burst, a 20 s receive window at a twentieth of the burst's current, a second burst, then sleep. It is one wake, kept whole and zoomable."""
+    BLOCKS = 260
+    WINDOW_ADC = 3000
+    TX1, WINDOW, TX2 = 131, 134, 234                                        # the first block of each: 131-133 burst, 134-233 window (20 s), 234-235 burst
+
+    def setUp(self):
+        PathBase.setUp(self)
+        t = self
+
+        def profile(i):
+            b = i // 20000
+            if i >= t.BLOCKS * 20000:
+                return 1000, 0
+            if t.TX1 <= b < t.WINDOW or t.TX2 <= b < t.TX2 + 2:
+                return WAKE_ADC, 0
+            if t.WINDOW <= b < t.TX2:
+                return t.WINDOW_ADC, 0
+            return 1000, 0
+        self.unit.profile = profile
+        self.window_a = reference_amps(self.cal, 0, self.WINDOW_ADC)
+
+    def test_it_is_one_capture_with_the_whole_receive_window_in_it(self):
+        self.record_session("rak-1")
+        rows = self.call("meter.captures").data["captures"]
+        self.assertEqual(len(rows), 1, [(r["n"], r["duration_s"]) for r in rows])
+        r = rows[0]
+        self.assertEqual((r["samples"], r["lost"], r["truncated"]), (107 * 20000, 0, False))
+        self.assertAlmostEqual(r["duration_s"], 21.4, places=9)
+        expected = (20000 * 2 * self.sleep_a + 20000 * 5 * self.wake_a + 20000 * 100 * self.window_a) / (107 * 20000.0)
+        self.assertAlmostEqual(r["mean"], expected, delta=expected * 1e-9)
+
+    def test_any_stretch_of_it_can_be_zoomed_into(self):
+        self.record_session("rak-1")
+        whole = self.call("meter.capture", {"n": 1, "points": 1000}).data
+        self.assertAlmostEqual(whole["t1"] - whole["t0"], 21.4, places=9)
+        self.assertEqual(sum(b["n"] for b in whole["buckets"]), 107 * 20000)
+        mid = self.call("meter.capture", {"n": 1, "t0": 5.0, "t1": 6.0, "points": 100}).data
+        self.assertEqual(sum(b["n"] for b in mid["buckets"]), 100000)
+        for b in mid["buckets"]:
+            self.assertAlmostEqual(b["min"], self.window_a, delta=self.window_a * 1e-9)
+            self.assertAlmostEqual(b["max"], self.window_a, delta=self.window_a * 1e-9)
+        edge = self.call("meter.capture", {"n": 1, "t0": 3.0 * 0.2 - 0.001, "t1": 3.0 * 0.2 + 0.001, "points": 20}).data       # the end of the first burst: the unit's step from burst to window
+        highs = [b["max"] for b in edge["buckets"]]
+        self.assertAlmostEqual(max(highs), self.wake_a, delta=self.wake_a * 1e-9)
+        self.assertAlmostEqual(min(b["min"] for b in edge["buckets"]), self.window_a, delta=self.window_a * 1e-9)
+
+    def test_it_is_saved_and_read_back_whole(self):
+        self.record_session("rak-1")
+        disk = self.call("meter.captures", {"recording": "rak-1"}).data["captures"]
+        self.assertEqual([(r["n"], r["samples"]) for r in disk], [(1, 107 * 20000)])
+        mem = self.call("meter.capture", {"n": 1, "points": 50}).data
+        back = self.call("meter.capture", {"n": 1, "points": 50, "recording": "rak-1"}).data
+        self.assertEqual(mem, back)
+        self.assertLess(os.path.getsize(os.path.join(self.folder, "rak-1.wakes", "1.bin")), 107 * 20000 * 4 / 3)
+
+
 class KeptWithTheRecording(PathBase):
     """Stage 2, wakes: a recording writes each wake to <name>.wakes/ as it closes and reads them back without the unit; a watch writes nothing."""
 
@@ -331,7 +429,7 @@ class KeptWithTheRecording(PathBase):
         store = capture.WakeStore(os.path.join(self.folder, "x.wakes"))
         for n in range(1, 26):
             c = capture.Capture(n, float(n), 1e-3)
-            c.chunks.append(n.to_bytes(4, "little") * 8)
+            c.add(n.to_bytes(4, "little") * 8)
             store.save(c)
         self.assertEqual(store.numbers(), list(range(6, 26)))
         loaded = store.load()
@@ -341,7 +439,7 @@ class KeptWithTheRecording(PathBase):
     def test_a_wake_with_a_json_always_has_its_words(self):
         store = capture.WakeStore(os.path.join(self.folder, "x.wakes"))
         c = capture.Capture(1, 0.0, 1e-3)
-        c.chunks.append(b"abcd" * 4)
+        c.add(b"abcd" * 4)
         store.save(c)
         os.unlink(os.path.join(store.dir, "1.bin"))
         with self.assertRaises(OSError):

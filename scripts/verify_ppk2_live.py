@@ -365,6 +365,50 @@ def meter_page(page, bench, fake, tag, shot):
     bench.unit.profile = lambda i: (1000 + (i % 7), 0)
     bench.unit.index = bench.unit.counter = 0
 
+    # a wake of 21 s like the bench RAK's (a burst, a 20 s receive window at a tenth of the current, a burst) is ONE wake on the scope, and can be zoomed into
+    # (docs/specs/ppk2-stages.md, "The window"); 125 quiet blocks first so that the sleep level (the median block) is asleep through the wake. Desktop only: it takes 50 s at the real rate.
+    if tag.endswith("desktop"):
+        bench.unit.profile = lambda i: (30000 if (125 <= i // 20000 < 128 or 228 <= i // 20000 < 230) else 3000 if 128 <= i // 20000 < 228 else 1000, 0)
+        bench.unit.index = bench.unit.counter = 0
+        bench.unit.lost_at = {}
+        page.get_by_role("button", name="Watch", exact=True).click()
+        page.get_by_text(re.compile(r"^watching, ")).wait_for()
+        pick = page.get_by_label("Wake", exact=True)
+        try:
+            pick.locator("option").filter(has_text=re.compile(r"^wake \d+, 21\.4 s, peak")).wait_for(state="attached", timeout=90000)
+        except Exception:                                                              # say what the list held, then go on to the end of the scenario
+            pass
+        options = [o.inner_text() for o in pick.locator("option").all()]
+        if not check("%s the awake period is one wake of 21.4 s, not a burst and another 21 s later" % tag,
+                     len(options) == 1 and re.match(r"^wake 1, 21\.4 s, peak [0-9.]+ [nµm]A$", options[0]) is not None, (options, page.get_by_label("Session").inner_text()[:200])):
+            page.get_by_role("button", name="Stop").click()
+            page.get_by_text(re.compile(r"^ended: stopped")).wait_for()
+            raise SystemExit(1)
+        page.get_by_role("img", name=re.compile(r"^Current of wake 1, from -0\.2 s to 21\.2 s$")).wait_for()
+        wf = page.get_by_label("Wake figures")
+        whole = wf.inner_text()
+        check("%s the figures say 21.4 s is shown" % tag, "21.4 s" in whole, whole)
+        trace = page.get_by_role("img", name=re.compile(r"^Current of wake"))
+        trace.scroll_into_view_if_needed()
+        shot("5e-long-wake")
+        bx = trace.bounding_box()
+        page.mouse.move(bx["x"] + bx["width"] * 0.45, bx["y"] + bx["height"] / 2)
+        page.mouse.down()
+        page.mouse.move(bx["x"] + bx["width"] * 0.50, bx["y"] + bx["height"] / 2)
+        page.mouse.up()
+        page.get_by_role("button", name="Show all of it").wait_for()
+        page.wait_for_function("(() => { const t = document.querySelector('[aria-label=\"Wake figures\"]').innerText; return !t.includes('21.4 s') && /Shown\\s+[0-9.]+ s/.test(t); })()")
+        zoomed = wf.inner_text()
+        shown = float(re.search(r"Shown\s+([0-9.]+) s", zoomed).group(1))
+        peak_whole = re.search(r"Peak\s+([0-9.]+ [nµm]A)", whole).group(1)
+        peak_zoom = re.search(r"Peak\s+([0-9.]+ [nµm]A)", zoomed).group(1)
+        check("%s dragging across the receive window zooms to about a second of it, whose peak is the window's and not the burst's" % tag,
+              0.9 <= shown <= 1.4 and peak_zoom != peak_whole, (shown, peak_whole, peak_zoom))
+        page.get_by_role("button", name="Stop").click()
+        page.get_by_text(re.compile(r"^ended: stopped")).wait_for()
+        bench.unit.profile = lambda i: (1000 + (i % 7), 0)
+        bench.unit.index = bench.unit.counter = 0
+
     # back to the multimeter
     page.get_by_role("group", name="Instrument").get_by_role("button", name="Multimeter").click()
     page.get_by_text("The meter", exact=True).wait_for()

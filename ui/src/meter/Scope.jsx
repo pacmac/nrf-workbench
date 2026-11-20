@@ -158,7 +158,7 @@ export function Scope({ commands, count, session, recording }) {
                 <Field label="Wake">
                   <select className={inputClass} aria-label="Wake" value={n === null ? "" : n} onChange={(e) => { setN(Number(e.target.value)); setWin(null); }}>
                     {wakes.map((w) => (
-                      <option key={w.n} value={w.n}>wake {w.n}, {timeLabel(w.duration_s, w.duration_s)}, peak {si(w.peak, "A")}{w.truncated ? ", cut at 5 s" : ""}</option>
+                      <option key={w.n} value={w.n}>wake {w.n}, {timeLabel(w.duration_s, w.duration_s)}, peak {si(w.peak, "A")}{w.truncated ? ", cut short" : ""}</option>
                     ))}
                   </select>
                 </Field>

@@ -80,7 +80,7 @@ export default function MeterPage({ commands, onDone }) {
   const [bound, setBound] = useState("600");
   const [recName, setRecName] = useState("");
   const [capacity, setCapacity] = useState("");
-  const [openRec, setOpenRec] = useState(null);                       // a finished recording whose wakes and stages are open on the scope (a restart forgets which the last session was)
+  const [openRec, setOpenRec] = useState(null);                       // a finished recording whose wakes and stages are open on the scope (a restart forgets which the last session was); starting a session closes it, so the scope follows the new session
   const [lifeBy, setLifeBy] = useState("whole");                       // "whole": the Average figure; "cycle": the mean over whole wake/sleep cycles (cycle.js)
   const [chosen, setChosen] = useState(null);
   const [feedState, setFeedState] = useState({ state: "connecting" });
@@ -281,12 +281,12 @@ export default function MeterPage({ commands, onDone }) {
                 {DURATIONS.map(([s, label]) => <option key={s} value={String(s)}>{label}</option>)}
               </select>
             </Field>
-            <Button disabled={running || pending} onClick={() => run(watch, { bound_s: Number(bound), source })}>Watch</Button>
+            <Button disabled={running || pending} onClick={() => { setOpenRec(null); run(watch, { bound_s: Number(bound), source }); }}>Watch</Button>
             {record && (
               <>
                 <div className="w-44"><Field label="Recording name"><input className={inputClass} value={recName} placeholder="the start time" disabled={running}
                   onChange={(e) => setRecName(e.target.value.toLowerCase())} aria-label="Name for the recording" autoComplete="off" spellCheck="false" /></Field></div>
-                <Button tone="quiet" disabled={running || pending} onClick={() => run(record, { bound_s: Number(bound), source, ...(recName.trim() ? { name: recName.trim() } : {}) })}>Record</Button>
+                <Button tone="quiet" disabled={running || pending} onClick={() => { setOpenRec(null); run(record, { bound_s: Number(bound), source, ...(recName.trim() ? { name: recName.trim() } : {}) }); }}>Record</Button>
               </>
             )}
             {stop && <Button tone="danger" disabled={!running || pending} onClick={() => run(stop)}>Stop</Button>}
