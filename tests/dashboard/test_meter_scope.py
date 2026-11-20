@@ -94,6 +94,10 @@ class TheChart(unittest.TestCase):
         self.assertAlmostEqual(c[2], 0.2, places=9)
         self.assertEqual((c[3], c[4]), (c[0], c[2]))
 
+    def test_a_time_is_placed_inside_the_chart_so_a_stage_can_be_shaded(self):
+        c = run("const c = s.scopeChart(data, 480, 160, {}); return [c.at(-0.2), c.at(0), c.at(0.2), c.at(-5), c.at(5)];", buckets([1e-3] * 400))
+        self.assertEqual(c, [4.0, 240.0, 476.0, 4.0, 476.0])
+
     def test_nothing_to_draw_is_null(self):
         self.assertIsNone(run("return s.scopeChart([], 480, 160, {});"))
 

@@ -80,6 +80,7 @@ export default function MeterPage({ commands, onDone }) {
   const [bound, setBound] = useState("600");
   const [recName, setRecName] = useState("");
   const [capacity, setCapacity] = useState("");
+  const [openRec, setOpenRec] = useState(null);                       // a finished recording whose wakes and stages are open on the scope (a restart forgets which the last session was)
   const [lifeBy, setLifeBy] = useState("whole");                       // "whole": the Average figure; "cycle": the mean over whole wake/sleep cycles (cycle.js)
   const [chosen, setChosen] = useState(null);
   const [feedState, setFeedState] = useState({ state: "connecting" });
@@ -340,7 +341,10 @@ export default function MeterPage({ commands, onDone }) {
         </div>
       </Card>
 
-      {shownSource === "ppk2" && <Scope commands={commands} count={session ? session.captures || 0 : 0} session={session} />}
+      {(shownSource === "ppk2" || openRec) && (
+        <Scope commands={commands} count={session ? session.captures || 0 : 0} session={session}
+          recording={openRec || (session && session.mode === "record" && session.name ? session.name : null)} />
+      )}
 
       {record && (
         <Card title="Recordings">
@@ -359,6 +363,7 @@ export default function MeterPage({ commands, onDone }) {
                         {r.recording ? ", recording now" : r.interrupted ? ", cut short" : ""}
                       </span>
                     </span>
+                    {r.source === "ppk2" && <Button tone="quiet" onClick={() => setOpenRec(r.name)} aria-label={`Open the wakes of ${r.name}`}>Wakes</Button>}
                     <Button tone="quiet" onClick={() => download(r.name)} aria-label={`Download ${r.name}`}>Download</Button>
                   </li>
                 ))}

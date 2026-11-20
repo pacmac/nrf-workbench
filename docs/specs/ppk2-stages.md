@@ -39,6 +39,10 @@ the current is decoded from them on request with the unit's calibration, exactly
 - A wake closer than a block to the one before it simply extends that capture.
 - Lost samples (the counter) are counted per capture and said; the time axis counts samples received.
 
+**The range glitch.** The unit switches range when the current steps, and the first samples after a switch are a glitch. Measured on the bench RAK (2026-11-20, a wake that steps from 4 mA to 120 mA): two samples of 221 mA and 139 mA either side of the edge,
+then the 120 mA plateau. The session's own reduction holds 3 samples out from the one where the range changes (`ppk2.md`). A decoded wake does the same: those samples take the value before them, so a wake keeps its length and its **peak, average and charge are the
+session's, not the glitch's**; `held` says how many were held (3 for each range change in the wake). This is also the first real-load look at the hold-out ppk2.md called unproven: the glitch was 2 samples, inside the 3 held.
+
 **Time.** A capture's `t0` is the sample clock (seconds since the session began) of its first sample. Its **wake start** is the first sample over the level, found when it is decoded, and every time shown to a person is
 relative to that (negative before it), so the same stage is at the same time in every wake.
 
@@ -52,7 +56,7 @@ relative to that (negative before it), so the same stage is at the same time in 
 `meter.capture` is an **exact** envelope of the window: each bucket's lowest, highest, mean and count are from the decoded samples (a zoom asks again for a finer one; nothing is thinned). Times in the answer are from the wake start.
 `points` defaults to 1000 (a wide chart's pixels) and is at most 2000, the envelope's own bound. A window outside the capture is clipped; an empty one is a usage error. `n` not held is the refusal `capture_unknown`.
 
-The sample feed carries `facts.captures` (how many were taken so far), so a page knows when to ask again without polling.
+The sample feed carries `facts.captures` (how many wakes have been **finished and kept** so far, saved to disk first when the session is a recording), so a page knows when there is a new wake it can read, without polling.
 
 ## Stage 1: the scope view
 

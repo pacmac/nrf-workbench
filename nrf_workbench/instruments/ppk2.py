@@ -483,7 +483,7 @@ class Ppk2Source(object):
             self.reducer, self.started = Reducer(cal), p._mono()
             self.capturer = capture.Capturer()              # the last session's captures stay readable until the next one begins
             capturer = self.capturer
-            self.wakes = capture.WakeSet(lambda: list(capturer.items), cal.amps)
+            self.wakes = capture.WakeSet(lambda: list(capturer.items), cal.amps, hold=SPIKE_SAMPLES)
             self.store, self.unsaved = None, 0
             folder = getattr(s, "wakes_dir", None)
             if folder:                                      # a recording keeps its wakes, and the calibration to decode them without the unit
@@ -523,7 +523,7 @@ class Ppk2Source(object):
             b = r.block(data)
         self.capturer.feed(data, b["t"] - b["dt"], b["mean"], b["hi"], r.lost - before)      # a wake is kept at full rate (docs/specs/ppk2-stages.md)
         elapsed = p._mono() - self.started
-        facts = {"lost": r.lost, "filtered": r.filtered, "rate_low": bool(elapsed >= RATE_AFTER_S and r.words / elapsed < RATE_LOW_HZ), "captures": self.capturer.count}
+        facts = {"lost": r.lost, "filtered": r.filtered, "rate_low": bool(elapsed >= RATE_AFTER_S and r.words / elapsed < RATE_LOW_HZ), "captures": self.capturer.kept}
         if self.unsaved:
             facts["wakes_unsaved"] = self.unsaved
         return Reading(b["t"], b["mean"], "CURR", "A", range=b["range"], lo=b["lo"], hi=b["hi"], n=b["n"], dt=b["dt"], facts=facts)
@@ -564,7 +564,7 @@ def stored_wakes(directory):
         return None
     store = capture.WakeStore(directory)
     items = store.load()
-    return capture.WakeSet(lambda: items, cal.amps, remember=store.remember)
+    return capture.WakeSet(lambda: items, cal.amps, remember=store.remember, hold=SPIKE_SAMPLES)
 
 
 def register(registry, host):

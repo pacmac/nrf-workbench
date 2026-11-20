@@ -122,6 +122,17 @@ class WhenAWakeIsKept(unittest.TestCase):
             c.feed(block(k), float(k), mean, high, 3 if k in (4, 5) else 0)
         self.assertEqual(c.get(1).lost, 6, "the block before the wake and the wake block both lost 3")
 
+    def test_a_wake_is_counted_as_kept_only_when_it_has_finished_and_after_it_was_handed_on(self):
+        c = capture.Capturer()
+        seen = []
+        c.on_close = lambda cap: seen.append((cap.n, c.kept))
+        feed_blocks(c, quiet(100) + hot(2))
+        self.assertEqual((c.count, c.kept), (1, 0), "begun, not finished")
+        for k, (mean, high) in enumerate(quiet(1)):
+            c.feed(block(200), 200.0, mean, high, 0)
+        self.assertEqual((c.count, c.kept), (1, 1))
+        self.assertEqual(seen, [(1, 0)], "on_close runs before the count moves, so what the feed announces can already be read")
+
     def test_consecutive_awake_blocks_are_one_capture(self):
         c = capture.Capturer()
         feed_blocks(c, quiet(100) + hot(6) + quiet(2))
@@ -346,6 +357,62 @@ class KeptWithTheRecording(PathBase):
                            ("meter.stage_set", {"recording": "nope", "name": "a", "start_s": 0.0, "end_s": 1.0}), ("meter.stage_delete", {"recording": "nope", "name": "a"}),
                            ("meter.captures", {"recording": "../x"})):
             self.assertEqual(self.call(name, args).code, "recording_unknown", name)
+
+
+class HoldingOutTheRangeGlitch(unittest.TestCase):
+    """The range switch puts a glitch in the first samples after it (a real RAK wake: 221 mA and 139 mA either side of a 120 mA edge). The session's reduction holds 3 out; so does a wake."""
+
+    def setUp(self):
+        self.cal = ppk2.parse_metadata(REAL_META)
+        self.a0, self.a1 = reference_amps(self.cal, 0, 1000), reference_amps(self.cal, 1, 2000)
+
+    def words(self, plan):
+        return b"".join(__import__("struct").pack("<I", (adc & 0x3FFF) | (rng << 14) | ((i & 63) << 18)) for i, (adc, rng) in enumerate(plan))
+
+    def test_the_three_samples_from_a_range_change_take_the_value_before_them(self):
+        plan = [(1000, 0)] * 10 + [(16000, 1)] * 3 + [(2000, 1)] * 7
+        vals, held = capture.decode(self.words(plan), self.cal.amps, hold=3)
+        self.assertEqual(held, 3)
+        self.assertEqual(len(vals), 20, "a wake keeps its length")
+        self.assertEqual(list(vals[:13]), [self.a0] * 13, "the glitch is not in it")
+        self.assertEqual(list(vals[13:]), [self.a1] * 7)
+        raw, none = capture.decode(self.words(plan), self.cal.amps)
+        self.assertEqual(none, 0)
+        self.assertGreater(max(raw), 10e-3, "without the hold the glitch is the peak")
+
+    def test_a_second_change_inside_the_hold_starts_it_again_and_the_first_sample_is_never_held(self):
+        plan = [(1000, 0), (16000, 1), (16000, 2), (16000, 0), (1000, 0), (1000, 0), (1000, 0)]
+        vals, held = capture.decode(self.words(plan), self.cal.amps, hold=3)
+        self.assertEqual(vals[0], self.a0)
+        self.assertEqual(list(vals[:6]), [self.a0] * 6, "1 changes to 2 changes to 0 changes: held until 3 samples after the last change")
+        self.assertEqual(held, 5)
+
+    def test_no_range_change_holds_nothing(self):
+        vals, held = capture.decode(self.words([(1000, 0)] * 8), self.cal.amps, hold=3)
+        self.assertEqual((held, list(vals)), (0, [self.a0] * 8))
+
+
+class AWakeInTheSessionHasNoGlitchInIt(PathBase):
+    def setUp(self):
+        PathBase.setUp(self)
+        # the wake is in range 1 and its first two samples are the glitch; coming back to range 0 holds three more
+        self.unit.profile = lambda i: ((16000, 1) if i in (60000, 60001) else (2000, 1) if i < self.BLOCKS * 20000 and (i // 20000) % 10 == 3 else (1000, 0))
+        self.a1 = reference_amps(self.cal, 1, 2000)
+
+    def test_the_peak_and_the_held_count_of_a_wake_are_the_sessions_not_the_glitchs(self):
+        self.run_session()
+        row = self.call("meter.captures").data["captures"][0]
+        self.assertAlmostEqual(row["peak"], self.a1, delta=self.a1 * 1e-9)
+        self.assertEqual(row["held"], 6, "3 from the change into range 1 (the two glitch samples and the one after) and 3 from the change back to range 0")
+
+    def test_the_envelope_and_the_stage_table_carry_no_glitch_either(self):
+        self.record_session("rak-1")
+        env = self.call("meter.capture", {"n": 1, "points": 2000}).data
+        self.assertAlmostEqual(env["peak"], self.a1, delta=self.a1 * 1e-9)
+        self.assertAlmostEqual(max(b["max"] for b in env["buckets"]), self.a1, delta=self.a1 * 1e-9)
+        self.call("meter.stage_set", {"recording": "rak-1", "name": "burst", "start_s": -0.01, "end_s": 0.2})
+        s = self.call("meter.stages", {"recording": "rak-1"}).data["stages"][0]
+        self.assertAlmostEqual(s["peak"], self.a1, delta=self.a1 * 1e-9)
 
 
 class StageRules(unittest.TestCase):

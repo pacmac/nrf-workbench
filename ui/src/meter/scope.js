@@ -56,6 +56,8 @@ export function scopeChart(buckets, width, height, { log = false, unit = "A" } =
     ticks: ticks(t0, t1).map((t) => ({ t, x: Number(x(t).toFixed(1)), label: timeLabel(t, span) })),
     bottom: si(axisLo, unit),
     top: si(top, unit),
+    // where a time is (in the chart's own units), held inside the chart, to shade a stage
+    at: (t) => Number(Math.min(Math.max(x(t), PAD), width - PAD).toFixed(1)),
     // the time at a horizontal position (in the chart's own units), for a drag to be turned back into a stretch
     timeAt: (px) => t0 + ((Math.min(Math.max(px, PAD), width - PAD) - PAD) / (width - 2 * PAD)) * span,
   };

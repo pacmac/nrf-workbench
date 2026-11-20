@@ -105,8 +105,8 @@ is not, switching on without source mode is `ppk2_mode`, without the tick `suppl
 with blocks of different `n`, in Python and in the page's code, cross-checked. Mutants on the reducer, the conversion, the range filter, the counter, the gate and the whitelist. Browser: both themes, phone and desktop, the switch, a PPK2
 watch and recording, the lost/filtered line, the mode and supply controls and their tick, the failure shown (`scripts/verify_ppk2_live.py`, 132 checks). The real port wrapper on a pty (bytes in order, never more than asked, the surplus kept,
 silence, a hang-up). **Live, on the real unit, 2026-11-20**: `ppk2.show`; 20 s and 30 s recordings with `lost` 0 and 2,000,000 and 3,000,000 samples; the service at 5.3 % of a core; a stop that leaves the unit quiet; a stepped power-on of an LED with
-its series resistor from 1.8 V in 0.2 V steps (the voltage frame took effect, `filtered` 234 and 213 samples at the range changes, the output off at the end). **Unproven**: that 3 samples is the right hold-out after a range change (the filter ran and
-counted, but what a step looks like inside a block has not been inspected); that the unit does not resume an output after a mode change (hence "unknown again").
+its series resistor from 1.8 V in 0.2 V steps (the voltage frame took effect, `filtered` 234 and 213 samples at the range changes, the output off at the end). **Seen since, on a RAK waking from 33 µA through 4 mA to 120 mA (2026-11-20)**: the glitch at a range
+change is 2 samples (221 mA and 139 mA, the plateau 120 mA), so a hold-out of 3 covers it (`ppk2-stages.md`, "The range glitch"). One edge, one range pair: **not proven for every step**. **Unproven**: that the unit does not resume an output after a mode change (hence "unknown again").
 
 ## Files this spec allows
 

@@ -95,7 +95,8 @@ class Capturer(object):
         self.keep, self.max_blocks = keep, max_blocks
         self.level = Level()
         self.items = collections.deque(maxlen=keep)
-        self.count = 0                                        # captures taken so far, which is also the number of the last
+        self.count = 0                                        # captures begun so far, which is also the number of the last
+        self.kept = 0                                         # captures finished and kept: what the feed reports, so a page asks only once a wake can be read
         self._prev = None                                     # (data, t0, lost) of the block before the current one
         self._open = None
         self.on_close = None                                  # called with each capture as it is kept (the profiler's source saves it to disk here)
@@ -132,7 +133,8 @@ class Capturer(object):
         done, self._open = self._open, None
         self.items.append(done)
         if self.on_close is not None:
-            self.on_close(done)
+            self.on_close(done)                                # saved before it is counted: when the feed says it exists, it can be read
+        self.kept += 1
 
     def get(self, n):
         for c in self.items:
@@ -145,13 +147,32 @@ class Capturer(object):
 
 
 # -- decoding -----------------------------------------------------------------------------------
-def decode(data, amps):
-    """The amps of each word in `data` (a multiple of 4 bytes), by the calibration's `amps(key)` where key is the word's range and ADC bits."""
+def decode(data, amps, hold=0):
+    """(the amps of each word in `data`, a multiple of 4 bytes, and how many were held). `amps(key)` is the calibration's conversion of the word's range and ADC bits.
+    The unit's range switch puts a glitch in the first samples after it (measured on the RAK, 2026-11-20: 221 mA and 139 mA either side of a 120 mA edge, the plateau 120 mA), which
+    the session's own reduction holds out (`hold` samples from the one where the range changes). Here the held samples take the value before them, so a wake keeps its length and
+    its peak and charge are the session's."""
     words = array("I")
     words.frombytes(data)
     if sys.byteorder == "big":
         words.byteswap()
-    return array("d", [amps(w & WORD_MASK) for w in words])
+    if not hold:
+        return array("d", [amps(w & WORD_MASK) for w in words]), 0
+    out, last_range, skip, held, prev = [], None, 0, 0, None
+    for w in words:
+        key = w & WORD_MASK
+        r = key >> 14
+        if last_range is not None and r != last_range:
+            skip = hold
+        last_range = r
+        if skip > 0:                                       # only ever set after the first sample, so there is a value before it to hold
+            out.append(prev)
+            skip -= 1
+            held += 1
+        else:
+            prev = amps(key)
+            out.append(prev)
+    return array("d", out), held
 
 
 def wake_start(values, level):
@@ -249,8 +270,8 @@ class WakeSet(object):
     """The wakes of one session (in memory) or of one finished recording (on disk): the list, an exact envelope of any stretch of one, and the stage table across all of them.
     `items()` gives the captures, `amps` is the calibration's conversion of a (range, ADC) key. One wake is held decoded at a time (500,000 doubles are 4 MB, twenty would be 80)."""
 
-    def __init__(self, items, amps, remember=None):
-        self._items, self._amps, self._remember = items, amps, remember
+    def __init__(self, items, amps, remember=None, hold=0):
+        self._items, self._amps, self._remember, self._hold = items, amps, remember, hold
         self._decoded, self._lock = None, threading.Lock()
 
     def numbers(self):
@@ -266,11 +287,11 @@ class WakeSet(object):
         with self._lock:
             if self._decoded is not None and self._decoded[0] is c:
                 return self._decoded[1], self._decoded[2]
-            values = decode(c.data, self._amps)
+            values, held = decode(c.data, self._amps, self._hold)
             start = wake_start(values, c.level)
             self._decoded = (c, values, start)
-            if c.stats is None:
-                c.stats = {"wake_at_s": start / float(SAMPLE_RATE_HZ), "mean": sum(values) / len(values), "peak": max(values)}
+            if c.stats is None or "held" not in c.stats:
+                c.stats = {"wake_at_s": start / float(SAMPLE_RATE_HZ), "mean": sum(values) / len(values), "peak": max(values), "held": held}
                 if self._remember is not None:
                     self._remember(c)
             return values, start
@@ -278,10 +299,10 @@ class WakeSet(object):
     def rows(self):
         out = []
         for c in self._items():
-            if c.stats is None:
+            if c.stats is None or "held" not in c.stats:
                 self._values(c)
             out.append({"n": c.n, "t0": round(c.t0, 6), "wake_at_s": c.stats["wake_at_s"], "duration_s": c.samples / float(SAMPLE_RATE_HZ), "samples": c.samples,
-                        "lost": c.lost, "truncated": c.truncated, "peak": c.stats["peak"], "mean": c.stats["mean"]})
+                        "lost": c.lost, "truncated": c.truncated, "peak": c.stats["peak"], "mean": c.stats["mean"], "held": c.stats["held"]})
         return out
 
     def envelope(self, n, t0=None, t1=None, points=POINTS_DEFAULT):
@@ -301,7 +322,8 @@ class WakeSet(object):
         seg = values[i0:i1]
         return {"n": c.n, "wake_at_s": start / rate, "t0": (i0 - start) / rate, "t1": (i1 - start) / rate, "points": len(buckets), "width_s": width / rate,
                 "buckets": [{"t0": (b["a"] - start) / rate, "t1": (b["b"] - start) / rate, "min": b["min"], "max": b["max"], "mean": b["mean"], "n": b["n"]} for b in buckets],
-                "charge_c": sum(seg) / rate, "mean": sum(seg) / len(seg), "peak": max(seg), "samples": len(seg), "lost": c.lost, "truncated": c.truncated}
+                "charge_c": sum(seg) / rate, "mean": sum(seg) / len(seg), "peak": max(seg), "samples": len(seg), "lost": c.lost, "truncated": c.truncated,
+                "held": c.stats["held"]}
 
     def stage_table(self, stages, volts=None):
         """For each stage, over every wake: the stretch's mean current, peak and charge in each wake, and from them the mean, the spread across wakes, the peak, the mean charge and the
