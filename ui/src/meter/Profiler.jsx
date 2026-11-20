@@ -77,7 +77,7 @@ export function Profiler({ commands, shown, running, session, reload, onDone }) 
         {facts ? <p className="break-words text-[15px] font-medium" aria-label="Profiler">{facts}</p>
           : shown ? <ResultView outcome={shown} /> : <p className="text-[13px] text-slate-600 dark:text-slate-400">Asking the profiler…</p>}
         {d && !running && d.vdd_from && d.supply !== "on" && (
-          <p className="text-[13px] text-slate-600 dark:text-slate-400">The unit does not report its supply voltage: {d.vdd_mv} mV is {d.vdd_from}.</p>
+          <p className="text-[13px] text-slate-600 dark:text-slate-400">The unit reports its supply voltage only when something connects to it, so {d.vdd_mv} mV is {d.vdd_from}.</p>
         )}
         <p className="text-[13px] text-slate-600 dark:text-slate-400">
           <strong>Ampere mode</strong> measures a board that has its own supply, wired through the unit. <strong>Source mode</strong> lets the unit power the board, and it does not

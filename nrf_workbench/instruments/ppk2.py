@@ -273,8 +273,8 @@ class Ppk2(object):
         self.host, self._mono = host, monotonic
         self._lock = threading.Lock()
         self._busy = False
-        self._supply = None                                 # True / False once THIS service switched it; None is unknown (the unit does not report it)
-        self._vdd = None                                    # the source voltage this service set, in mV; None until it does (the unit does not report it back)
+        self._supply = None                                 # True / False once THIS service switched it; None is unknown (the unit never reports its output)
+        self._vdd = None                                    # the source voltage this service set, in mV; None until it does (the unit reports it only when connected to)
 
     def _setting(self):
         return self.host.config["instruments"]["ppk2"]
@@ -320,14 +320,22 @@ class Ppk2(object):
                 return
 
     def _meta(self, port):
-        port.write(_frame(META))
-        end = self._mono() + META_CEILING_S
-        text = b""
-        while b"END" not in text and self._mono() < end:
-            text += port.read(4096)
-        if b"END" not in text:
-            raise Ppk2Error("the PPK2 did not answer the metadata query within %.1f s" % META_CEILING_S)
-        return parse_metadata(text.decode("utf-8", "replace"))
+        """The unit's calibration block. Asked back to back with an earlier conversation it once answered with a fragment (no R0, on the bench, 2026-11-20): a block that does
+        not parse is dropped, the port drained, and the query sent once more; only a second bad answer is an error."""
+        for attempt in (1, 2):
+            port.write(_frame(META))
+            end = self._mono() + META_CEILING_S
+            text = b""
+            while b"END" not in text and self._mono() < end:
+                text += port.read(4096)
+            if b"END" not in text:
+                raise Ppk2Error("the PPK2 did not answer the metadata query within %.1f s" % META_CEILING_S)
+            self._drain(port)
+            try:
+                return parse_metadata(text.decode("utf-8", "replace"))
+            except Ppk2Error:
+                if attempt == 2:
+                    raise
 
     def _ready(self, port):
         """Stop any stream a dead process left, drain it, then read the calibration: the unit is quiet and known."""
@@ -410,8 +418,9 @@ class Ppk2(object):
                     volts = mv if mv is not None else (self._vdd if self._vdd is not None else cal.vdd_mv)
                     return Result.refused("supply_unconfirmed", "switching on powers whatever is wired to the PPK2's output at %g mV: say accept_supply when that is meant" % volts,
                                           {"mv": volts})
-            # The voltage goes first and the switch second, so the output never comes on at an older voltage. The unit does not report either back: its metadata's VDD is the
-            # figure it started with and did not change after a voltage command (seen on the bench, 2026-11-20), so what was set is remembered here and said so.
+            # The voltage goes first and the switch second, so the output never comes on at an older voltage. The unit cannot confirm either in this conversation: its metadata's
+            # VDD is a snapshot it reports when something connects to it, and stayed the old figure after a voltage command through 3 s of polling and through a reopen 0.4 s
+            # later, yet showed the new one to a fresh process (bench, 2026-11-20). So what was set is remembered here and said so.
             if mv is not None:
                 port.write(voltage_frame(int(mv)))
                 self._vdd = int(mv)
@@ -419,7 +428,7 @@ class Ppk2(object):
             self._supply = bool(on)
             after = self._ready(port)
             data = self._facts(after, node, serial)
-            return Result.success(data, "supply %s at %g mV (set by this service: the unit does not report its voltage back)" % ("on" if on else "off", data["vdd_mv"]))
+            return Result.success(data, "supply %s at %g mV (set by this service: the unit reports its voltage only when it is connected to)" % ("on" if on else "off", data["vdd_mv"]))
         return self._converse(work)
 
     # -- the session ---------------------------------------------------------------------------------

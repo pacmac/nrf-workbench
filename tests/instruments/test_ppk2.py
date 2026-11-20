@@ -556,6 +556,50 @@ class Writing(Base):
         self.assertTrue(self.unit.closed)
 
 
+class Fragments(Base):
+    """On the bench an answer to the metadata query once came back without its first lines when asked straight after another conversation (2026-11-20)."""
+
+    def fragment_once(self):
+        unit, real = self.unit, self.unit.write
+        state = {"n": 0}
+
+        def write(data):
+            real(data)
+            if tuple(bytearray(data)) == (ppk2.META,):
+                state["n"] += 1
+                if state["n"] == 1:                                  # the first answer loses everything before R1
+                    text = unit.pending.decode()
+                    unit.pending = text[text.index("R1:"):].encode()
+        unit.write = write
+        return state
+
+    def test_a_fragment_is_dropped_and_the_query_asked_again(self):
+        state = self.fragment_once()
+        r = self.ppk.show(self.ctx())
+        self.assertEqual((r.code, r.data["mode"]), ("ok", "source"))
+        self.assertEqual(state["n"], 2)
+
+    def test_two_bad_answers_in_a_row_are_a_failure_not_a_guess(self):
+        real = self.unit.write
+
+        def write(data):
+            real(data)
+            if tuple(bytearray(data)) == (ppk2.META,):
+                self.unit.pending = b"VDD: 4000\nEND\n"
+        self.unit.write = write
+        r = self.ppk.show(self.ctx())
+        self.assertEqual((r.cls, r.code), ("failed", "no_reply"))
+        self.assertIn("has no", r.message)
+
+    def test_a_session_survives_a_fragment_too(self):
+        self.fragment_once()
+        s = self.start_sampler()
+        s.start("watch", 60, source="ppk2")
+        self.assertTrue(until(lambda: s.session()["stats"]["readings"] > 0))
+        self.assertEqual(s.session()["state"], "watching")
+        s.stop()
+
+
 class Gate(Base):
     def test_leaving_source_mode_with_the_output_unknown_is_refused_and_writes_nothing(self):
         r = self.ppk.set_mode(self.ctx(), "ampere")
@@ -640,7 +684,7 @@ class Gate(Base):
         self.unit.ignore_voltage = True
         r = self.ppk.set_supply(self.ctx(), False, mv=2500)
         self.assertEqual((r.code, r.data["vdd_mv"], r.data["vdd_from"]), ("ok", 2500, "set by this service"))
-        self.assertIn("does not report its voltage back", r.message)
+        self.assertIn("only when it is connected to", r.message)
         shown = self.ppk.show(self.ctx()).data
         self.assertEqual((shown["vdd_mv"], shown["vdd_from"]), (2500, "set by this service"))
 

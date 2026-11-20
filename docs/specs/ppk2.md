@@ -41,10 +41,12 @@ then "I have plugged it in". Extends `meter-page.md`; where they differ this one
      off needs none either. Asking for the mode the unit is already in writes nothing. Coming back into source mode the output is **unknown again** (the unit may resume an output it had on and does not say so).
    - `ppk2.supply` sets the voltage (800 to 5000 mV, refused `voltage_unsafe` outside) and switches the output. **Switching on** needs source mode (`ppk2_mode` refuses otherwise) and `accept_supply` true (`supply_unconfirmed`). Off needs no tick.
      The voltage is written **before** the switch, so the output never comes on at an older voltage.
-   - **The unit does not report its voltage back.** The first design read the metadata's `VDD` after a voltage command and failed if it differed. On the real unit `VDD` stayed 4000 after the command (it is the figure at connect), so the check could
-     never pass, and it ran after the switch: a first stepped ramp into an LED left the output on for a moment at an unverified voltage until its `finally` switched it off. The check is gone. What was set is remembered by the service and shown with
-     `vdd_from` ("set by this service", or "the unit's own figure when it was read" before any); the effect is the proof: the LED's current rose with the set voltage (about 1 uA at 2.2 V, 30 uA at 2.4 V, milliamps at 2.6 V, 2026-11-20). The frame is
-     the voltage in mV as two bytes, high then low (the reference library's offset arithmetic works out to exactly that).
+   - **The unit cannot confirm its voltage in the same conversation.** The first design read the metadata's `VDD` after a voltage command and failed if it differed. On the real unit `VDD` stayed the old figure after the command: through 3 s of
+     polling on the open port and through a close and reopen 0.4 s later, yet a fresh process a moment afterwards read the new one. It is a snapshot the unit reports when something connects to it, so the check could never pass, and it ran after
+     the switch: a first stepped ramp into an LED left the output on for a moment at an unverified voltage until its `finally` switched it off. The check is gone. What was set is remembered by the service and shown with `vdd_from` ("set by this
+     service", or "the unit's own figure when it was read" before any, which after a restart is the last voltage set); the effect is the proof: the LED's current rose with the set voltage (about 1 uA at 2.2 V, 30 uA at 2.4 V, milliamps at 2.6 V,
+     2026-11-20). The frame is the voltage in mV as two bytes, high then low (the reference library's offset arithmetic works out to exactly that). What makes the unit refresh that snapshot (a DTR change on connect is the likely trigger) is not known.
+   - **An answer to the metadata query once came back without its first lines** (no `R0`), asked straight after another conversation. A block that does not parse is dropped, the port drained and the query sent once more; a second bad answer is `no_reply`.
    - No other byte is ever sent: a whitelist of the six command shapes, and a test fails if any other can leave the module.
 
 ## Configuration
