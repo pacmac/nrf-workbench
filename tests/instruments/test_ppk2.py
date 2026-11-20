@@ -635,10 +635,24 @@ class Gate(Base):
         for mv in (800, 5000):
             self.assertEqual(self.ppk.set_supply(self.ctx(), False, mv=mv).code, "ok", mv)
 
-    def test_a_voltage_the_unit_does_not_report_back_is_a_failure(self):
+    def test_the_unit_does_not_report_its_voltage_back_so_what_was_set_is_remembered_and_said(self):
+        """On the real unit the metadata's VDD stayed 4000 after a voltage command (2026-11-20): a read-back check could never pass, and it ran AFTER the switch."""
         self.unit.ignore_voltage = True
         r = self.ppk.set_supply(self.ctx(), False, mv=2500)
-        self.assertEqual((r.cls, r.code), ("failed", "no_reply"))
+        self.assertEqual((r.code, r.data["vdd_mv"], r.data["vdd_from"]), ("ok", 2500, "set by this service"))
+        self.assertIn("does not report its voltage back", r.message)
+        shown = self.ppk.show(self.ctx()).data
+        self.assertEqual((shown["vdd_mv"], shown["vdd_from"]), (2500, "set by this service"))
+
+    def test_before_this_service_sets_a_voltage_the_units_own_figure_is_shown_and_labelled(self):
+        shown = self.ppk.show(self.ctx()).data
+        self.assertEqual((shown["vdd_mv"], shown["vdd_from"]), (4000, "the unit's own figure when it was read"))
+
+    def test_the_voltage_is_written_before_the_switch_and_a_refusal_writes_neither(self):
+        self.ppk.set_supply(self.ctx(), True, mv=2200, accept_supply=True)
+        writes = [w for w in self.unit.writes if w[0] in (ppk2.VOLTAGE, ppk2.POWER)]
+        self.assertEqual([w[0] for w in writes], [ppk2.VOLTAGE, ppk2.POWER])
+        self.assertEqual(writes[0], (0x0D, 2200 >> 8, 2200 & 255), "the frame is the voltage in mV as two bytes, high then low")
 
 
 class Session(Base):

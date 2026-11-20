@@ -273,6 +273,7 @@ class Ppk2(object):
         self._lock = threading.Lock()
         self._busy = False
         self._supply = None                                 # True / False once THIS service switched it; None is unknown (the unit does not report it)
+        self._vdd = None                                    # the source voltage this service set, in mV; None until it does (the unit does not report it back)
 
     def _setting(self):
         return self.host.config["instruments"]["ppk2"]
@@ -361,8 +362,9 @@ class Ppk2(object):
         return "unknown" if self._supply is None else ("on" if self._supply else "off")
 
     def _facts(self, cal, node, serial):
-        return {"reachable": True, "serial": serial, "port": node, "mode": cal.mode or "unknown", "vdd_mv": cal.vdd_mv, "calibrated": cal.calibrated,
-                "hw": cal.hw, "supply": self._supply_word()}
+        return {"reachable": True, "serial": serial, "port": node, "mode": cal.mode or "unknown",
+                "vdd_mv": self._vdd if self._vdd is not None else cal.vdd_mv, "vdd_from": "set by this service" if self._vdd is not None else "the unit's own figure when it was read",
+                "calibrated": cal.calibrated, "hw": cal.hw, "supply": self._supply_word()}
 
     # -- commands -------------------------------------------------------------------------------------
     def show(self, ctx):
@@ -404,16 +406,19 @@ class Ppk2(object):
                     return Result.refused("ppk2_mode", "the PPK2 is in %s mode: only source mode supplies a board. Set it with ppk2.mode" % (cal.mode or "an unknown"),
                                           {"mode": cal.mode or "unknown"})
                 if not accept_supply:
-                    return Result.refused("supply_unconfirmed", "switching on powers whatever is wired to the PPK2's output at %g mV: say accept_supply when that is meant"
-                                          % (mv if mv is not None else cal.vdd_mv), {"mv": mv if mv is not None else cal.vdd_mv})
+                    volts = mv if mv is not None else (self._vdd if self._vdd is not None else cal.vdd_mv)
+                    return Result.refused("supply_unconfirmed", "switching on powers whatever is wired to the PPK2's output at %g mV: say accept_supply when that is meant" % volts,
+                                          {"mv": volts})
+            # The voltage goes first and the switch second, so the output never comes on at an older voltage. The unit does not report either back: its metadata's VDD is the
+            # figure it started with and did not change after a voltage command (seen on the bench, 2026-11-20), so what was set is remembered here and said so.
             if mv is not None:
                 port.write(voltage_frame(int(mv)))
+                self._vdd = int(mv)
             port.write(_frame(POWER, 1 if on else 0))
             self._supply = bool(on)
             after = self._ready(port)
-            if mv is not None and abs(after.vdd_mv - mv) > 1:
-                return Result.failed("no_reply", "the PPK2 was told %d mV and reports %g mV" % (mv, after.vdd_mv), {"vdd_mv": after.vdd_mv})
-            return Result.success(self._facts(after, node, serial), "supply %s at %g mV" % ("on" if on else "off", after.vdd_mv))
+            data = self._facts(after, node, serial)
+            return Result.success(data, "supply %s at %g mV (set by this service: the unit does not report its voltage back)" % ("on" if on else "off", data["vdd_mv"]))
         return self._converse(work)
 
     # -- the session ---------------------------------------------------------------------------------
