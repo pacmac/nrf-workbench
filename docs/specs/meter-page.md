@@ -88,6 +88,28 @@ a live session, and it is exact to within one bucket at each end (a bucket is 0.
 With fewer than two wakes the page says how many it found and that a cycle needs two, and shows no life. In cycle mode the chart marks each wake's start with a thin vertical line, so what was found can be seen.
 This does not model the battery (a cell's voltage falls as it drains, and its capacity depends on the load): it is capacity divided by the current, as before.
 
+### The cycle table
+
+Peter, 2026-11-20: "we are also interested in the sleep and wake period durations and power consumed during those periods, so this probably needs to be displayed as a table as well as a chart".
+With the cycle choice on, a table sits under the battery-life line, and the chart shades each wake it found (as well as the dashed mark at its start). Everything is over the same whole cycles as the estimate
+(first wake start to last wake start), so **the rows add up to the cycle exactly**.
+
+| row | time per cycle | share of time | average current | charge per cycle | share of charge | energy per cycle |
+|---|---|---|---|---|---|---|
+| Wake (×N wakes) | mean over the wakes, and the shortest to longest | wake time / period | wake charge / wake time | mean over the wakes | of the cycle's | charge × volts |
+| Sleep | period − wake time | the rest | sleep charge / sleep time | cycle charge − wake charge | the rest | charge × volts |
+| Cycle | period | 100 % | the estimate | cycle charge | 100 % | charge × volts |
+
+- **A wake's span** is from the start of its first bucket to the start of the bucket after its last (a joined wake includes the sleep between its bursts). Its charge is each of those buckets' mean times its real time span, exact for what was
+  sampled. So a wake's time is placed to **one bucket at each end**, and the bucket still holds some sleep: the table says so under it.
+- **A duration is not claimed beyond that.** A wake that fills one bucket was shorter than two (it began somewhere in that bucket and ended in it or the next): the table says "under {2 buckets}". From two buckets it says "about {n buckets}".
+  The wake's share of the cycle is then "under" the same bound (2 buckets / period), its average is "at least" what is shown (the bucket also holds sleep), and the Sleep row says "over" the rest, so the two never claim more than the whole.
+  A radio burst of 30 ms therefore reads "under 0.4 s" at 0.2 s buckets, and the charge beside it is still exact. Exact short durations come from the capture of single wakes (`ppk2-stages.md`).
+- **The wake's peak** is the highest sample in its buckets, shown beside the average.
+- **Energy** is charge times the supply voltage, shown only when it is known: the profiler in source mode with its output on, at the voltage the service set. The multimeter does not know the voltage, so it shows charge only, and the table says why.
+- **Units:** charge in µAh (mAh from 0.1 mAh), energy in µWh (mWh from 0.1 mWh), time in the words the page already uses. Charge in coulombs is mAh × 3.6.
+- With no cycle found there is no table: the line that says why stands.
+
 ## Deferred: `meter.configure`
 
 Set function (`dcv acv dci aci res fres freq cap`), range (a number or `auto`) and integration time from the page. Needs: the guard (while the meter is in a current function, leaving it or changing the range can open the
@@ -106,7 +128,9 @@ Battery life (`tests/dashboard/test_meter_cycle.py`, Node on envelopes the serve
 with unevenly spaced readings (time-weighted); it differs from the window average when the window holds part of a cycle; a burst shorter than a bucket is found by the highest sample; a two-burst wake is one wake;
 noise on a steady load, noise on the sleep level, one wake, a negative current, a device awake most of the time and a small rise over a 3 mA baseline each give no cycle or no false wakes, with the reason; irregular gaps are
 said to be so and the estimate stands; a wake in progress at the end changes nothing; too few buckets and a bucket still filling do not crash; the chart marks only times it shows. 15 mutants of `cycle.js`, none survive.
-Browser (`scripts/verify_ppk2_live.py`): the choice starts on the whole recording, pressing the cycle shows "Wakes every 2 s (3 cycles counted)" with the average and life, the chart marks the four wakes, pressing the
+Cycle table (same file): the Wake and Sleep rows add up to the cycle's time and charge exactly and match the raw readings; a one-reading wake is flagged unresolved with its charge and peak exact, also through merged buckets; wakes of
+different lengths give the mean and the shortest to longest; a two-burst wake takes in the sleep between; a meter stall inside a wake counts in its time and charge (time-weighted); the spans are every wake; the text helpers; shades of
+a visible minimum width. 12 more mutants, none survive. Browser (`scripts/verify_ppk2_live.py`): the choice starts on the whole recording, pressing the cycle shows "Wakes every 2 s (3 cycles counted)" with the average and life, the chart marks the four wakes, pressing the
 whole recording drops them, no sideways scroll, both themes, phone and desktop.
 
 ## Files this spec allows

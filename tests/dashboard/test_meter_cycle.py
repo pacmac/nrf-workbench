@@ -193,6 +193,97 @@ class FindingTheCycle(unittest.TestCase):
 
 
 @unittest.skipUnless(NODE, "node is not installed")
+class TheTable(unittest.TestCase):
+    def test_the_rows_add_up_to_the_cycle_exactly_and_match_the_raw_readings(self):
+        values = pattern(60, 1, 1800, offset_s=5)                        # a 1 s wake of 20 mA every 60 s, 10 uA between
+        r = find(values)
+        w, s = r["phases"]["wake"], r["phases"]["sleep"]
+        self.assertAlmostEqual(w["time"], 1.0, places=9)
+        self.assertAlmostEqual(w["charge"], 1.0 * WAKE, delta=1e-12)
+        self.assertAlmostEqual(w["mean"], WAKE, delta=1e-12)
+        self.assertEqual(w["peak"], WAKE)
+        self.assertAlmostEqual(s["time"], 59.0, places=9)
+        self.assertAlmostEqual(s["charge"], 59.0 * SLEEP, delta=1e-12)
+        self.assertAlmostEqual(s["mean"], SLEEP, delta=1e-15)
+        self.assertAlmostEqual(w["time"] + s["time"], r["period"], places=9)
+        self.assertAlmostEqual(w["charge"] + s["charge"], r["charge"] / r["cycles"], delta=1e-12)
+        self.assertEqual(w["widest"], 5)
+
+    def test_a_wake_of_one_reading_is_flagged_unresolved_but_its_charge_and_peak_are_exact(self):
+        values = pattern(60, 0.2, 1800, offset_s=5)
+        r = find(values)                                                  # one reading per bucket here
+        w = r["phases"]["wake"]
+        self.assertEqual(w["widest"], 1)
+        self.assertAlmostEqual(w["charge"], 0.2 * WAKE, delta=1e-12)
+        self.assertEqual(w["peak"], WAKE)
+        merged = find(values, max_buckets=64)                             # buckets of 6.4 s: the wake is inside one, which also holds sleep
+        wm = merged["phases"]["wake"]
+        self.assertEqual(wm["widest"], 1)
+        self.assertEqual(wm["peak"], WAKE, "the highest sample survives a merge")
+        self.assertAlmostEqual(wm["time"] + merged["phases"]["sleep"]["time"], merged["period"], places=9)
+        self.assertAlmostEqual(wm["charge"] + merged["phases"]["sleep"]["charge"], merged["charge"] / merged["cycles"], delta=1e-12)
+
+    def test_wakes_of_different_lengths_give_the_mean_and_the_shortest_to_longest(self):
+        values = [SLEEP] * 3000
+        for t, n in ((10, 5), (70, 10), (130, 5), (190, 10), (250, 5)):   # 1 s and 2 s wakes
+            for k in range(n):
+                values[int(t / STEP) + k] = WAKE
+        r = find(values)
+        w = r["phases"]["wake"]
+        self.assertEqual(r["cycles"], 4)
+        self.assertAlmostEqual(w["shortest"], 1.0, places=9)
+        self.assertAlmostEqual(w["longest"], 2.0, places=9)
+        self.assertAlmostEqual(w["time"], 1.5, places=9)                  # the first four wakes: 1, 2, 1, 2 s
+        self.assertEqual(w["widest"], 10)
+
+    def test_a_stall_inside_a_wake_is_part_of_its_time_and_charge(self):
+        values = pattern(60, 1, 1800, offset_s=5)
+        times = [i * STEP + (3.0 if i > 28 else 0.0) for i in range(len(values))]     # the meter stalls 3 s after the third reading of the first wake (readings 25 to 29)
+        e = Envelope(100000)
+        for t, v in zip(times, values):
+            e.add(t, v)
+        r = run("return c.findCycle(data);", e.snapshot())
+        first = [i for i in range(len(values)) if values[i] == WAKE][:5]
+        want_time = times[first[-1] + 1] - times[first[0]]
+        want_charge = sum(values[i] * (times[i + 1] - times[i]) for i in first)
+        self.assertTrue(r["found"])
+        self.assertAlmostEqual(r["phases"]["wake"]["longest"], want_time, places=9)
+        self.assertAlmostEqual(r["phases"]["wake"]["longest"] - r["phases"]["wake"]["shortest"], 3.0, places=9)
+        self.assertGreater(want_charge / (5 * STEP * WAKE), 1.5, "the stall must add charge, or this proves nothing")
+        total = r["phases"]["wake"]["charge"] * r["cycles"]               # the first wake, stalled, and the four others (the fifth starts at the end of the span)
+        self.assertAlmostEqual(total, want_charge + 4 * (5 * STEP * WAKE), delta=1e-12)
+
+    def test_a_wake_of_two_bursts_takes_in_the_sleep_between_them(self):
+        values = [SLEEP] * 1800
+        for t in (10, 70, 130, 190):
+            i = int(t / STEP)
+            values[i] = WAKE
+            values[i + 5] = WAKE                                          # a second burst 1 s after the first
+        r = find(values)
+        self.assertAlmostEqual(r["phases"]["wake"]["time"], 1.2, places=9)
+
+    def test_the_spans_are_every_wake_and_start_where_the_marks_do(self):
+        values = pattern(60, 1, 1800, offset_s=5)
+        r = find(values)
+        self.assertEqual(len(r["spans"]), r["wakes"])
+        self.assertEqual([s["t0"] for s in r["spans"]], r["starts"])
+        self.assertTrue(all(abs((s["t1"] - s["t0"]) - 1.0) < 1e-9 for s in r["spans"][:-1]))
+
+    def test_the_text_helpers(self):
+        t = run("return [f.chargeText(0.0036 * 7.3), f.chargeText(1.8), f.chargeText(0.0000036 * 5), f.chargeText(null), f.energyText(0.0036, 4), f.energyText(1.8, 3.3), f.energyText(1, null),"
+                " f.lapse(0.2), f.lapse(0.05), f.lapse(12), f.lapse(90)];", {})
+        self.assertEqual(t, ["7.3 µAh", "0.5 mAh", "5 nAh", "—", "4 µWh", "1.65 mWh", "—", "0.2 s", "0.05 s", "12 s", "1 min 30 s"])
+
+    def test_the_chart_shades_the_wakes_with_a_visible_minimum_width(self):
+        buckets = envelope(pattern(60, 0.2, 1800, offset_s=5))
+        r = run("return c.findCycle(data);", buckets)
+        chart = run("return f.bandChart(data.b, 480, 120, 'A', [], data.spans);", {"b": buckets, "spans": r["spans"] + [{"t0": -9, "t1": -8}]})
+        self.assertEqual(len(chart["shades"]), r["wakes"])
+        self.assertTrue(all(s["w"] >= 2 and 4 <= s["x"] <= 476 for s in chart["shades"]))
+        self.assertEqual(run("return f.bandChart(data, 480, 120, 'A');", buckets)["shades"], [])
+
+
+@unittest.skipUnless(NODE, "node is not installed")
 class MarksOnTheChart(unittest.TestCase):
     def test_marks_are_x_positions_inside_the_chart_and_only_for_times_it_shows(self):
         buckets = envelope(pattern(60, 1, 1800, offset_s=5))

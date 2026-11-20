@@ -5,7 +5,8 @@ import { Button, Card, Field, Json, PageHeader, cx, inputClass } from "./ui.jsx"
 import { ResultView } from "./Commands.jsx";
 import { Envelope, Stats } from "./meter/envelope.js";
 import { findCycle } from "./meter/cycle.js";
-import { batteryLife, bandChart, clock, headline, si, words } from "./meter/format.js";
+import { CycleTable } from "./meter/Cycle.jsx";
+import { batteryLife, bandChart, clock, headline, lapse, si } from "./meter/format.js";
 import { Profiler } from "./meter/Profiler.jsx";
 
 // The Meter page (docs/specs/meter-page.md, docs/specs/ppk2.md): power over minutes to hours, from the multimeter or the Nordic Power Profiler. A session runs on the Pi;
@@ -17,13 +18,16 @@ const isCurrent = (fn) => /^CURR/i.test(fn || "");
 const RUNNING = ["watching", "recording"];
 const SOURCES = { meter: "Multimeter", ppk2: "Power profiler" };
 
-function Chart({ buckets, unit, marks = [] }) {
-  const c = bandChart(buckets, 480, 120, unit, marks);
+function Chart({ buckets, unit, marks = [], spans = [] }) {
+  const c = bandChart(buckets, 480, 120, unit, marks, spans);
   if (!c) return <p className="rounded-md bg-slate-100 px-3 py-6 text-center text-[13px] text-slate-600 dark:bg-slate-950 dark:text-slate-400">No readings yet. Press Watch or Record.</p>;
   return (
     <figure className="space-y-1">
       <svg viewBox="0 0 480 120" preserveAspectRatio="none" role="img" aria-label={`Readings over ${clock(c.span)}, from ${c.lo} to ${c.hi}`}
         className="h-40 w-full rounded-md bg-slate-100 dark:bg-slate-950">
+        {c.shades.map((s) => (
+          <rect key={s.x} x={s.x} y="0" width={s.w} height="120" data-testid="wake-span" className="fill-amber-200/70 dark:fill-amber-500/25" />
+        ))}
         <polygon points={c.band} className="fill-blue-200 stroke-blue-300 dark:fill-blue-900 dark:stroke-blue-700" strokeWidth="1" vectorEffect="non-scaling-stroke" />
         <polyline points={c.mean} fill="none" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" className="stroke-blue-700 dark:stroke-blue-300" />
         {c.marks.map((x) => (
@@ -39,15 +43,13 @@ function Chart({ buckets, unit, marks = [] }) {
   );
 }
 
-const span = (s) => (s < 10 ? `${Number(s.toFixed(1))} s` : words(s));
-
 // What the battery-life line says: the whole recording's average, or the wake/sleep cycle found in it (cycle.js), and why none was found when none was.
 function lifeSentence(lifeBy, cyc, life, unit) {
   if (lifeBy === "whole") return life ? `At the average of the whole recording it lasts ${life}.` : "Type a capacity to see how long it lasts at the average above.";
   if (!cyc) return "";
   if (cyc.found) {
-    const gaps = cyc.regular ? "" : `, gaps from ${span(cyc.shortest)} to ${span(cyc.longest)}, so not regular`;
-    return `Wakes every ${span(cyc.period)} (${cyc.cycles} ${cyc.cycles === 1 ? "cycle" : "cycles"} counted${gaps}). Average over them ${si(cyc.mean, unit)}. `
+    const gaps = cyc.regular ? "" : `, gaps from ${lapse(cyc.shortest)} to ${lapse(cyc.longest)}, so not regular`;
+    return `Wakes every ${lapse(cyc.period)} (${cyc.cycles} ${cyc.cycles === 1 ? "cycle" : "cycles"} counted${gaps}). Average over them ${si(cyc.mean, unit)}. `
       + (life ? `It lasts ${life}.` : "Type a capacity to see how long it lasts.");
   }
   if (cyc.reason === "short") return "Record a little longer: a cycle needs at least two wakes.";
@@ -203,6 +205,8 @@ export default function MeterPage({ commands, onDone }) {
   const figures = stats.current.toObject(current);
   const capacityMah = Number(capacity);
   const buckets = env.current.snapshot();
+  const unitFacts = profiler && profiler.body && profiler.body.data;           // what the unit said when last asked (it cannot be asked while a session holds it)
+  const volts = shownSource === "ppk2" && unitFacts && unitFacts.mode === "source" && unitFacts.supply === "on" ? unitFacts.vdd_mv / 1000 : null;
   const cyc = current && lifeBy === "cycle" ? findCycle(buckets) : null;
   const life = current ? batteryLife(lifeBy === "cycle" ? (cyc && cyc.found ? cyc.mean : null) : figures.mean, capacityMah) : "";
   const sd = setting && setting.body && setting.body.data && Object.keys(setting.body.data).length ? setting.body : null;
@@ -284,7 +288,7 @@ export default function MeterPage({ commands, onDone }) {
           </div>
           {outcome && !outcome.pending && <ResultView outcome={outcome} />}
 
-          <Chart buckets={buckets} unit={unit} marks={cyc && cyc.found ? cyc.starts : []} />
+          <Chart buckets={buckets} unit={unit} marks={cyc && cyc.found ? cyc.starts : []} spans={cyc && cyc.found ? cyc.spans : []} />
 
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4" aria-label="Figures">
             <Figure label="Lowest" value={figures.min === null ? "—" : si(figures.min, unit)} />
@@ -324,6 +328,7 @@ export default function MeterPage({ commands, onDone }) {
                 </div>
               </div>
               <p className="break-words text-[15px]" aria-label="Battery life">{lifeSentence(lifeBy, cyc, life, unit)}</p>
+              {cyc && cyc.found && <CycleTable cyc={cyc} unit={unit} volts={volts} />}
             </div>
           )}
           <p className="text-[13px] text-slate-600 dark:text-slate-400">

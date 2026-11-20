@@ -54,9 +54,36 @@ export function findCycle(buckets) {
   const shortest = Math.min(...between);
   const longest = Math.max(...between);
   const cycles = wakes.length - 1;
+
+  // The table (docs/specs/meter-page.md, "The cycle table"): a wake is its buckets, from the start of the first to the start of the bucket after the last, so its time is placed
+  // to one bucket at each end and its charge is exact for what was sampled. The last wake starts at b, outside the span, so only the first `cycles` wakes count.
+  const next = (i) => (i + 1 < buckets.length ? buckets[i + 1].t0 : buckets[i].t1);
+  const spans = wakes.map((w) => ({ t0: buckets[w.i0].t0, t1: next(w.i1), buckets: w.i1 - w.i0 + 1 }));
+  const inside = wakes.slice(0, cycles);
+  const parts = inside.map((w) => {
+    let q = 0;
+    let top = -Infinity;
+    for (let i = w.i0; i <= w.i1; i++) {
+      q += buckets[i].mean * (next(i) - buckets[i].t0);
+      top = Math.max(top, buckets[i].max);
+    }
+    return { time: next(w.i1) - buckets[w.i0].t0, charge: q, peak: top, buckets: w.i1 - w.i0 + 1 };
+  });
+  const wakeTime = parts.reduce((s, p) => s + p.time, 0);
+  const wakeCharge = parts.reduce((s, p) => s + p.charge, 0);
+  const sleepTime = duration - wakeTime;
+  const sleepCharge = charge - wakeCharge;
+  const phases = {
+    wake: {
+      time: wakeTime / cycles, charge: wakeCharge / cycles, mean: wakeCharge / wakeTime, peak: Math.max(...parts.map((p) => p.peak)),
+      shortest: Math.min(...parts.map((p) => p.time)), longest: Math.max(...parts.map((p) => p.time)),
+      widest: Math.max(...parts.map((p) => p.buckets)),           // 1: every wake filled a single bucket, so none is resolved
+    },
+    sleep: { time: sleepTime / cycles, charge: sleepCharge / cycles, mean: sleepTime > 0 ? sleepCharge / sleepTime : null },
+  };
   return {
     found: true, wakes: wakes.length, cycles, starts, charge, duration, mean: charge / duration, period: duration / cycles,
     shortest, longest, regular: longest - shortest <= 2 * stride,         // each end of a gap is placed to one bucket
-    sleep, peak, level,
+    sleep, peak, level, stride, spans, phases,
   };
 }

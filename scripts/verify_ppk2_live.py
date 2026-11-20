@@ -218,13 +218,25 @@ def meter_page(page, bench, fake, tag, shot):
     check("%s the cycle line gives the period, the cycles, the average over them and the life" % tag,
           re.match(r"^Wakes every 2 s \(3 cycles counted\)\. Average over them [0-9.]+ [nµm]A\. It lasts [0-9.]+ (hours|days|years)\.$", life.inner_text()) is not None, life.inner_text())
     check("%s the chart marks each wake it found" % tag, page.get_by_test_id("wake-mark").count() == 4, page.get_by_test_id("wake-mark").count())
-    check("%s no sideways scroll with the cycle line" % tag, no_sideways_scroll(page))
+    table = page.get_by_role("table", name="Sleep and wake")
+    table.wait_for()
+    rows = [table.get_by_role("row").nth(i).inner_text().replace("\n", " ") for i in range(4)]
+    check("%s the table has Wake, Sleep and Cycle rows under its headings" % tag,
+          "Time per cycle" in rows[0] and rows[1].startswith("Wake") and rows[2].startswith("Sleep") and rows[3].startswith("Cycle"), rows)
+    check("%s a wake of one 0.2 s block says its length is under two points, and gives its exact peak" % tag,
+          "under 0.4 s" in rows[1] and "at least" in rows[1] and re.search(r"peak [0-9.]+ [nµm]A", rows[1]) is not None, rows[1])
+    check("%s the sleep row says over, where the wake row says under, so the shares never exceed the whole" % tag, "over 1.6 s" in rows[2] and "over 80 %" in rows[2], rows[2])
+    check("%s the table says why there is no energy, and the note about one-point wakes is there" % tag,
+          "No energy: the supply voltage is not known here" in page.inner_text("body") and "Each wake fills a single point of the chart" in page.inner_text("body"))
+    check("%s the chart shades the four wakes" % tag, page.get_by_test_id("wake-span").count() == 4, page.get_by_test_id("wake-span").count())
+    check("%s no sideways scroll with the cycle line and the table" % tag, no_sideways_scroll(page))
     shot("5-cycle")
     page.get_by_role("button", name="Stop").click()
     page.get_by_text(re.compile(r"^ended: stopped")).wait_for()
     page.get_by_role("button", name="Whole recording").click()
     check("%s going back to the whole recording drops the marks and says so" % tag,
-          page.get_by_test_id("wake-mark").count() == 0 and "whole recording it lasts" in life.inner_text(), life.inner_text())
+          page.get_by_test_id("wake-mark").count() == 0 and page.get_by_test_id("wake-span").count() == 0 and page.get_by_role("table", name="Sleep and wake").count() == 0
+          and "whole recording it lasts" in life.inner_text(), life.inner_text())
     bench.unit.profile = lambda i: (1000 + (i % 7), 0)
     bench.unit.index = bench.unit.counter = 0
 

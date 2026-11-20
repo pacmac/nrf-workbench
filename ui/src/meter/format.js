@@ -77,6 +77,27 @@ export function words(seconds) {
   return `${Math.floor(s / 3600)} h${Math.floor((s % 3600) / 60) ? ` ${Math.floor((s % 3600) / 60)} min` : ""}`;
 }
 
+// A short time for a person: 0.4 -> "0.4 s", 12 -> "12 s", 90 -> "1 min 30 s".
+export const lapse = (s) => (s < 10 ? `${Number(s.toFixed(s < 1 ? 2 : 1))} s` : words(s));
+
+// Charge from coulombs (1 mAh = 3.6 C): in mAh from 0.1 mAh, µAh from 0.01 µAh, nAh below; "—" for nothing to show.
+export function chargeText(coulombs) {
+  if (coulombs === null || coulombs === undefined || !Number.isFinite(coulombs)) return "—";
+  const mah = coulombs / 3.6;
+  if (Math.abs(mah) >= 0.1) return `${Number(mah.toPrecision(3))} mAh`;
+  if (Math.abs(mah) >= 1e-5) return `${Number((mah * 1000).toPrecision(3))} µAh`;
+  return `${Number((mah * 1e6).toPrecision(3))} nAh`;
+}
+
+// Energy from coulombs and volts (1 mWh = 3.6 J, and joules = coulombs x volts): mWh from 0.1 mWh, µWh from 0.01 µWh, nWh below.
+export function energyText(coulombs, volts) {
+  if (!Number.isFinite(coulombs) || !(volts > 0)) return "—";
+  const mwh = (coulombs * volts) / 3.6;
+  if (Math.abs(mwh) >= 0.1) return `${Number(mwh.toPrecision(3))} mWh`;
+  if (Math.abs(mwh) >= 1e-5) return `${Number((mwh * 1000).toPrecision(3))} µWh`;
+  return `${Number((mwh * 1e6).toPrecision(3))} nWh`;
+}
+
 // How long a battery of `capacityMah` lasts at an average (the whole recording's, or one wake/sleep cycle's: cycle.js) of `meanAmps`: hours, or days from 48 h. "" when either is missing or the draw is zero.
 export function batteryLife(meanAmps, capacityMah) {
   if (!(meanAmps > 0) || !(capacityMah > 0)) return "";
@@ -89,7 +110,8 @@ export function batteryLife(meanAmps, capacityMah) {
 // The chart of a session's envelope: a band from each bucket's lowest to its highest reading and a line through the means. Zero is always on the vertical axis
 // (a steady current is a flat band, a real spike stands out). x is time. Returns null when there is nothing to draw.
 // `marks` are times to draw a vertical line at (the starts of the wakes found); `marks` in the answer are their x positions.
-export function bandChart(buckets, width, height, unit = "", marks = []) {
+// `spans` are {t0, t1} stretches to shade (the wakes found); `shades` in the answer are {x, w}, at least 2 wide so a short wake can be seen.
+export function bandChart(buckets, width, height, unit = "", marks = [], spans = []) {
   if (!buckets || buckets.length === 0) return null;
   const lo = Math.min(...buckets.map((b) => b.min));
   const hi = Math.max(...buckets.map((b) => b.max));
@@ -105,5 +127,10 @@ export function bandChart(buckets, width, height, unit = "", marks = []) {
   const bottom = buckets.map((b, i) => `${mid(b, i).toFixed(1)},${y(b.min).toFixed(1)}`).reverse();
   const mean = buckets.map((b, i) => `${mid(b, i).toFixed(1)},${y(b.mean).toFixed(1)}`).join(" ");
   const at = marks.filter((t) => t >= t0 && t <= t0 + span).map((t) => Number(x(t, 0).toFixed(1)));
-  return { band: [...top, ...bottom].join(" "), mean, marks: at, axisLo: si(axisLo, unit), axisHi: si(axisHi, unit), lo: si(lo, unit), hi: si(hi, unit), span };
+  const shades = span > 0 ? spans.filter((s) => s.t1 >= t0 && s.t0 <= t0 + span).map((s) => {
+    const a = x(Math.max(s.t0, t0), 0);
+    const b = x(Math.min(s.t1, t0 + span), 0);
+    return { x: Number(a.toFixed(1)), w: Number(Math.max(2, b - a).toFixed(1)) };
+  }) : [];
+  return { band: [...top, ...bottom].join(" "), mean, marks: at, shades, axisLo: si(axisLo, unit), axisHi: si(axisHi, unit), lo: si(lo, unit), hi: si(hi, unit), span };
 }
