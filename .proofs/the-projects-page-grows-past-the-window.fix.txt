@@ -1,0 +1,143 @@
+$ python3 scripts/verify_projects_layout.py
+PASS  light 1280x720 the document does not scroll (720 of 720 px)
+PASS  light 1280x720 nothing outside the detail panel scrolls
+PASS  light 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 the page ends at the foot of the window
+PASS  light 1280x720 every panel lies inside the page
+PASS  light 1280x720 the list's panel is filled down to its foot ([17, 17] px spare)
+PASS  light 1280x720 the list shows the rows that fit, fewer than all (8 of 15)
+PASS  light 1280x720 every row lies inside the list
+PASS  light 1280x720 the list is filled: less than one more row of room is left (43 of 56 px)
+PASS  light 1280x720 Next pages to the later projects ((9, 15, 15))
+PASS  light 1280x720 Previous returns to the first
+PASS  light 1280x720 no row on any page has its content cut off by its fixed height (0)
+PASS  light 1280x720 choosing a project shows its detail in the panel
+PASS  light 1280x720 with a project chosen: the document does not scroll (720 of 720 px)
+PASS  light 1280x720 with a project chosen: nothing outside the detail panel scrolls
+PASS  light 1280x720 with a project chosen: the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 with a project chosen: the page ends at the foot of the window
+PASS  light 1280x720 with a project chosen: every panel lies inside the page
+PASS  light 1280x720 with a project chosen: the list's panel is filled down to its foot ([17, 17] px spare)
+PASS  light 1280x720 a detail taller than its panel scrolls inside it (872 of 577 px)
+PASS  light 1280x720 scrolled to its end, the last action is in view
+PASS  light 1280x720 with the manifest editor open: the document does not scroll (720 of 720 px)
+PASS  light 1280x720 with the manifest editor open: nothing outside the detail panel scrolls
+PASS  light 1280x720 with the manifest editor open: the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 with the manifest editor open: the page ends at the foot of the window
+PASS  light 1280x720 with the manifest editor open: every panel lies inside the page
+PASS  light 1280x720 with the manifest editor open: the list's panel is filled down to its foot ([17, 17] px spare)
+PASS  light 1280x720 a project made at the foot of the list is chosen
+PASS  light 1280x720 after making a project: the document does not scroll (720 of 720 px)
+PASS  light 1280x720 after making a project: nothing outside the detail panel scrolls
+PASS  light 1280x720 after making a project: the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 after making a project: the page ends at the foot of the window
+PASS  light 1280x720 after making a project: every panel lies inside the page
+PASS  light 1280x720 after making a project: the list's panel is filled down to its foot ([17, 17] px spare)
+PASS  light 1440x900 the document does not scroll (900 of 900 px)
+PASS  light 1440x900 nothing outside the detail panel scrolls
+PASS  light 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 the page ends at the foot of the window
+PASS  light 1440x900 every panel lies inside the page
+PASS  light 1440x900 the list's panel is filled down to its foot ([17, 17] px spare)
+PASS  light 1440x900 the list shows the rows that fit, fewer than all (11 of 16)
+PASS  light 1440x900 every row lies inside the list
+PASS  light 1440x900 the list is filled: less than one more row of room is left (55 of 56 px)
+PASS  light 1440x900 Next pages to the later projects ((12, 16, 16))
+PASS  light 1440x900 Previous returns to the first
+PASS  light 1440x900 no row on any page has its content cut off by its fixed height (0)
+PASS  light 1440x900 choosing a project shows its detail in the panel
+PASS  light 1440x900 with a project chosen: the document does not scroll (900 of 900 px)
+PASS  light 1440x900 with a project chosen: nothing outside the detail panel scrolls
+PASS  light 1440x900 with a project chosen: the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 with a project chosen: the page ends at the foot of the window
+PASS  light 1440x900 with a project chosen: every panel lies inside the page
+PASS  light 1440x900 with a project chosen: the list's panel is filled down to its foot ([17, 17] px spare)
+PASS  light 1440x900 a detail taller than its panel scrolls inside it (872 of 757 px)
+PASS  light 1440x900 scrolled to its end, the last action is in view
+PASS  light 1440x900 with the manifest editor open: the document does not scroll (900 of 900 px)
+PASS  light 1440x900 with the manifest editor open: nothing outside the detail panel scrolls
+PASS  light 1440x900 with the manifest editor open: the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 with the manifest editor open: the page ends at the foot of the window
+PASS  light 1440x900 with the manifest editor open: every panel lies inside the page
+PASS  light 1440x900 with the manifest editor open: the list's panel is filled down to its foot ([17, 17] px spare)
+PASS  light 1440x900 a project made at the foot of the list is chosen
+PASS  light 1440x900 after making a project: the document does not scroll (900 of 900 px)
+PASS  light 1440x900 after making a project: nothing outside the detail panel scrolls
+PASS  light 1440x900 after making a project: the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 after making a project: the page ends at the foot of the window
+PASS  light 1440x900 after making a project: every panel lies inside the page
+PASS  light 1440x900 after making a project: the list's panel is filled down to its foot ([17, 17] px spare)
+PASS  light 390x844 no horizontal scroll (390 of 390 px)
+PASS  light 390x844 the list flows, with no pager
+PASS  dark 1280x720 the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 nothing outside the detail panel scrolls
+PASS  dark 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 the page ends at the foot of the window
+PASS  dark 1280x720 every panel lies inside the page
+PASS  dark 1280x720 the list's panel is filled down to its foot ([17, 17] px spare)
+PASS  dark 1280x720 the list shows the rows that fit, fewer than all (8 of 17)
+PASS  dark 1280x720 every row lies inside the list
+PASS  dark 1280x720 the list is filled: less than one more row of room is left (43 of 56 px)
+PASS  dark 1280x720 Next pages to the later projects ((9, 16, 17))
+PASS  dark 1280x720 Previous returns to the first
+PASS  dark 1280x720 no row on any page has its content cut off by its fixed height (0)
+PASS  dark 1280x720 choosing a project shows its detail in the panel
+PASS  dark 1280x720 with a project chosen: the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 with a project chosen: nothing outside the detail panel scrolls
+PASS  dark 1280x720 with a project chosen: the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 with a project chosen: the page ends at the foot of the window
+PASS  dark 1280x720 with a project chosen: every panel lies inside the page
+PASS  dark 1280x720 with a project chosen: the list's panel is filled down to its foot ([17, 17] px spare)
+PASS  dark 1280x720 a detail taller than its panel scrolls inside it (872 of 577 px)
+PASS  dark 1280x720 scrolled to its end, the last action is in view
+PASS  dark 1280x720 with the manifest editor open: the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 with the manifest editor open: nothing outside the detail panel scrolls
+PASS  dark 1280x720 with the manifest editor open: the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 with the manifest editor open: the page ends at the foot of the window
+PASS  dark 1280x720 with the manifest editor open: every panel lies inside the page
+PASS  dark 1280x720 with the manifest editor open: the list's panel is filled down to its foot ([17, 17] px spare)
+PASS  dark 1280x720 a project made at the foot of the list is chosen
+PASS  dark 1280x720 after making a project: the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 after making a project: nothing outside the detail panel scrolls
+PASS  dark 1280x720 after making a project: the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 after making a project: the page ends at the foot of the window
+PASS  dark 1280x720 after making a project: every panel lies inside the page
+PASS  dark 1280x720 after making a project: the list's panel is filled down to its foot ([17, 17] px spare)
+PASS  dark 1440x900 the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 nothing outside the detail panel scrolls
+PASS  dark 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 the page ends at the foot of the window
+PASS  dark 1440x900 every panel lies inside the page
+PASS  dark 1440x900 the list's panel is filled down to its foot ([17, 17] px spare)
+PASS  dark 1440x900 the list shows the rows that fit, fewer than all (11 of 18)
+PASS  dark 1440x900 every row lies inside the list
+PASS  dark 1440x900 the list is filled: less than one more row of room is left (55 of 56 px)
+PASS  dark 1440x900 Next pages to the later projects ((12, 18, 18))
+PASS  dark 1440x900 Previous returns to the first
+PASS  dark 1440x900 no row on any page has its content cut off by its fixed height (0)
+PASS  dark 1440x900 choosing a project shows its detail in the panel
+PASS  dark 1440x900 with a project chosen: the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 with a project chosen: nothing outside the detail panel scrolls
+PASS  dark 1440x900 with a project chosen: the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 with a project chosen: the page ends at the foot of the window
+PASS  dark 1440x900 with a project chosen: every panel lies inside the page
+PASS  dark 1440x900 with a project chosen: the list's panel is filled down to its foot ([17, 17] px spare)
+PASS  dark 1440x900 a detail taller than its panel scrolls inside it (872 of 757 px)
+PASS  dark 1440x900 scrolled to its end, the last action is in view
+PASS  dark 1440x900 with the manifest editor open: the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 with the manifest editor open: nothing outside the detail panel scrolls
+PASS  dark 1440x900 with the manifest editor open: the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 with the manifest editor open: the page ends at the foot of the window
+PASS  dark 1440x900 with the manifest editor open: every panel lies inside the page
+PASS  dark 1440x900 with the manifest editor open: the list's panel is filled down to its foot ([17, 17] px spare)
+PASS  dark 1440x900 a project made at the foot of the list is chosen
+PASS  dark 1440x900 after making a project: the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 after making a project: nothing outside the detail panel scrolls
+PASS  dark 1440x900 after making a project: the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 after making a project: the page ends at the foot of the window
+PASS  dark 1440x900 after making a project: every panel lies inside the page
+PASS  dark 1440x900 after making a project: the list's panel is filled down to its foot ([17, 17] px spare)
+PASS  dark 390x844 no horizontal scroll (390 of 390 px)
+PASS  dark 390x844 the list flows, with no pager
+
+140 checks, 0 failed. screenshots: /tmp/nrfwb-projects-layout-010ptqru

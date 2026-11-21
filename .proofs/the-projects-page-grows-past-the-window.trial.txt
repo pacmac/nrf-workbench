@@ -1,0 +1,47 @@
+$ python3 scripts/verify_projects_layout.py
+FAIL  light 1280x720 the document does not scroll (1096 of 720 px)  -- [1096, 720]
+PASS  light 1280x720 nothing outside the detail panel scrolls
+FAIL  light 1280x720 the page uses the width beside the nav (888 of 1280 px)  -- [312, 1200, 0, 1096, 1280, 720]
+FAIL  light 1280x720 the page ends at the foot of the window  -- [312, 1200, 0, 1096, 1280, 720]
+PASS  light 1280x720 every panel lies inside the page
+PASS  light 1280x720 the list's panel is filled down to its foot ([1] px spare)
+FAIL  light 1280x720 the list shows the rows that fit, fewer than all (15 of None)  -- (15, None)
+PASS  light 1280x720 every row lies inside the list
+PASS  light 1280x720 the list is filled: less than one more row of room is left (0 of 59 px)
+FAIL  light 1280x720 the page could be driven  -- Locator.click: Timeout 20000ms exceeded.
+FAIL  light 1440x900 the document does not scroll (1096 of 900 px)  -- [1096, 900]
+PASS  light 1440x900 nothing outside the detail panel scrolls
+FAIL  light 1440x900 the page uses the width beside the nav (888 of 1440 px)  -- [392, 1280, 0, 1096, 1440, 900]
+FAIL  light 1440x900 the page ends at the foot of the window  -- [392, 1280, 0, 1096, 1440, 900]
+PASS  light 1440x900 every panel lies inside the page
+PASS  light 1440x900 the list's panel is filled down to its foot ([1] px spare)
+FAIL  light 1440x900 the list shows the rows that fit, fewer than all (15 of None)  -- (15, None)
+PASS  light 1440x900 every row lies inside the list
+PASS  light 1440x900 the list is filled: less than one more row of room is left (0 of 59 px)
+FAIL  light 1440x900 the page could be driven  -- Locator.click: Timeout 20000ms exceeded.
+FAIL  light 390x844 no horizontal scroll (1036 of 390 px)  -- [1036, 390]
+PASS  light 390x844 the list flows, with no pager
+FAIL  dark 1280x720 the document does not scroll (1096 of 720 px)  -- [1096, 720]
+PASS  dark 1280x720 nothing outside the detail panel scrolls
+FAIL  dark 1280x720 the page uses the width beside the nav (888 of 1280 px)  -- [312, 1200, 0, 1096, 1280, 720]
+FAIL  dark 1280x720 the page ends at the foot of the window  -- [312, 1200, 0, 1096, 1280, 720]
+PASS  dark 1280x720 every panel lies inside the page
+PASS  dark 1280x720 the list's panel is filled down to its foot ([1] px spare)
+FAIL  dark 1280x720 the list shows the rows that fit, fewer than all (15 of None)  -- (15, None)
+PASS  dark 1280x720 every row lies inside the list
+PASS  dark 1280x720 the list is filled: less than one more row of room is left (0 of 59 px)
+FAIL  dark 1280x720 the page could be driven  -- Locator.click: Timeout 20000ms exceeded.
+FAIL  dark 1440x900 the document does not scroll (1096 of 900 px)  -- [1096, 900]
+PASS  dark 1440x900 nothing outside the detail panel scrolls
+FAIL  dark 1440x900 the page uses the width beside the nav (888 of 1440 px)  -- [392, 1280, 0, 1096, 1440, 900]
+FAIL  dark 1440x900 the page ends at the foot of the window  -- [392, 1280, 0, 1096, 1440, 900]
+PASS  dark 1440x900 every panel lies inside the page
+PASS  dark 1440x900 the list's panel is filled down to its foot ([1] px spare)
+FAIL  dark 1440x900 the list shows the rows that fit, fewer than all (15 of None)  -- (15, None)
+PASS  dark 1440x900 every row lies inside the list
+PASS  dark 1440x900 the list is filled: less than one more row of room is left (0 of 59 px)
+FAIL  dark 1440x900 the page could be driven  -- Locator.click: Timeout 20000ms exceeded.
+FAIL  dark 390x844 no horizontal scroll (1036 of 390 px)  -- [1036, 390]
+PASS  dark 390x844 the list flows, with no pager
+
+44 checks, 22 failed. screenshots: /tmp/nrfwb-projects-layout-l4ihv5da
