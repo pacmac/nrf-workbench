@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Button, Card, Chip, PageHeader } from "../ui.jsx";
+import { Button, Card, Chip, FitList, PageHeader, cx, useWide } from "../ui.jsx";
+import { Drawer } from "../meter/Monitor.jsx";
 import { useWiring, wiringActions } from "./store.js";
 import { useLiveWiring } from "./live.js";
 import { INTENTS, claimsOf, hueFor, short } from "./model.js";
@@ -73,7 +74,22 @@ function Inbox({ adapters, devices, onSetUp, onDismiss }) {
   );
 }
 
-function DeviceCard({ device, hue, count, selected, onPick }) {
+function DeviceCard({ device, hue, count, selected, onPick, compact }) {
+  if (compact) {                                                 // the wide page's list: a fixed-height row, each line cut to its width
+    return (
+      <button type="button" aria-pressed={selected} onClick={onPick}
+        className={cx("flex h-full w-full min-w-0 items-center gap-3 rounded-xl border px-3 text-left", selected ? `${hue.edge} ${hue.tint}` : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800")}>
+        <span aria-hidden="true" className={`h-3 w-3 shrink-0 rounded-full ${hue.dot}`} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold">{device.model} <span className="font-mono text-xs font-normal">{short(device.serial)}</span></span>
+          <span className="flex items-center gap-2">
+            <Chip tone={device.mode === "app" ? "green" : "amber"}>{device.mode}</Chip>
+            <span className="truncate text-xs text-slate-600 dark:text-slate-400">{count === 0 ? "nothing connected" : `${count} connection${count === 1 ? "" : "s"}`}</span>
+          </span>
+        </span>
+      </button>
+    );
+  }
   return (
     <button
       type="button"
@@ -98,6 +114,8 @@ function Page({ w, actions, live, error, commands, onOpenPage }) {
   const [sheet, setSheet] = useState(null);                 // {editingId, initial, key}
   const [focusId, setFocusId] = useState(null);
   const [wide] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 640px)").matches);
+  const full = useWide();                                       // the full-height page (docs/specs/navigation.md): from 768 px up
+  const [drawer, setDrawer] = useState(null);                   // the full page's drawers: "adapters" (plugged in, not connected) or "header" (the preview's Pi header map)
 
   const device = w.devices.find((d) => d.serial === selected) || w.devices[0] || null;
   const base = { devices: w.devices, adapters: w.adapters, probes: w.probes, connections: w.connections, built: w.built };
@@ -127,6 +145,77 @@ function Page({ w, actions, live, error, commands, onOpenPage }) {
     return null;
   }
 
+  // The chosen device's wires and, when it is open, the sheet to add or change one: the same on both pages.
+  const wiresBody = (
+    <>
+      {mine.length === 0 && !sheet && (
+        <p className="text-[13px] text-slate-600 dark:text-slate-400">Nothing is wired to this device yet.</p>
+      )}
+      {mine.length > 0 && (
+        <ul className="space-y-2" aria-label={`Connections of ${device.model} ${short(device.serial)}`}>
+          {mine.map((c) => (
+            <WireLine
+              key={c.id}
+              conn={c}
+              ctx={base}
+              hue={hue}
+              focused={focusId === c.id}
+              onFocus={setFocusId}
+              onEdit={() => setSheet({ editingId: c.id, initial: c.spec, key: c.id })}
+              onRemove={() => actions.disconnect(c.id)}
+              onRelease={actions.release && actions.engage && c.pinState ? () => actions.release(c.id) : null}
+              onEngage={actions.release && actions.engage && c.pinState ? () => actions.engage(c.id) : null}
+              onOpenConsole={() => onOpenPage && onOpenPage("console")}
+            />
+          ))}
+        </ul>
+      )}
+      {sheet && (
+        <div className={mine.length > 0 ? "mt-3" : ""}>
+          <AddSheet key={sheet.key} device={device} hue={hue} base={base} initial={sheet.initial} editingId={sheet.editingId} onSave={save} onCancel={() => setSheet(null)} />
+        </div>
+      )}
+    </>
+  );
+  const connectButton = !sheet && <Button onClick={() => setSheet({ editingId: null, initial: {}, key: "new" })}>Connect something</Button>;
+
+  // The full-height page (docs/specs/navigation.md, "Full-height pages", Wiring): the boards as a paged list beside the chosen board's wires, and what is plugged in but not connected in a drawer.
+  if (full) {
+    return (
+      <div className="relative flex min-h-0 flex-1 flex-col gap-2">
+        {live ? <LiveNote error={error} onLookAgain={actions.refresh} /> : <><PageHeader title="Wiring" topic="wiring" aside={<Button tone="quiet" onClick={() => setDrawer("header")}>The Pi's header</Button>} /><Preview /></>}
+        {unconnected.length > 0 && (
+          <div data-testid="adapters-notice" className="flex shrink-0 items-center gap-3 rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-sm dark:border-blue-800 dark:bg-blue-950">
+            <span className="min-w-0 flex-1 truncate">{unconnected.length} {unconnected.length === 1 ? "adapter is" : "adapters are"} plugged in but not connected.</span>
+            <Button tone="quiet" onClick={() => setDrawer("adapters")}>Set up…</Button>
+          </div>
+        )}
+        <div className="grid min-h-0 flex-1 grid-cols-[18rem_minmax(0,1fr)] gap-3" style={{ gridTemplateRows: "minmax(0, 1fr)" }}>
+          <Card title="Devices" className="flex min-h-0 flex-col">
+            <FitList label="Devices" rowH={64} items={w.devices} keyOf={(d) => d.serial} empty="No nRF board is attached."
+              render={(d) => (
+                <DeviceCard compact device={d} hue={hueFor(w.devices, d.serial)} count={w.connections.filter((c) => c.device === d.serial).length}
+                  selected={d.serial === device.serial} onPick={() => { setSelected(d.serial); setSheet(null); }} />
+              )} />
+          </Card>
+          <Card className="flex min-h-0 flex-col" title={`${device.model} ${short(device.serial)}`} aside={connectButton}>
+            <div data-testid="work" className="min-h-0 flex-1 overflow-y-auto">{wiresBody}</div>
+          </Card>
+        </div>
+        {drawer === "adapters" && (
+          <Drawer title="Adapters plugged in" onClose={() => setDrawer(null)} wide>
+            <Inbox adapters={unconnected} devices={w.devices} onSetUp={(a, serial) => { setDrawer(null); setUp(a, serial); }} onDismiss={actions.dismiss} />
+          </Drawer>
+        )}
+        {drawer === "header" && !live && (
+          <Drawer title="The Pi's header" onClose={() => setDrawer(null)} wide>
+            <HeaderMap connections={w.connections} devices={w.devices} selected={device.serial} focusId={focusId} />
+          </Drawer>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {live ? <LiveNote error={error} onLookAgain={actions.refresh} /> : <><PageHeader title="Wiring" topic="wiring" /><Preview /></>}
@@ -145,37 +234,8 @@ function Page({ w, actions, live, error, commands, onOpenPage }) {
         ))}
       </div>
 
-      <Card
-        title={`${device.model} ${short(device.serial)}`}
-        aside={!sheet && <Button onClick={() => setSheet({ editingId: null, initial: {}, key: "new" })}>Connect something</Button>}
-      >
-        {mine.length === 0 && !sheet && (
-          <p className="text-[13px] text-slate-600 dark:text-slate-400">Nothing is wired to this device yet.</p>
-        )}
-        {mine.length > 0 && (
-          <ul className="space-y-2" aria-label={`Connections of ${device.model} ${short(device.serial)}`}>
-            {mine.map((c) => (
-              <WireLine
-                key={c.id}
-                conn={c}
-                ctx={base}
-                hue={hue}
-                focused={focusId === c.id}
-                onFocus={setFocusId}
-                onEdit={() => setSheet({ editingId: c.id, initial: c.spec, key: c.id })}
-                onRemove={() => actions.disconnect(c.id)}
-                onRelease={actions.release && actions.engage && c.pinState ? () => actions.release(c.id) : null}
-                onEngage={actions.release && actions.engage && c.pinState ? () => actions.engage(c.id) : null}
-                onOpenConsole={() => onOpenPage && onOpenPage("console")}
-              />
-            ))}
-          </ul>
-        )}
-        {sheet && (
-          <div className={mine.length > 0 ? "mt-3" : ""}>
-            <AddSheet key={sheet.key} device={device} hue={hue} base={base} initial={sheet.initial} editingId={sheet.editingId} onSave={save} onCancel={() => setSheet(null)} />
-          </div>
-        )}
+      <Card title={`${device.model} ${short(device.serial)}`} aside={connectButton}>
+        {wiresBody}
       </Card>
 
       {!live && (

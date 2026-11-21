@@ -379,13 +379,16 @@ def run(browser, bench, theme, size, shots):
         page.get_by_role("article", name="Start here").wait_for()
         check("%s the nav still does not scroll after moving about" % tag, not nav_shape(page)["scrolls"], nav_shape(page))
         if label == "desktop":
-            # Home no longer scrolls on a desktop (docs/specs/navigation.md, "Full-height pages"), so a page that still flows is used, in a window too short to hold it.
+            # Every page is full-height from 768 px up (docs/specs/navigation.md, "Full-height pages"): none flows, so none can scroll the document, however short the window.
+            # What is left to hold is that the sidebar stays in view and that the document does not scroll, on each page, in a window too short for most of them.
             size = page.viewport_size
             page.set_viewport_size({"width": size["width"], "height": 400})
-            open_page("Wiring")
-            page.evaluate("window.scrollTo(0, 100000)")
-            check("%s the sidebar stays in view while a long page scrolls" % tag,
-                  page.evaluate("window.scrollY") > 0 and nav_shape(page)["side_top"] == 0, (page.evaluate("window.scrollY"), nav_shape(page)))
+            for name in ("Home", "Devices", "Projects", "Console", "Firmware", "Wiring", "GPIO", "Activity", "Commands", "Help"):
+                open_page(name)
+                page.evaluate("window.scrollTo(0, 100000)")
+                doc = page.evaluate("document.scrollingElement.scrollHeight - document.scrollingElement.clientHeight")
+                check("%s %s in a short window: the document does not scroll and the sidebar stays in view" % (tag, name),
+                      doc <= 1 and page.evaluate("window.scrollY") == 0 and nav_shape(page)["side_top"] == 0, (doc, page.evaluate("window.scrollY"), nav_shape(page)))
             page.set_viewport_size(size)
         check("%s no page or console errors" % tag, not errors, errors)
         check("%s the only refused request was the bad manifest on purpose" % tag, refused == [("POST", "api/project/put", 422)], refused)
