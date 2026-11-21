@@ -16,4 +16,4 @@ PASS  dark 1440x900 a length is typed, with its own unit
 PASS  dark 1440x900 90 minutes can be entered
 PASS  dark 1440x900 there is no multimeter and no fixed list of durations
 
-16 checks, 0 failed. screenshots: /tmp/nrfwb-meter-layout-m00nw0z5
+16 checks, 0 failed. screenshots: /tmp/nrfwb-meter-layout-rbkq2kku

@@ -32,4 +32,4 @@ PASS  dark 1440x900 the page ends at the foot of the window, neither short of it
 PASS  dark 1440x900 the supply instrument is on screen
 PASS  dark 1440x900 the output switch and the mode are in the supply instrument
 
-32 checks, 0 failed. screenshots: /tmp/nrfwb-meter-layout-4yv8oknp
+32 checks, 0 failed. screenshots: /tmp/nrfwb-meter-layout-ttf8ps0s
