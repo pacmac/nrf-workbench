@@ -1,0 +1,15 @@
+$ timeout 200 python3 scripts/verify_meter_layout.py --only wakes
+PASS  light 1280x720 Stop after offers Wakes, Time and Never
+PASS  light 1280x720 a running session says 0 of 2 wakes and the give-up
+PASS  light 1280x720 a stop by hand is named as one
+PASS  light 1440x900 Stop after offers Wakes, Time and Never
+PASS  light 1440x900 a running session says 0 of 2 wakes and the give-up
+PASS  light 1440x900 a stop by hand is named as one
+PASS  dark 1280x720 Stop after offers Wakes, Time and Never
+PASS  dark 1280x720 a running session says 0 of 2 wakes and the give-up
+PASS  dark 1280x720 a stop by hand is named as one
+PASS  dark 1440x900 Stop after offers Wakes, Time and Never
+PASS  dark 1440x900 a running session says 0 of 2 wakes and the give-up
+PASS  dark 1440x900 a stop by hand is named as one
+
+12 checks, 0 failed. screenshots: /tmp/nrfwb-meter-layout-sfs1i6dg

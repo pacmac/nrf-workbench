@@ -343,3 +343,34 @@
     runs: 1
   trial: null
   fix: null
+- id: the-meter-page-does-not-say-how-many-wakes-a-session-has-seen
+  type: new
+  what: a session that stops after N wakes shows no count of the wakes seen and no give-up, and the ended
+    text does not name why it ended
+  spec: docs/specs/power-workbench.md
+  files:
+  - ui/src/MeterPage.jsx
+  test:
+    command:
+    - timeout
+    - '200'
+    - python3
+    - scripts/verify_meter_layout.py
+    - --only
+    - wakes
+    criterion: the running text says 0 of 2 wakes and the give-up
+    runs: 1
+  trial:
+    file: .proofs/the-meter-page-does-not-say-how-many-wakes-a-session-has-seen.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-21T19:17:50.511'
+    commit: ce99d90-dirty
+  fix:
+    file: .proofs/the-meter-page-does-not-say-how-many-wakes-a-session-has-seen.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-21T19:18:41.863'
+    commit: 5244d1b-dirty

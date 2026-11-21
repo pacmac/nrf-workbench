@@ -1,0 +1,11 @@
+$ timeout 200 python3 scripts/verify_meter_layout.py --only wakes
+PASS  light 1280x720 Stop after offers Wakes, Time and Never
+FAIL  light 1280x720 the page could be driven  -- Locator.wait_for: Timeout 20000ms exceeded.
+PASS  light 1440x900 Stop after offers Wakes, Time and Never
+FAIL  light 1440x900 the page could be driven  -- Locator.click: Timeout 20000ms exceeded.
+PASS  dark 1280x720 Stop after offers Wakes, Time and Never
+FAIL  dark 1280x720 the page could be driven  -- Locator.click: Timeout 20000ms exceeded.
+PASS  dark 1440x900 Stop after offers Wakes, Time and Never
+FAIL  dark 1440x900 the page could be driven  -- Locator.click: Timeout 20000ms exceeded.
+
+8 checks, 4 failed. screenshots: /tmp/nrfwb-meter-layout-iz6ahg3y
