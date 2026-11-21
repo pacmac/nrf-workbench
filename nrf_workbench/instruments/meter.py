@@ -351,9 +351,11 @@ def register(registry, host):
         n = len(data["captures"])
         return Result.success(data, "%d wake%s kept" % (n, "" if n == 1 else "s"))
 
-    def wake_table(ctx, recording):
+    def wake_table(ctx, recording, level_ma=None):
+        if level_ma is not None and not level_ma > 0:
+            raise UsageError("level_ma is above 0", "level_ma")
         try:
-            data = sampler(ctx).wake_table(recording)
+            data = sampler(ctx).wake_table(recording, None if level_ma is None else level_ma / 1000.0)
         except samplerlib.RecordingUnknown as exc:
             return unknown(exc, recording)
         except samplerlib.NotAProfilerRecording as exc:
@@ -461,9 +463,11 @@ def register(registry, host):
                 requires=STREAM, result="n, wake_at_s, t0, t1, points, buckets, charge_c, mean, peak, samples, lost, truncated"))
     add(Command("meter.wake_table", "One row per wake of a power-profiler recording, every wake and not only the newest kept at full rate: when it started, how long it was awake (first block over the awake level "
                 "to the last) and how long its capture is (lead-in and tail included), its charge, mean and peak current, whether it can be zoomed into, and whether it is an outlier. "
-                "Found by the rule the live session used.", wake_table,
-                args=(Arg("recording", doc="the recording's name, from meter.recordings"),), requires=STORE,
-                result="recording, profile, wakes (n, start_s, wall, awake_s, capture_s, charge_mah, mean_a, peak_a, resolution, capture, partial, truncated, outlier, z), summary, sleep_a, awake_a"))
+                "Found by the rule the live session used. With level_ma, each wake also lists its stretches over that current (runs of 0.2 s blocks whose highest sample is over it), each with its start and length.", wake_table,
+                args=(Arg("recording", doc="the recording's name, from meter.recordings"),
+                      Arg("level_ma", type="float", required=False, unit="mA", doc="a current in milliamps, above 0: the wake's stretches over it are listed (the bench RAK's transmit bursts are over 50)")),
+                requires=STORE,
+                result="recording, profile, wakes (n, start_s, wall, awake_s, capture_s, charge_mah, mean_a, peak_a, stretches (start_s, end_s, length_s), above_s, resolution, capture, partial, truncated, outlier, z), summary, sleep_a, awake_a"))
     stage_name = Arg("name", doc="the stage's name, 1 to 40 characters, unique ignoring case")
     rec = Arg("recording", doc="the recording the stages belong to (meter.recordings)")
     add(Command("meter.stage_set", "Name a stretch of a wake as a stage of a recording: seconds from the wake's start, so it means the same in every wake. Adds it, or changes the stage of that name. "

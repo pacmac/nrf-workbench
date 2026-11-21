@@ -44,9 +44,26 @@ def _captures(trace, profile):
     return found, cap
 
 
-def build(trace, wake, saved=()):
+def stretches_over(trace, first, end, level_a):
+    """([{start_s, end_s, length_s}], their total) for the rows first..end-1 of a trace: the runs of consecutive rows whose HIGHEST sample is over `level_a` (a burst shorter than a row still
+    counts), in seconds from the start of row `first`. A run ends at a row that is not over the level, so two bursts with no quiet row between them are one stretch."""
+    base = trace.ends[first] - trace.widths[first]
+    found, run = [], None
+    for i in range(first, end):
+        if trace.highs[i] > level_a:
+            run = [i, i] if run is None else [run[0], i]
+        elif run is not None:
+            found.append(run)
+            run = None
+    if run is not None:
+        found.append(run)
+    out = [{"start_s": trace.ends[a] - trace.widths[a] - base, "end_s": trace.ends[b] - base, "length_s": trace.ends[b] - trace.ends[a] + trace.widths[a]} for a, b in found]
+    return out, sum(s["length_s"] for s in out)
+
+
+def build(trace, wake, saved=(), level_a=None):
     """{profile, wakes, summary} for a Trace. `wake` is the sidecar's wake profile (fields it leaves out are found from the data, as they were live); `saved` is
-    [(n, t0, t1)] of the full-rate wakes the recording kept, so a row says whether it can be zoomed into."""
+    [(n, t0, t1)] of the full-rate wakes the recording kept, so a row says whether it can be zoomed into; `level_a` (amps) is the level its stretches are counted over, none without it."""
     profile = capture.WakeProfile(**dict((k, wake.get(k)) for k in ("sleep_a", "awake_a", "hold_s", "lead_s", "max_s")))
     caps, cap = _captures(trace, profile)
     rows = []
@@ -58,8 +75,10 @@ def build(trace, wake, saved=()):
         start = trace.ends[first] - trace.widths[first]
         began = trace.ends[i0] - trace.widths[i0]                # where the capture's own first block begins: what a saved wake's t0 is on the same clock
         kept = next((n for n, t0, _t1 in saved if abs(t0 - began) < capture.BLOCK_S / 2.0), None)
+        stretches, above = (None, None) if level_a is None else stretches_over(trace, first, end, level_a)
         rows.append({"n": c.n, "start_s": start, "wall": trace.wall0 + start, "awake_s": c.awake_s, "capture_s": c.capture_s,
                      "charge_mah": charge / COULOMBS_PER_MAH, "mean_a": charge / secs if secs > 0 else None, "peak_a": max(trace.highs[first:end]),
+                     "stretches": stretches, "above_s": above,
                      "resolution": "full" if kept is not None else "0.2s", "capture": kept, "partial": c.partial, "truncated": c.truncated,
                      "outlier": None, "z": None})
     whole = [r for r in rows if not r["partial"] and not r["truncated"]]       # a wake cut at either end says nothing about how long or how large a whole one is

@@ -413,9 +413,9 @@ class Sampler(object):
             raise RecordingUnknown("there is no recording named %s" % recording)
         return os.path.join(self.folder, recording + ".csv")
 
-    def wake_table(self, recording):
-        """One row per wake of a power-profiler recording, found by the rule the live session used (waketable.py). RecordingUnknown for a name that is not there;
-        NotAProfilerRecording for the multimeter's; ValueError (a ProfileError) if the sidecar's wake profile is one the capture refuses."""
+    def wake_table(self, recording, level_a=None):
+        """One row per wake of a power-profiler recording, found by the rule the live session used (waketable.py); with `level_a` (amps) each row has its stretches over it. RecordingUnknown
+        for a name that is not there; NotAProfilerRecording for the multimeter's; ValueError (a ProfileError) if the sidecar's wake profile is one the capture refuses."""
         path = self._recording_path(recording)
         meta = {}
         try:
@@ -430,7 +430,7 @@ class Sampler(object):
         except OSError as exc:
             raise RecordingUnknown("the recording %s could not be read: %s" % (recording, exc))
         ws = self._wakes(recording)
-        data = waketable.build(trace, meta.get("wake") or {}, ws.spans() if ws is not None else [])
+        data = waketable.build(trace, meta.get("wake") or {}, ws.spans() if ws is not None else [], level_a)
         data["recording"] = recording
         return data
 
