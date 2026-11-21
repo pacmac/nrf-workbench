@@ -459,8 +459,6 @@
   spec: docs/specs/meter.md
   files:
   - tests/instruments/test_meter.py
-  - nrf_workbench/instruments/meter.py
-  - nrf_workbench/instruments/scpi.py
   test:
     command: null
     criterion: the test passes in 20 of 20 full-suite runs, or the cause is found and named
