@@ -130,6 +130,8 @@ returned, never a tail. **[brief]**
 | `meter_function` | refused | a meter read that named the function it expects (`expect_function`) while the meter is set to another; nothing was read (`meter.md`) | the function it is set to, the one expected |
 | `meter_busy` | refused | an instrument session (watch or record, on the multimeter or the power profiler) is already running, so a second cannot start and the PPK2's own commands wait; the running one is in the evidence (`meter-page.md`, `ppk2.md`) | the running session |
 | `recording_unknown` | refused | no meter recording has that name (`meter-page.md`) | the name |
+| `not_a_profiler_recording` | refused | the recording is the multimeter's, which keeps no wakes, so it has no wake table (`power-workbench.md`, `meter.wake_table`) | the name |
+| `bad_wake_profile` | failed | the wake profile in a recording's sidecar is one the capture refuses, so its wakes cannot be found (`power-workbench.md`) | the name |
 | `capture_unknown` | refused | the power profiler's last session (or the named recording) holds no wake with that number (`ppk2-stages.md`) | the numbers held |
 | `stage_unknown` | refused | the recording has no stage of that name (`ppk2-stages.md`) | the name |
 | `event_unknown` | refused | the recording has no event of that name (`meter-page.md`, "Events") | the name |

@@ -128,7 +128,9 @@ class Capture(object):
         self.partial = False                                  # its rising edge was not seen: the block before it was not judged asleep (a recording that opened on it, no level yet, or the rest of a wake the longest-wake cut ended)
         self.peak = 0.0
         self.blocks = 0
-        self.stats = None                                     # wake_at_s, mean and peak of the decoded samples, worked out the first time they are asked for
+        self.lead_blocks = 0                                  # how many of its blocks are the lead-in taken from before it opened (None for a wake saved before this was recorded)
+        self.tail_blocks = 0                                  # 1 when it ended on the first quiet block after it, 0 when the longest-wake cut ended it (None as above)
+        self.stats = None                                   # wake_at_s, mean and peak of the decoded samples, worked out the first time they are asked for
         self._loader, self._samples = loader, samples
 
     def add(self, data):
@@ -157,6 +159,19 @@ class Capture(object):
     @property
     def samples(self):
         return self._samples if self._loader is not None else self._words
+
+    @property
+    def capture_s(self):
+        """How long the capture is: its blocks, the lead-in and the tail included (what `duration_s` of a row has always been)."""
+        return self.blocks * BLOCK_S
+
+    @property
+    def awake_s(self):
+        """The awake period: from the first block over the awake level to the last, a dip shorter than the hold-off inside it. The capture less its lead-in and its tail.
+        None for a wake saved before the lead-in and tail were recorded."""
+        if self.lead_blocks is None or self.tail_blocks is None:
+            return None
+        return (self.blocks - self.lead_blocks - self.tail_blocks) * BLOCK_S
 
 
 class Capturer(object):
@@ -219,6 +234,7 @@ class Capturer(object):
                 lead = list(self._ring)[-(self.max_blocks - 1):]          # the wake itself needs at least one block of the longest wake
                 o = self._open = Capture(self.count, lead[0][1] if lead else t0, limit)
                 o.partial = not self._prev_asleep
+                o.lead_blocks = len(lead)
                 self._pending = []
                 for blk in lead:
                     self._add(o, blk[0], blk[2], high=None)
@@ -235,6 +251,7 @@ class Capturer(object):
             if len(self._pending) >= self.hold_blocks:
                 d, l, h = self._pending[0]
                 self._add(o, d, l, h)                          # the first block back asleep is the tail; the rest of the quiet is not the wake's
+                o.tail_blocks = 1
                 self._pending = []
                 self._close()
         self._ring.append((data, t0, lost, mean))
@@ -340,7 +357,8 @@ class WakeStore(object):
         packed = c.blob if c.blob is not None else zlib.compress(c.data, ZLIB_LEVEL)
         with open(self._path(c.n, "bin"), "wb") as fh:
             fh.write(packed)
-        meta = {"n": c.n, "t0": c.t0, "level": c.level, "lost": c.lost, "truncated": c.truncated, "partial": c.partial, "peak": c.peak, "samples": c.samples, "stats": c.stats}
+        meta = {"n": c.n, "t0": c.t0, "level": c.level, "lost": c.lost, "truncated": c.truncated, "partial": c.partial, "peak": c.peak, "samples": c.samples, "stats": c.stats,
+                "blocks": c.blocks, "lead_blocks": c.lead_blocks, "tail_blocks": c.tail_blocks}
         tmp = self._path(c.n, "json.tmp")
         with open(tmp, "w") as fh:
             json.dump(meta, fh)
@@ -379,6 +397,8 @@ class WakeStore(object):
                 continue
             c.lost, c.truncated, c.peak, c.stats = m.get("lost", 0), bool(m.get("truncated")), m.get("peak", 0.0), m.get("stats")
             c.partial = bool(m.get("partial"))                 # a wake saved before this was recorded says nothing: it is read as whole
+            c.blocks = m.get("blocks", int(round(m["samples"] / (BLOCK_S * SAMPLE_RATE_HZ))))      # a wake saved before blocks were recorded: whole blocks of 20,000 samples
+            c.lead_blocks, c.tail_blocks = m.get("lead_blocks"), m.get("tail_blocks")             # and one saved before these were recorded has no awake period to give
             out.append(c)
         return out
 
@@ -437,7 +457,8 @@ class WakeSet(object):
             if c.stats is None or "held" not in c.stats:
                 self._values(c)
             out.append({"n": c.n, "t0": round(c.t0, 6), "wake_at_s": c.stats["wake_at_s"], "duration_s": c.samples / float(SAMPLE_RATE_HZ), "samples": c.samples,
-                        "lost": c.lost, "truncated": c.truncated, "partial": c.partial, "peak": c.stats["peak"], "mean": c.stats["mean"], "held": c.stats["held"]})
+                        "lost": c.lost, "truncated": c.truncated, "partial": c.partial, "peak": c.stats["peak"], "mean": c.stats["mean"], "held": c.stats["held"],
+                        "awake_s": c.awake_s, "capture_s": c.capture_s})
         return out
 
     def envelope(self, n, t0=None, t1=None, points=POINTS_DEFAULT):

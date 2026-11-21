@@ -16,6 +16,7 @@ from . import events as eventlib
 from . import meter as meterlib
 from . import replay
 from . import scpi
+from . import waketable
 from .envelope import Envelope, Stats
 from .source import Fault, Reading
 
@@ -45,6 +46,10 @@ class Missing(Exception):
 
 class RecordingUnknown(Exception):
     """No recording has that name."""
+
+
+class NotAProfilerRecording(Exception):
+    """The recording is the multimeter's: it has no wakes to tabulate."""
 
 
 class ProfileNotWanted(Exception):
@@ -407,6 +412,27 @@ class Sampler(object):
         if not NAME.match(recording or "") or not self.folder or not os.path.exists(os.path.join(self.folder, recording + ".csv")):
             raise RecordingUnknown("there is no recording named %s" % recording)
         return os.path.join(self.folder, recording + ".csv")
+
+    def wake_table(self, recording):
+        """One row per wake of a power-profiler recording, found by the rule the live session used (waketable.py). RecordingUnknown for a name that is not there;
+        NotAProfilerRecording for the multimeter's; ValueError (a ProfileError) if the sidecar's wake profile is one the capture refuses."""
+        path = self._recording_path(recording)
+        meta = {}
+        try:
+            with open(path[:-4] + ".json") as fh:
+                meta = json.load(fh)
+        except (OSError, ValueError):
+            pass
+        if meta.get("source", "meter") != "ppk2":
+            raise NotAProfilerRecording("%s is a multimeter recording: it keeps no wakes" % recording)
+        try:
+            trace = self._traces.get(path)
+        except OSError as exc:
+            raise RecordingUnknown("the recording %s could not be read: %s" % (recording, exc))
+        ws = self._wakes(recording)
+        data = waketable.build(trace, meta.get("wake") or {}, ws.spans() if ws is not None else [])
+        data["recording"] = recording
+        return data
 
     def captures(self, recording=None):
         s, ws = self._session, self._wakes(recording)

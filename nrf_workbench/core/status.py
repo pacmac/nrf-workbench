@@ -28,8 +28,9 @@ CODES = {
     "i2c_pins_unclaimed": REFUSED, "bad_manifest": REFUSED, "project_conflict": REFUSED, "project_applied": REFUSED,
     "project_not_applied": REFUSED, "pins_not_controllable": REFUSED, "meter_function": REFUSED,
     "meter_busy": REFUSED, "meter_idle": REFUSED, "recording_unknown": REFUSED, "capture_unknown": REFUSED, "stage_unknown": REFUSED, "event_unknown": REFUSED, "ppk2_mode": REFUSED, "supply_unconfirmed": REFUSED, "profile_not_candidate": REFUSED,
+    "not_a_profiler_recording": REFUSED,
     # failed: it was attempted and went wrong
-    "no_reply": FAILED, "touch_failed": FAILED, "bootloader_not_reached": FAILED, "flash_failed": FAILED,
+    "bad_wake_profile": FAILED, "no_reply": FAILED, "touch_failed": FAILED, "bootloader_not_reached": FAILED, "flash_failed": FAILED,
     "run_node_not_returned": FAILED, "write_failed": FAILED, "pins_not_set": FAILED,
     "meter_unreachable": FAILED, "ppk2_unreachable": FAILED,
     # suspect: it finished but the evidence says do not trust it
@@ -47,7 +48,7 @@ REFUSED_HTTP = {
     "firmware_unknown": 404, "project_unknown": 404, "macro_unknown": 404, "pin_unknown": 404,
     "target_unknown": 404, "bad_manifest": 422, "recording_unknown": 404, "capture_unknown": 404, "stage_unknown": 404, "event_unknown": 404,
     "pin_reserved": 422, "pin_not_on_header": 422, "voltage_unsafe": 422, "intent_not_built": 422, "connection_unknown": 404,
-    "length_required": 411,
+    "length_required": 411, "not_a_profiler_recording": 422,
     "store_full": 507,
 }
 
