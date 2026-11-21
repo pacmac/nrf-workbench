@@ -446,10 +446,12 @@ function Tail({ items, empty }) {
       </ul>
       <div className="flex h-8 shrink-0 items-center gap-1 text-xs text-slate-600 dark:text-slate-400">
         <span data-testid="follow" className={following ? "font-medium text-emerald-700 dark:text-emerald-400" : "font-medium text-amber-700 dark:text-amber-400"}>{following ? "Following" : "Paused"}</span>
-        {n > 0 && <span data-testid="pager" className="ml-2 mr-auto">{start + 1} to {end} of {n}</span>}
-        <Button tone="quiet" className="min-h-7! px-3! py-0.5!" disabled={start === 0} onClick={() => setEndAt(Math.max(Math.min(fit, n), end - fit))} aria-label="Older lines">‹</Button>
-        <Button tone="quiet" className="min-h-7! px-3! py-0.5!" disabled={following} onClick={() => setEndAt(end + fit >= n ? null : end + fit)} aria-label="Newer lines">›</Button>
-        <Button tone="quiet" className="min-h-7! px-3! py-0.5!" disabled={following} onClick={() => setEndAt(null)}>Latest</Button>
+        {n > 0 && <span data-testid="pager" className="ml-2">{start + 1} to {end} of {n}</span>}
+        <div className="ml-auto flex items-center gap-1">
+          <Button tone="quiet" className="min-h-7! px-3! py-0.5!" disabled={start === 0} onClick={() => setEndAt(Math.max(Math.min(fit, n), end - fit))} aria-label="Older lines">‹</Button>
+          <Button tone="quiet" className="min-h-7! px-3! py-0.5!" disabled={following} onClick={() => setEndAt(end + fit >= n ? null : end + fit)} aria-label="Newer lines">›</Button>
+          <Button tone="quiet" className="min-h-7! px-3! py-0.5!" disabled={following} onClick={() => setEndAt(null)}>Latest</Button>
+        </div>
       </div>
       <div data-testid="line-detail" className="h-14 shrink-0 overflow-hidden whitespace-pre-wrap break-all rounded-md bg-slate-100 p-2 font-mono text-xs leading-4 text-slate-800 dark:bg-slate-900 dark:text-slate-200">{shown ? `${clock(shown.wall)}  ${lineText(shown)}` : ""}</div>
     </div>
