@@ -28,6 +28,10 @@ A **session** is one sampler thread on the Pi that takes a reading every period 
 | `meter.session` | read | `{state: idle/watching/recording/error, mode, session, name, started, elapsed_s, bound_s, reason, stats}` |
 | `meter.profile` | read | the session so far as an **envelope** (below) plus the live feed cursor to resume from: `{session, cursor, epoch, unit, function, buckets, stats}` |
 | `meter.recordings` | read | the files, newest first: `{name, bytes, readings, started}` |
+| `meter.wake_set` `wake_*`? | write | changes the running power-profiler session's trigger (what counts as a wake) from its next block; `meter_idle` when nothing runs (`ppk2-stages.md`, "The wake profile") |
+| `meter.replay` `recording`, `t0`?, `t1`?, `points`? | read | any stretch of a recording as an exact envelope on its own clock, with the stretch's figures (see "Live and replay") |
+| `meter.recording_delete` `name` | write | deletes a recording with its sidecar, saved wakes, stages and events; `meter_busy` while it is being recorded |
+| `meter.event_set` `recording`, `name`, `start_s`, `end_s`, `was`? / `meter.event_delete` / `meter.events` `recording`, `volts`? | write / write / read | named stretches of a recording (see "Events") |
 | `meter.recording` `name` | read | the file's text (`csv`), for download; `recording_unknown` for a name that is not a file here |
 
 `bound_s` is **required** (nothing runs unbounded, core.md): **1 to 43,200 s (12 h)**. A CSV line is about 60 bytes and a reading arrives every 0.2 s at NPLC 10, so 12 h is 216,000 lines, about
@@ -63,10 +67,59 @@ CSV columns: `t_s,wall,value,unit,function,range,nplc,overload`.
 
 ## The page (Meter)
 
-Phone and desktop, both themes, no timers. From the top: **the meter's setting in words** (function, range, NPLC, "in series"); **the live figure**, large, with its unit; **Watch / Record / Stop** with a
-duration choice (1 min, 10 min, 1 h, 4 h, 12 h) and a name for a recording; the session line ("recording, 00:04:12 of 10:00, 1,260 readings"); **the chart** of the envelope (a band from lowest to highest and
-the mean as a line, zero always on the axis, the time axis in minutes or hours); **the figures**: min, max, mean, and for current the charge in mAh; **battery life**: a capacity in mAh the person types gives
-"at this average it lasts N days"; **Recordings** with a download for each. A failure is shown as the whole result with its code. The note about averaging (decision 3) is on the page.
+Phone and desktop, both themes, no timers. From the top (**reworked 2026-11-20**, "Live and replay" below): **the Scope card**, which is either **Live** or **Replay: <recording>** (two buttons in its header);
+in Live: **the live figure**, large, with its unit; the session line ("recording, 00:04:12 of 10:00, 1,260 readings"); **Watch / Record / Stop** with a duration choice (1 min, 10 min, 1 h, 4 h, 12 h) and a name for a
+recording, and **Replay <name>** once a recording has ended; then **the trace** with its controls and **the figures** (lowest, highest, average, and for current the charge in mAh, of the stretch shown);
+**battery life** (a capacity in mAh gives "at this average it lasts N days") and the cycle table. In Replay: the trace over the whole recording with its controls, the overview strip, the figures, and **Events**.
+Below: **Stages across the wakes** (a collapsed section: each saved wake at full rate, and stages across wakes), **Recordings** (each with **Replay**, **Save CSV** and **Delete**, which asks first), and **the
+instrument's settings** (the meter's setting in words, or the profiler's mode and supply), collapsed. A failure is shown as the whole result with its code. The note about averaging (decision 3) is on the page.
+
+## Live and replay: one scope (2026-11-20)
+
+Peter, 2026-11-20: "there is no way to delete a recording. and shouldn't Download be 'Replay'. this entire page layout is not good. the scope view should be either the live data, or should be a replay.
+when a replay is loaded it should show the whole time period, you should be able to zoom in and out and forward / reverse through the whole recording, just as you would do on an oscilloscope."
+Then: "the Y axis has no scale, and I cannot mouse over the trace to see what the XY values are."
+
+**One scope, two modes.** *Live* shows the running (or last) session; *Replay* shows a recording, from its first reading to its last. Both have the same controls and the same trace. A person never has two
+charts of one thing to compare: the wake at full rate is the deepest zoom of the same scope, not a second chart.
+
+**The trace** has a **labelled vertical axis** (round values in the unit, linear from zero or logarithmic), a **labelled time axis** (m:ss or h:mm:ss for minutes and hours, seconds, then milliseconds as it
+zooms), and a **cursor**: move over the trace (or touch it) and a line follows the pointer and a readout above the chart gives its time and the lowest, average and highest reading of the point under it and how long
+each point is.
+
+**Controls**: *Whole*, *Back* and *Forward* (half a screen), *Zoom out* and *Zoom in* (twice), a drag across the trace to zoom to that stretch, ctrl + wheel (or a trackpad pinch) to zoom about the pointer, and
+keys with the chart focused (← → + − 0). Under the chart a strip shows the whole recording with the stretch shown lit; pressing on it moves the stretch there. A line says what is shown ("0:14:20 to 0:16:00,
+1 min 40 s of 1 h"). The lowest, highest, average and charge under the chart are those of the stretch shown, not of the recording.
+
+**What a replay can show** (bounded by what was kept): a recording's CSV has one row per 0.2 s block, so the whole recording zooms down to **0.2 s a point** (the floor is five points, 1 s). A stretch wholly
+inside a **wake the recording saved at full rate** (the newest 20) zooms to the sample, **10 µs**, and is drawn from the wake's own samples. The strip marks the saved wakes. Keeping every sample is not built: 12 h
+is 17 GB (7.5 GB compressed); see "Keeping every sample".
+
+**Commands.** `meter.replay` (`recording`, `t0`?, `t1`?, `points`?): the exact lowest, highest and time-weighted mean of any stretch in at most `points` buckets of equal width (2 to 2000, default 1000), on the
+recording's clock (seconds since it began), with the stretch's lowest, highest, average, charge and samples (each row counted for the part of it inside the stretch), the recording's `duration_s`, `unit`, `started` (wall
+time), the spans of its saved wakes, and `source`: `csv` or `wake` (with its number, `resolution_s` 0.2 or 1e-5). `meter.recording_delete` (`name`): removes the CSV, sidecar, saved wakes, stages and events; refused
+`meter_busy` while it is being recorded; `recording_unknown` for a name that is not there. The Recordings list has **Replay** (loads the scope), **Save CSV** (what Download was: anyone may want the file) and
+**Delete** (asks first).
+
+## Events (2026-11-20)
+
+Peter, 2026-11-20: "rather than wake / sleep these should be defined as events, and events can be named ... we might not know what it is doing until the capture is done, then we can define events ... I would expect
+to be able to assign vertical marker pairs, not by dragging along the trace, that is very difficult, but by clicking once would tag the event start and the second click would tag the second event end, those would
+probably be vertical lines, and the space between them shaded and the ability to name them."
+
+**An event is a named stretch of a recording**, `start_s` to `end_s` in seconds since it began. **When it is defined: after**, on any data. Nothing has to be known before the capture. (The trigger, the wake
+profile of `ppk2-stages.md`, is the part that is set before or during a capture: it decides what is kept at full rate, and is not needed to define an event.)
+
+**Making one.** On a replay choose *Mark an event*; the first click puts a line where it starts (orange), the second puts the end line and shades the space between; a box asks for the name (a default,
+"event 1", is selected). *Esc* or Cancel drops it. Click order does not matter (the earlier click is the start). Each saved event is tinted, named above the trace, listed in a table with its **length, average
+current (and lowest), peak and charge** (and energy when the supply voltage is known), and offers *Show* (zooms to it), *Rename*, *Move start*, *Move end* (arms the next click on the trace) and *Delete*.
+
+**Measured exactly from the best data kept**: wholly inside a saved wake, from the wake's samples (the table says "from the samples"); otherwise from the readings, each counted for the part inside the event
+(so an event that starts part-way through a 0.2 s row does not count the whole row). An event past the end of the recording is measured over what is there and says so; one with no readings measures nothing and is not an error.
+
+**Rules** (`events.py`): a name is 1 to 40 characters, unique ignoring case; `start_s` is 0 or more and `end_s` at least one sample (10 µs) after it; events **may overlap** (a burst inside the wake it belongs to,
+which stages may not); at most 200. `meter.event_set` (`recording`, `name`, `start_s`, `end_s`, `was`?: the event this replaces, so a rename or a move is one change), `meter.event_delete`, `meter.events` (`recording`,
+`volts`?). Kept in `<name>.events.json` beside the CSV; deleted with it. New result code `event_unknown` (404, core.md).
 
 ## Battery life: the whole recording, or one wake/sleep cycle
 

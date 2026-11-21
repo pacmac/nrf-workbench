@@ -68,8 +68,12 @@ is refused `capability_missing`. On the bench `streams.meter.retain` stays 20,00
 Result codes added (core.md rows; the test reads both): `ppk2_unreachable` (failed: nothing at the port, or it would not open), `ppk2_mode` (refused: the PPK2 is in the other mode), `supply_unconfirmed` (refused: needs `accept_supply`).
 `meter_busy` now means "an instrument session is running". `no_reply` is used when the unit does not answer the metadata query within the ceiling. `two_candidates` and `voltage_unsafe` already exist.
 
-Ceilings, derived: the metadata answer took 0.2 s, so **0.5 s** (2.5 x); a block is 0.2 s of stream, so a block that has not completed in **0.65 s** (2 x the block + the same 0.25 s call ceiling the multimeter uses) is a silent
-unit and **ends the session** (`state: error`, the file kept as far as it got), as the multimeter does. After `0x07` the stream is drained until a 50 ms read is empty (the in-flight bytes took under 10 ms), at most 1 s.
+Ceilings, derived: the metadata answer took 0.2 s, so **0.5 s** (2.5 x); a block is 0.2 s of stream, so a unit that sends **nothing for 0.65 s** (2 x the block + the same 0.25 s call ceiling the multimeter uses) is a silent
+unit and **ends the session** (`state: error`, the file kept as far as it got), as the multimeter does. **The 0.65 s is of silence, measured from the last bytes that arrived, not from the start of the block**
+(corrected 2026-11-20). The first build timed the whole block, and on the bench Pi a read-only watch ended "gone silent" (14,285 of 20,000 samples) each time a 26 s wake was fetched during it, as a recording had the evening before
+(13,864 of 20,000, seconds after a page asked for that wake): decoding 2.6 million samples is 3 s of pure Python in another thread of the service, a block is read in about 160 small pieces, and each piece waited up to the
+interpreter's 5 ms switch interval for its turn, 0.8 s a block against the 0.2 s the unit takes to send it. So also **while a session runs the interpreter's switch interval is 0.3 ms** (`SWITCH_INTERVAL_S`: 160 x 0.3 ms = 48 ms,
+a quarter of a block), put back as it was when the session ends; and a block that arrives slowly in pieces is slow, not silent (what waits in the kernel's buffer is read when the thread runs; samples lost past it are counted). After `0x07` the stream is drained until a 50 ms read is empty (the in-flight bytes took under 10 ms), at most 1 s.
 
 ## What changes in a session and a recording
 

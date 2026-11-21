@@ -174,7 +174,18 @@ class Capturer(object):
         self._ring = collections.deque(maxlen=self.profile.lead_blocks)      # (data, t0, lost, mean) of the last blocks, newest last: where a capture's lead-in comes from
         self._open = None
         self._pending = []                                    # (data, lost, high) of the quiet blocks of an open wake that have not yet lasted hold_s: part of it if it wakes again
+        self._next = None                                     # a profile asked for from another thread: taken up at the start of the next block, so the session's thread is the only one that changes anything
         self.on_close = None                                  # called with each capture as it is kept (the profiler's source saves it to disk here)
+
+    def request(self, profile):
+        """Change the profile of a capture that is running (docs/specs/ppk2-stages.md, "The wake profile"): from the next block. Safe to call from any thread. A wake already open carries on
+        under the new hold-off and longest wake; the levels found so far are kept, since they are the device's and not the profile's."""
+        self._next = profile
+
+    def _apply(self, profile):
+        self.profile = profile
+        self.max_blocks, self.hold_blocks = profile.max_blocks, profile.hold_blocks
+        self._ring = collections.deque(list(self._ring)[-profile.lead_blocks:] if profile.lead_blocks else [], maxlen=profile.lead_blocks)
 
     def sleep_a(self):
         """The sleep level in force: the profile's, or the one found, or None while there is not enough data."""
@@ -192,6 +203,9 @@ class Capturer(object):
         return {"sleep_a": self.sleep_a(), "sleep_auto": self.profile.sleep_a is None, "awake_a": self.awake_a(), "awake_auto": self.profile.awake_a is None}
 
     def feed(self, data, t0, mean, high, lost=0):
+        nxt, self._next = self._next, None
+        if nxt is not None:
+            self._apply(nxt)
         self.level.add(mean)
         limit = self.awake_a()
         awake = limit is not None and mean > limit
@@ -207,7 +221,7 @@ class Capturer(object):
                 self._add(o, data, lost, high)
                 self._check_cap(o)
         elif awake:
-            room = self.max_blocks - o.blocks
+            room = max(0, self.max_blocks - o.blocks)                 # a longest wake lowered under an open one leaves no room: it closes below
             for d, l, h in (self._pending + [(data, lost, high)])[:room]:         # a dip that did not last hold_s is part of the wake
                 self._add(o, d, l, h)
             self._pending = []
@@ -403,6 +417,11 @@ class WakeSet(object):
                 if self._remember is not None:
                     self._remember(c)
             return values, start
+
+    def spans(self):
+        """(n, t0, t1) for each wake on the session's clock: where its first sample falls and where its last does. Nothing is decoded."""
+        rate = float(SAMPLE_RATE_HZ)
+        return [(c.n, c.t0, c.t0 + c.samples / rate) for c in self._items()]
 
     def rows(self):
         out = []

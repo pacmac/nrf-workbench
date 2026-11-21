@@ -12,13 +12,16 @@ import threading
 import time
 
 from . import capture
+from . import events as eventlib
 from . import meter as meterlib
+from . import replay
 from . import scpi
 from .envelope import Envelope, Stats
 from .source import Fault, Reading
 
 MIN_BOUND_S, MAX_BOUND_S = 1, 43200          # 12 h: about 216,000 readings and 13 MB of CSV at NPLC 10 (docs/specs/meter-page.md)
 KEEP_RECORDINGS = 10                         # newest files kept: 10 x 13 MB = 130 MB at most
+RECORDING_SUFFIXES = (".csv", ".json", ".stages.json", ".events.json")      # what a recording keeps beside its saved wakes folder
 SETTING_EVERY = 10                           # re-ask function, range and NPLC every 10 readings: about 2 s at NPLC 10, not 4 extra queries on every reading
 NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 # The first eight columns are the multimeter's; `min`, `max` and `n` were added for the power profiler's blocks (docs/specs/ppk2.md) and come last, so an older file still reads.
@@ -45,6 +48,10 @@ class RecordingUnknown(Exception):
 
 class ProfileNotWanted(Exception):
     """A wake profile was given to a session of an instrument that keeps no wakes (the multimeter)."""
+
+
+class NotRunning(Exception):
+    """There is no running session to change."""
 
 
 class Session(object):
@@ -112,6 +119,8 @@ class Sampler(object):
         if ppk2 is not None:
             self.sources["ppk2"] = ppk2.source()
         self.bus, self.folder = bus, folder
+        self._traces = replay.TraceCache()                   # the recording last asked for, parsed (a replay asks the same file many times)
+        self._stored_key, self._stored = None, None          # and the saved wakes of the recording last asked for, with the one decoded last
         self._wall, self._mono = wall, mono
         self._lock = threading.Lock()
         self._session = None
@@ -164,6 +173,20 @@ class Sampler(object):
             s.thread.start()
             return self._summary(s)
 
+    def wake_set(self, wake):
+        """Change what a wake is for the running session, from its next block (docs/specs/ppk2-stages.md, "The wake profile"): the trigger can be changed during a capture. `wake` is a
+        capture.WakeProfile; a field it leaves to the data is found again. Raises NotRunning with no session running and ProfileNotWanted for a multimeter's. The session's summary."""
+        with self._lock:
+            s = self._session
+            if s is None or s.thread is None or not s.thread.is_alive():
+                raise NotRunning("no session is running")
+            if s.source.name != "ppk2":
+                raise ProfileNotWanted("a multimeter session keeps no wakes, so it has no wake profile")
+            s.wake = wake
+            s.source.set_wake(s, wake)
+            self._publish_state(s)
+            return self._summary(s)
+
     def stop(self):
         """End the session now and wait for its thread (at most the source's give-up time). Already stopped is fine."""
         with self._lock:
@@ -177,12 +200,31 @@ class Sampler(object):
         """Keep the newest KEEP_RECORDINGS - 1 recordings so that one more fits."""
         files = sorted((f for f in os.listdir(self.folder) if f.endswith(".csv")), key=lambda f: os.path.getmtime(os.path.join(self.folder, f)))
         for old in files[:max(0, len(files) - (KEEP_RECORDINGS - 1))]:
-            for suffix in (".csv", ".json", ".stages.json"):
-                try:
-                    os.unlink(os.path.join(self.folder, old[:-4] + suffix))
-                except OSError:
-                    pass
-            shutil.rmtree(os.path.join(self.folder, old[:-4] + ".wakes"), ignore_errors=True)
+            self._remove_files(old[:-4])
+
+    def _remove_files(self, name):
+        """Every file of one recording: the CSV, its sidecar, its stages and events, and its saved wakes. What was removed is returned."""
+        removed = []
+        for suffix in RECORDING_SUFFIXES:
+            try:
+                os.unlink(os.path.join(self.folder, name + suffix))
+                removed.append(name + suffix)
+            except OSError:
+                pass
+        if os.path.isdir(os.path.join(self.folder, name + ".wakes")):
+            shutil.rmtree(os.path.join(self.folder, name + ".wakes"), ignore_errors=True)
+            removed.append(name + ".wakes")
+        self._traces.forget(os.path.join(self.folder, name + ".csv"))
+        self._stored_key, self._stored = None, None
+        return removed
+
+    def recording_delete(self, name):
+        """Delete a recording and everything kept with it. Raises RecordingUnknown for a name that is not there and Busy while a session is writing it."""
+        self._recording_path(name)
+        s = self._session
+        if s is not None and s.name == name and s.thread is not None and s.thread.is_alive():
+            raise Busy(self._summary(s))
+        return {"name": name, "removed": self._remove_files(name)}
 
     # -- the thread -----------------------------------------------------------------------------------
     def _run(self, s):
@@ -296,7 +338,16 @@ class Sampler(object):
             return getattr(s.source, "wakes", None) if s is not None else None
         self._recording_path(recording)
         from . import ppk2                                   # here, not at the top: ppk2 is only for a bench that has one
-        return ppk2.stored_wakes(os.path.join(self.folder, recording + ".wakes"))
+        folder = os.path.join(self.folder, recording + ".wakes")
+        try:
+            key = (folder, os.stat(folder).st_mtime_ns, len(os.listdir(folder)))
+        except OSError:
+            key = None
+        if key is not None and key == self._stored_key:      # the wakes of the recording last asked for: decoding one takes seconds, and a person zooming asks again and again
+            return self._stored
+        ws = ppk2.stored_wakes(folder)
+        self._stored_key, self._stored = key, ws
+        return ws
 
     def _recording_path(self, recording):
         if not NAME.match(recording or "") or not self.folder or not os.path.exists(os.path.join(self.folder, recording + ".csv")):
@@ -338,6 +389,45 @@ class Sampler(object):
             capture.save_stages(path, stages)
         return stages
 
+    # -- events: named stretches of a recording (docs/specs/meter-page.md, "Events") ------------------------
+    def _events_path(self, recording):
+        self._recording_path(recording)
+        return os.path.join(self.folder, recording + ".events.json")
+
+    def event_set(self, recording, name, start_s, end_s, was=None):
+        """The recording's events with this one added or changed (eventlib.EventError for a rule broken)."""
+        path = self._events_path(recording)
+        evs = eventlib.set_event(eventlib.load_events(path), name, start_s, end_s, was)
+        eventlib.save_events(path, evs)
+        return evs
+
+    def event_delete(self, recording, name):
+        """The events left, or None if there was no event of that name."""
+        path = self._events_path(recording)
+        evs = eventlib.remove_event(eventlib.load_events(path), name)
+        if evs is not None:
+            eventlib.save_events(path, evs)
+        return evs
+
+    def events(self, recording, volts=None):
+        """The recording's events, each with what it measured: its length, average, lowest and highest current, charge and (with `volts`) energy, exact from the saved wake's samples when the
+        event is wholly inside one and from the readings, each counted for the part inside the event, when not. An event with no readings in it measures nothing (it is not an error)."""
+        evs = eventlib.load_events(self._events_path(recording))
+        ws = self._wakes(recording)
+        rows = []
+        for e in evs:
+            row = dict(e, duration_s=e["end_s"] - e["start_s"], source=None, wake=None, covered_s=None, mean=None, lowest=None, peak=None, charge_c=None, energy_j=None)
+            try:
+                r = self._replay(recording, e["start_s"], e["end_s"], 2, ws=ws, exact=True)
+            except ValueError:
+                rows.append(row)
+                continue
+            st = r["stats"]
+            row.update(source=r["source"], wake=r["wake"], covered_s=st["seconds"], mean=st["mean"], lowest=st["lowest"], peak=st["highest"], charge_c=st["charge"],
+                       energy_j=st["charge"] * volts if volts else None)
+            rows.append(row)
+        return {"recording": recording, "events": rows}
+
     def stages(self, recording, volts=None):
         """The stage table over the recording's saved wakes."""
         path = self._stages_path(recording)
@@ -347,6 +437,48 @@ class Sampler(object):
             return {"recording": recording, "wakes": 0, "stages": [dict(s, length_s=s["end_s"] - s["start_s"], wakes=0, numbers=[], mean=None, lowest_mean=None, highest_mean=None,
                                                                          peak=None, charge_c=None, share=None, energy_j=None) for s in stages], "groups": []}
         return dict(ws.stage_table(stages, volts), recording=recording)
+
+    def replay(self, recording, t0=None, t1=None, points=None):
+        """Any stretch of a recording as an exact envelope, on the recording's own clock (seconds since its session began). RecordingUnknown for a name that is not there; ValueError for
+        points out of range or a stretch that holds nothing (the message says where the recording runs). Where the stretch is narrower than a row per point and lies inside a wake the
+        recording saved at full rate, it is drawn from that wake's samples (`source` "wake") instead of the file's 0.2 s rows (`source` "csv")."""
+        return self._replay(recording, t0, t1, points)
+
+    def _replay(self, recording, t0, t1, points, ws=False, exact=False):
+        """`replay`, with the recording's WakeSet given (so many stretches can share one: `False` fetches it) and `exact`: a stretch inside a saved wake is drawn from the wake's samples
+        however wide, which is what a measurement wants (a stretch drawn for a chart only needs them when it is finer than the readings)."""
+        path = self._recording_path(recording)
+        try:
+            trace = self._traces.get(path)
+        except OSError as exc:
+            raise RecordingUnknown("the recording %s could not be read: %s" % (recording, exc))
+        points = replay.POINTS_DEFAULT if points is None else points
+        got = trace.window(t0, t1, points)
+        if got is None:
+            raise ValueError("the stretch holds no readings of %s (it runs from %g to %g s)" % (recording, trace.start_s, trace.end_s))
+        buckets, stats, width = got
+        lo = trace.start_s if t0 is None else t0
+        hi = trace.end_s if t1 is None else t1
+        if ws is False:
+            ws = self._wakes(recording)
+        spans = ws.spans() if ws is not None else []
+        out = {"recording": recording, "source": "csv", "wake": None, "unit": trace.unit, "function": trace.function, "started": trace.wall0,
+               "start_s": trace.start_s, "duration_s": trace.end_s, "t0": buckets[0]["t0"], "t1": buckets[-1]["t1"], "points": len(buckets), "width_s": width,
+               "resolution_s": trace.finest_s, "buckets": buckets, "stats": stats, "wakes": [{"n": n, "t0": a, "t1": b} for n, a, b in spans]}
+        if exact or (hi - lo) / points < trace.finest_s:       # finer than a row per point was asked for (or a measurement): a saved wake that holds the whole stretch can answer
+            for n, a, b in spans:
+                if a - 1e-9 <= lo and hi <= b + 1e-9:
+                    row = next((r for r in ws.rows() if r["n"] == n), None)
+                    if row is None:
+                        break
+                    base = row["t0"] + row["wake_at_s"]        # the wake's own time zero, on the recording's clock
+                    env = ws.envelope(n, lo - base, hi - base, points)
+                    out.update(source="wake", wake=n, t0=base + env["t0"], t1=base + env["t1"], points=env["points"], width_s=env["width_s"], resolution_s=1.0 / capture.SAMPLE_RATE_HZ,
+                               buckets=[dict(b, t0=base + b["t0"], t1=base + b["t1"]) for b in env["buckets"]],
+                               stats={"lowest": min(b["min"] for b in env["buckets"]), "highest": env["peak"], "mean": env["mean"], "charge": env["charge_c"],
+                                      "samples": env["samples"], "seconds": env["samples"] / float(capture.SAMPLE_RATE_HZ)})
+                    break
+        return out
 
     def recordings(self):
         """The files in the folder, newest first, with what the sidecar says. A recording whose sidecar has no end was cut short."""

@@ -132,6 +132,8 @@ returned, never a tail. **[brief]**
 | `recording_unknown` | refused | no meter recording has that name (`meter-page.md`) | the name |
 | `capture_unknown` | refused | the power profiler's last session (or the named recording) holds no wake with that number (`ppk2-stages.md`) | the numbers held |
 | `stage_unknown` | refused | the recording has no stage of that name (`ppk2-stages.md`) | the name |
+| `event_unknown` | refused | the recording has no event of that name (`meter-page.md`, "Events") | the name |
+| `meter_idle` | refused | no instrument session is running, so there is nothing to change (`meter.wake_set`; `ppk2-stages.md`) | |
 | `meter_unreachable` | failed | the multimeter did not accept a connection within the ceiling, or closed it (`meter.md`) | the address, the reason |
 | `ppk2_unreachable` | failed | no PPK2 is attached (or not the one named), it has no measuring serial port, or the port would not open or failed (`ppk2.md`) | the setting, the serial or the port |
 | `ppk2_mode` | refused | the PPK2 is in the other mode: only source mode supplies a board, so switching the output on is refused in ampere mode (`ppk2.md`) | the mode it is in |
@@ -177,7 +179,7 @@ One function maps a `Result` to both, so the CLI and API cannot disagree.
 | class | CLI exit | HTTP |
 |---|---|---|
 | ok | 0 | 200 |
-| refused | 1 | 409 for state, holder, lock, serial, protected and link-wiring refusals (`link_absent`, `link_rx_only`, `voltage_unverified`, `dtr_rts_unsafe`); 422 for `bad_package`, `wrong_softdevice`, `no_bound`, `baud_refused`, `not_a_declared_link`, `checksum_mismatch`, `bad_project`; 422 also for `pin_reserved`, `pin_not_on_header`, `voltage_unsafe`, `intent_not_built`; 404 for `firmware_unknown`, `project_unknown`, `macro_unknown`, `pin_unknown`, `connection_unknown`, `target_unknown`, `recording_unknown`, `capture_unknown`, `stage_unknown`; 422 also for `bad_manifest`; 411 for `length_required`; 507 for `store_full`; 409 for `in_use` |
+| refused | 1 | 409 for state, holder, lock, serial, protected and link-wiring refusals (`link_absent`, `link_rx_only`, `voltage_unverified`, `dtr_rts_unsafe`); 422 for `bad_package`, `wrong_softdevice`, `no_bound`, `baud_refused`, `not_a_declared_link`, `checksum_mismatch`, `bad_project`; 422 also for `pin_reserved`, `pin_not_on_header`, `voltage_unsafe`, `intent_not_built`; 404 for `firmware_unknown`, `project_unknown`, `macro_unknown`, `pin_unknown`, `connection_unknown`, `target_unknown`, `recording_unknown`, `capture_unknown`, `stage_unknown`, `event_unknown`; 422 also for `bad_manifest`; 411 for `length_required`; 507 for `store_full`; 409 for `in_use` |
 | (usage error: bad arguments) | 2 | 400 |
 | failed | 3 | 500 |
 | suspect | 4 | 500, `ok` false |

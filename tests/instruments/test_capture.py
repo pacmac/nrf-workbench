@@ -253,6 +253,61 @@ class WhenAWakeIsKept(unittest.TestCase):
         lv = capture.Capturer(capture.WakeProfile(sleep_a=1e-5)).levels()
         self.assertEqual((lv["awake_a"], lv["awake_auto"]), (2e-5, True), "the awake level follows a given sleep level")
 
+    def test_a_profile_asked_for_while_it_runs_takes_effect_at_the_next_block_and_not_before(self):
+        c = capture.Capturer(given())
+        feed_blocks(c, quiet(30))
+        before = c.profile
+        c.request(given(hold_s=0.6))
+        self.assertIs(c.profile, before, "asked for from another thread: nothing changes until the session's own thread takes the next block")
+        c.feed(block(30), 30.0, SLEEP, SLEEP * 1.01, 0)
+        self.assertEqual((c.profile.hold_s, c.hold_blocks), (0.6, 3))
+
+    def test_a_longer_hold_off_asked_for_during_a_wake_carries_it_across_a_dip_that_would_have_ended_it(self):
+        c = capture.Capturer(given())
+        feed_blocks(c, quiet(30) + hot(1))
+        self.assertEqual((c.count, c.kept), (1, 0))
+        c.request(given(hold_s=0.6))
+        for k, (mean, high) in enumerate(quiet(2) + hot(1) + quiet(3)):
+            c.feed(block(31 + k), 31.0 + k, mean, high, 0)
+        self.assertEqual((c.count, c.kept), (1, 1), "the two quiet blocks are a dip now, and one wake")
+        self.assertEqual(c.get(1).blocks, 1 + 1 + 2 + 1 + 1)
+
+    def test_a_lower_longest_wake_asked_for_under_an_open_wake_ends_it_marked_cut_short_and_the_next_block_opens_another(self):
+        c = capture.Capturer(given())
+        feed_blocks(c, quiet(30) + hot(8))
+        c.request(given(max_s=1))
+        c.feed(block(38), 38.0, WAKE / 2, WAKE, 0)
+        first = c.get(1)
+        self.assertTrue(first.truncated)
+        self.assertEqual(first.blocks, 9, "it held 9 blocks, over the new longest of 5: nothing more is added, and it closes")
+        c.feed(block(39), 39.0, WAKE / 2, WAKE, 0)
+        self.assertEqual(c.count, 2)
+
+    def test_a_longer_lead_in_asked_for_fills_as_blocks_go_by(self):
+        c = capture.Capturer(given())
+        feed_blocks(c, quiet(30))
+        c.request(given(lead_s=0.6))
+        for k, (mean, high) in enumerate(quiet(5) + hot(1) + quiet(2)):
+            c.feed(block(30 + k), 30.0 + k, mean, high, 0)
+        self.assertEqual(c.get(1).data, b"".join(block(k) for k in (32, 33, 34, 35, 36)), "three blocks of lead-in (0.6 s), the awake block, the first quiet one")
+
+    def test_the_levels_found_so_far_are_kept_when_the_profile_changes(self):
+        c = capture.Capturer()
+        feed_blocks(c, quiet(40))
+        sleep, n = c.levels()["sleep_a"], c.level.n
+        c.request(capture.WakeProfile(hold_s=0.6))
+        c.feed(block(40), 40.0, SLEEP, SLEEP * 1.01, 0)
+        self.assertEqual(c.level.n, n + 1)
+        self.assertAlmostEqual(c.levels()["sleep_a"], sleep, delta=sleep * 0.075)
+
+    def test_an_awake_level_given_during_a_capture_replaces_the_one_found(self):
+        c = capture.Capturer()
+        feed_blocks(c, quiet(30))
+        c.request(capture.WakeProfile(awake_a=5e-3))
+        c.feed(block(30), 30.0, SLEEP, SLEEP * 1.01, 0)
+        lv = c.levels()
+        self.assertEqual((lv["awake_a"], lv["awake_auto"]), (5e-3, False))
+
     def test_an_awake_level_given_needs_no_sleep_level(self):
         c = capture.Capturer(capture.WakeProfile(awake_a=5e-3))
         feed_blocks(c, quiet(3) + hot(2) + quiet(2))
@@ -583,6 +638,37 @@ class TheWakeProfileOfASession(PathBase):
         self.assertEqual(side["wake"]["hold_s"], 0.4)
         self.assertAlmostEqual(side["sleep_a"], self.sleep_a, delta=self.sleep_a * 0.075)
         self.assertIn("awake_a", side)
+
+    def test_the_profile_can_be_changed_while_the_session_runs(self):
+        res = self.call("meter.watch", {"bound_s": 60, "source": "ppk2", "wake_max_s": 30.0})
+        self.assertTrue(res.ok)
+        src = self.sampler.sources["ppk2"]
+        self.assertTrue(until(lambda: self.sampler.session()["stats"]["readings"] >= 20000, 10))
+        res = self.call("meter.wake_set", {"wake_hold_s": 0.6, "wake_max_s": 10.0})
+        self.assertTrue(res.ok, getattr(res, "message", res))
+        self.assertEqual(res.data["wake"], {"sleep_a": None, "awake_a": None, "hold_s": 0.6, "lead_s": 0.2, "max_s": 10.0}, "fields left out are back to being found: the lead-in is the default again")
+        self.assertTrue(until(lambda: src.capturer.profile.max_s == 10.0 and src.capturer.hold_blocks == 3, 10), "the capture took it up on its own thread")
+        self.assertEqual(self.sampler.session()["wake"]["hold_s"], 0.6)
+        self.sampler.stop()
+
+    def test_changing_the_profile_with_nothing_running_is_meter_idle_and_a_bad_value_is_a_usage_error(self):
+        res = self.call("meter.wake_set", {"wake_max_s": 10.0})
+        self.assertEqual((res.cls, res.code), ("refused", "meter_idle"))
+        self.call("meter.watch", {"bound_s": 60, "source": "ppk2"})
+        for args, field in (({"wake_max_s": 0.5}, "wake_max_s"), ({"wake_hold_s": 99.0}, "wake_hold_s"), ({"wake_sleep_a": 1e-3, "wake_awake_a": 1e-4}, "wake_awake_a")):
+            with self.assertRaises(UsageError, msg=str(args)) as cm:
+                self.call("meter.wake_set", args)
+            self.assertEqual(cm.exception.arg, field)
+        self.sampler.stop()
+
+    def test_the_profile_in_force_at_the_end_is_what_a_recordings_sidecar_says(self):
+        import json
+        self.call("meter.record", {"bound_s": 60, "source": "ppk2", "name": "rak-1", "wake_max_s": 30.0})
+        self.assertTrue(until(lambda: self.sampler.session()["stats"]["readings"] >= 20000, 10))
+        self.call("meter.wake_set", {"wake_max_s": 12.0})
+        self.sampler.stop()
+        with open(os.path.join(self.folder, "rak-1.json")) as fh:
+            self.assertEqual(json.load(fh)["wake"]["max_s"], 12.0)
 
     def test_the_levels_ride_every_reading_to_four_figures(self):
         self.start()

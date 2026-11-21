@@ -52,16 +52,17 @@ export const TOPICS = [
     pages: ["meter"],
     summary: "A LAN multimeter and the Nordic Power Profiler watch or record a board's power for minutes to hours, to see its sleep and awake levels.",
     points: [
-      "Watch shows the reading live and draws a chart. Record also keeps every reading in a file on the Pi that you can download. Either runs on the Pi, so you can close the page.",
-      "The chart shows the lowest to highest reading in each stretch as a band and the average as a line, with zero at the bottom; a long session is thinned without losing a spike. Charge used is the current added up over time, in mAh: give a battery's capacity and the page says how long it lasts, from the whole recording's average or, for a device that sleeps and wakes, from the mean over its whole wake/sleep cycles, with a table of the sleep and wake time, current and charge. With the power profiler, each wake is also kept at its full 100,000 samples a second: pick one under the chart and drag across it to zoom.",
-      "The multimeter's setting is changed at its front panel, not here: in current mode the board is wired through it and switching it would cut the board's supply. It averages inside each reading, so it shows levels and cycles of seconds or more.",
+      "The Scope shows either the live session (Live) or a recording you replay (Replay). Watch shows the reading live. Record also keeps every reading in a file on the Pi; Replay in the Recordings list puts it on the scope, Save CSV downloads it and Delete removes it with everything kept beside it. Either runs on the Pi, so you can close the page.",
+      "The trace shows the lowest to highest reading in each point as a band and the average as a line, with a scale on the left and times underneath. Move over it, or touch it, to read the time and values under the pointer. Zoom in and out, go back and forward, or drag across the trace; ctrl and the mouse wheel zooms about the pointer. Under the trace a strip shows the whole recording, with the part on the scope lit: press on it to move there. A recording zooms down to 0.2 s a point; a wake the power profiler kept at its full 100,000 samples a second zooms to the sample.",
+      "An event is a stretch you name afterwards, so you need not know what a board does before you capture it. In a replay choose Mark an event, click the trace where it starts and again where it ends, then name it: it is shaded between the two lines and the table gives its length, average current, peak and charge. Charge used is the current added up over time, in mAh: give a battery's capacity and the page says how long it lasts, from the whole recording's average or, for a device that sleeps and wakes, from the mean over its whole wake/sleep cycles, with a table of the sleep and wake time, current and charge.",
+      "The multimeter's setting is changed at its front panel, not here: in current mode the board is wired through it and switching it would cut the board's supply. It averages inside each reading, so it shows levels and cycles of seconds or more. A project can expect a range, such as a 3.3 V rail between 3.1 and 3.5: Measure on the project's page reads the multimeter once and says inside or outside.",
       "The power profiler takes 100,000 samples a second and the chart keeps 0.2 s at a time as a band from its lowest to its highest, so a burst of a few milliseconds is the top of the band. When the bench has both instruments, choose at the top of the page. Samples lost on the USB link or left out after a range change are counted under the figures.",
       "In ampere mode the profiler measures a board with its own supply, wired through it. In source mode it can power the board, and it does not say whether its output is on, so switching on or leaving source mode asks you to tick that you mean it.",
-      "A project can expect a range, such as a 3.3 V rail between 3.1 and 3.5. Measure on the project's page reads the multimeter once and says inside or outside.",
     ],
     steps: [
       "Put the meter in series with the board's supply, set current at the front panel, and open this page. It says what the meter is set to.",
       "Choose how long, then Record. Come back later: the chart, the figures and the file are all still there.",
+      "When it ends, press Replay, look over the whole recording, zoom into what the board did, and mark and name the events you care about.",
     ],
     problems: [
       { symptom: "The meter cannot be reached", cause: "It is off, on another address, or another program holds its one network session.", fix: "Check its power and its address in the bench configuration, then try again." },
@@ -70,7 +71,7 @@ export const TOPICS = [
       { symptom: "The profiler cannot be asked while a session runs", cause: "A session holds the unit's port for as long as it runs.", fix: "Stop the session; its figures are on this page meanwhile." },
     ],
     codes: [
-      { code: "meter_busy", fix: "A session is already running. Stop it first." },
+      { code: "meter_busy", fix: "A session is already running (or is writing the recording you tried to delete). Stop it first." },
       { code: "ppk2_unreachable", fix: "No power profiler on the Pi's USB, or its port would not open. Plug it in and try again." },
       { code: "ppk2_mode", fix: "Only source mode can power a board. Choose Source mode first." },
       { code: "supply_unconfirmed", fix: "This can apply or cut a board's supply. Tick that you mean it and try again." },

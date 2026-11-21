@@ -219,6 +219,7 @@ def register(registry, host):
 
     # Sessions (docs/specs/meter-page.md): a watch or a recording for minutes to hours, on the Pi, pushed to the page over the live feed.
     from . import capture as capturelib
+    from . import events as eventlib
     from . import ppk2 as ppk2lib
     from . import sampler as samplerlib
     # Sessions read the multimeter or the power profiler (docs/specs/ppk2.md): the stream is there when either is configured, and a session for one that is not is refused.
@@ -230,6 +231,20 @@ def register(registry, host):
         # Host.service holds its lock while a factory runs, so a factory must not ask for another service: the profiler is fetched first.
         profiler = h.service("ppk2", lambda: ppk2lib.Ppk2(h)) if cfg["ppk2"] else None
         return h.service("meter_sampler", lambda: samplerlib.Sampler(meter if cfg["meter"] else None, h.streams.meter, h.config["paths"]["meter"], ppk2=profiler))
+
+    def wake_set(ctx, wake_sleep_a=None, wake_awake_a=None, wake_hold_s=None, wake_lead_s=None, wake_max_s=None):
+        given = dict((k, v) for k, v in {"wake_sleep_a": wake_sleep_a, "wake_awake_a": wake_awake_a, "wake_hold_s": wake_hold_s, "wake_lead_s": wake_lead_s, "wake_max_s": wake_max_s}.items() if v is not None)
+        try:
+            wake = capturelib.WakeProfile(wake_sleep_a, wake_awake_a, wake_hold_s, wake_lead_s, wake_max_s)
+        except capturelib.ProfileError as exc:
+            raise UsageError(str(exc), exc.field)
+        try:
+            summary = sampler(ctx).wake_set(wake)
+        except samplerlib.NotRunning as exc:
+            return Result.refused("meter_idle", "%s: start a watch or a recording first (a recording's wake profile is chosen when it starts, and the one in force at its end is what its sidecar says)" % exc, {})
+        except samplerlib.ProfileNotWanted as exc:
+            raise UsageError(str(exc), sorted(given)[0] if given else "wake_max_s")
+        return Result.success(summary, "wake profile changed: it applies from the next block")
 
     def starter(mode):
         def handler(ctx, bound_s, name=None, source=None, wake_sleep_a=None, wake_awake_a=None, wake_hold_s=None, wake_lead_s=None, wake_max_s=None):
@@ -276,6 +291,24 @@ def register(registry, host):
     def unknown(exc, recording):
         return Result.refused("recording_unknown", str(exc), {"name": recording})
 
+    def recording_delete(ctx, name):
+        try:
+            data = sampler(ctx).recording_delete(name)
+        except samplerlib.RecordingUnknown as exc:
+            return unknown(exc, name)
+        except samplerlib.Busy as exc:
+            return Result.refused("meter_busy", "%s is being recorded: stop it first (meter.stop)" % name, {"session": exc.session, "name": name})
+        return Result.success(data, "deleted %s (%d file%s)" % (name, len(data["removed"]), "" if len(data["removed"]) == 1 else "s"))
+
+    def replay_one(ctx, recording, t0=None, t1=None, points=None):
+        try:
+            data = sampler(ctx).replay(recording, t0, t1, points)
+        except samplerlib.RecordingUnknown as exc:
+            return unknown(exc, recording)
+        except ValueError as exc:
+            raise UsageError(str(exc), "points" if "points" in str(exc) else "t0")
+        return Result.success(data, "%.4g s of %s from %s" % (data["t1"] - data["t0"], recording, "the wake's samples" if data["source"] == "wake" else "its readings"))
+
     def captures(ctx, recording=None):
         try:
             data = sampler(ctx).captures(recording)
@@ -317,6 +350,31 @@ def register(registry, host):
             return Result.refused("stage_unknown", "recording %s has no stage named %s" % (recording, name), {"name": name})
         return Result.success({"recording": recording, "stages": stages}, "%d stage%s left" % (len(stages), "" if len(stages) == 1 else "s"))
 
+    def event_set(ctx, recording, name, start_s, end_s, was=None):
+        try:
+            evs = sampler(ctx).event_set(recording, name, start_s, end_s, was)
+        except samplerlib.RecordingUnknown as exc:
+            return unknown(exc, recording)
+        except eventlib.EventError as exc:
+            raise UsageError(str(exc), exc.field)
+        return Result.success({"recording": recording, "events": evs}, "%d event%s" % (len(evs), "" if len(evs) == 1 else "s"))
+
+    def event_delete(ctx, recording, name):
+        try:
+            evs = sampler(ctx).event_delete(recording, name)
+        except samplerlib.RecordingUnknown as exc:
+            return unknown(exc, recording)
+        if evs is None:
+            return Result.refused("event_unknown", "recording %s has no event named %s" % (recording, name), {"name": name})
+        return Result.success({"recording": recording, "events": evs}, "%d event%s left" % (len(evs), "" if len(evs) == 1 else "s"))
+
+    def event_table(ctx, recording, volts=None):
+        try:
+            data = sampler(ctx).events(recording, volts)
+        except samplerlib.RecordingUnknown as exc:
+            return unknown(exc, recording)
+        return Result.success(data, "%d event%s" % (len(data["events"]), "" if len(data["events"]) == 1 else "s"))
+
     def stage_table(ctx, recording, volts=None):
         try:
             data = sampler(ctx).stages(recording, volts)
@@ -337,6 +395,8 @@ def register(registry, host):
     add(Command("meter.record", "Start a recording: a live session that also appends every reading to a CSV file on the Pi. At most 12 h; the newest 10 files are kept.",
                 starter("record"), args=(bound, Arg("name", required=False, doc="the file's name: a-z 0-9 . _ -, default the start time"), source) + wake_args,
                 requires=STORE, effect="write", result="session, source, state, mode, name, started, bound_s, stats"))
+    add(Command("meter.wake_set", "Change what a wake is for the running power-profiler session, from its next block: the trigger can be changed during a capture. Every field left out goes back to being found from the data.",
+                wake_set, args=wake_args, requires=STREAM, effect="write", result="session, source, state, mode, wake"))
     add(Command("meter.stop", "End the running session now. Already stopped is fine.", stop, requires=STREAM, effect="write", result="the session as it ended"))
     add(Command("meter.session", "The session's state, time and statistics: readings, min, max, mean and, for a current, the charge in mAh.",
                 lambda ctx: Result.success(sampler(ctx).session(), "ok"), requires=STREAM,
@@ -365,6 +425,26 @@ def register(registry, host):
     add(Command("meter.stages", "The stage table of a recording: for each named stage, over the wakes it saved, the mean current, its spread from wake to wake, the peak, the charge and its share of the tagged charge.",
                 stage_table, args=(rec, Arg("volts", type="float", required=False, unit="V", doc="the supply voltage, to add each stage's energy")), requires=STORE,
                 result="recording, wakes, stages, tagged_charge_c, untagged_charge_c"))
+    event_name = Arg("name", doc="the event's name: 1 to 40 characters, unique in the recording ignoring case")
+    add(Command("meter.event_set", "Name a stretch of a recording as an event: seconds since the recording began. Adds it, or changes the event of that name; `was` is the name of the event this one "
+                "replaces, to rename or move it in one change. Events may overlap; at most 200.", event_set,
+                args=(rec, event_name, Arg("start_s", type="float", unit="s", doc="where the event starts, seconds since the recording began (0 or more)"),
+                      Arg("end_s", type="float", unit="s", doc="where it ends, at least one sample (10 us) after the start"),
+                      Arg("was", required=False, doc="the name of the event this replaces (a rename or a move)")),
+                requires=STORE, effect="write", result="recording, events"))
+    add(Command("meter.event_delete", "Remove an event from a recording.", event_delete, args=(rec, event_name), requires=STORE, effect="write", result="recording, events"))
+    add(Command("meter.events", "The events of a recording, each with its length, average, lowest and highest current and charge, exact from the saved wake's samples where it lies wholly inside one and "
+                "from the readings, each for the part inside it, where not.", event_table,
+                args=(rec, Arg("volts", type="float", required=False, unit="V", doc="the supply voltage, to add each event's energy")), requires=STORE, result="recording, events"))
     add(Command("meter.recordings", "The recordings on this bench, newest first, with what each holds.", recordings, requires=STORE, result="recordings"))
     add(Command("meter.recording", "One recording's CSV text, for download.", recording, args=(Arg("name", doc="the recording's name, from meter.recordings"),),
                 requires=STORE, result="name, csv, bytes"))
+    add(Command("meter.recording_delete", "Delete a recording and everything kept with it: its CSV, its sidecar, its saved wakes, stages and events. Refused while it is being recorded.",
+                recording_delete, args=(Arg("name", doc="the recording's name, from meter.recordings"),), requires=STORE, effect="write", result="name, removed"))
+    add(Command("meter.replay", "Any stretch of a recording as an exact lowest/highest/mean envelope, on the recording's own clock (seconds since it began), with that stretch's lowest, highest, average and charge. "
+                "Zoomed in past its 0.2 s readings, a stretch inside a wake the recording saved at full rate is drawn from that wake's samples.",
+                replay_one, args=(Arg("recording", doc="the recording's name, from meter.recordings"),
+                                  Arg("t0", type="float", required=False, unit="s", doc="start of the stretch, seconds since the recording began (default: its start)"),
+                                  Arg("t1", type="float", required=False, unit="s", doc="end of the stretch (default: its end)"),
+                                  Arg("points", type="int", required=False, doc="at most this many buckets, 2 to 2000 (default 1000: a wide chart's pixels)")),
+                requires=STORE, result="recording, source, wake, unit, start_s, duration_s, t0, t1, points, width_s, resolution_s, buckets, stats, wakes"))

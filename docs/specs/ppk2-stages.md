@@ -38,6 +38,13 @@ found from the data unless the person sets it (Peter, 2026-11-20: "this is suppo
 | lead-in (`wake_lead_s`) | sleep kept before the wake | **0.2 s**, one block, so it starts from sleep. 0 up to the longest wake |
 | longest wake (`wake_max_s`) | a wake still going is closed here, marked `truncated`, and the next block opens another | **40 s**: the bench RAK is awake 21.6 s plus a lead-in, so 1.8 times that. 1 to 120 s: 120 s is 48 MB raw, 21 MB held compressed, 167 MB for the newest 8, 4 % of a 4 GB Pi |
 
+**The trigger can be changed during a capture** (Peter, 2026-11-20: "just like a scope, there's a trigger"): `meter.wake_set` takes the same five arguments and replaces the running profile **from the next block**
+(a field left out goes back to being found; `meter_idle` with nothing running; a usage error for a bad value or a multimeter session). The change is asked for from the request's thread and taken up by the session's own thread at the start of
+its next block, so only one thread ever changes the capture. A wake already open carries on under the new hold-off and longest wake (a longest wake lowered under it closes it, marked `truncated`), the levels found so far are
+kept (they are the device's, not the profile's), and the lead-in ring follows the new lead-in as blocks go by. The profile in force at the end is what the session and a recording's sidecar report. The page has these fields under the
+live controls ("The trigger: what counts as a wake"): awake level and sleep level in µA, wake ends after, sleep kept before, longest wake, blank for found, with what the data found said in words and an "Apply to the running session" button.
+The trigger is **not needed to name events** (`meter-page.md`, "Events"): it only decides what is kept at full rate.
+
 Left out, a field is automatic; the session reports the profile as given (`wake`: `null` for a level that is found) and the levels in force (`sleep_a`, `awake_a`, to four figures, on every reading once the data gives a sleep level, so a recording's sidecar says what a wake meant).
 A value out of range is a usage error naming its field; a multimeter session given any is a usage error (it keeps no wakes). Setting `wake_awake_a` needs no sleep level, so a wake that is in the first 4 s is not missed.
 

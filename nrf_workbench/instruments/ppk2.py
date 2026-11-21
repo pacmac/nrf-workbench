@@ -25,7 +25,10 @@ PROTOCOL_INTERFACE = 1                      # interface 03 is a shell
 SAMPLE_RATE_HZ = 100000                     # measured 2026-11-20: 99,466 words in the first 1.007 s
 BLOCK_SAMPLES = 20000                       # 0.2 s: the multimeter's period at NPLC 10, so the feed rate, retention and file size are the ones meter-page.md derived
 BLOCK_S = BLOCK_SAMPLES / float(SAMPLE_RATE_HZ)
-META_CEILING_S = 0.5                        # the metadata answer took 0.2 s: 2.5 x
+SWITCH_INTERVAL_S = 0.0003                  # how long another thread may hold the interpreter before the session's thread is given it. A block is read in about 160 small pieces and each wait for the
+                                            # interpreter can be a whole interval (the default is 5 ms: 0.8 s a block while a page decodes a wake, which is more than the 0.2 s the unit sends it in). 160 x 0.3 ms = 48 ms,
+                                            # a quarter of a block. Measured 2026-11-20 on the bench Pi: fetching a 26 s wake (3 s of decoding) during a watch ended it 'gone silent' twice in two tries
+META_CEILING_S = 0.5                       # the metadata answer took 0.2 s: 2.5 x
 BLOCK_CEILING_S = 2 * BLOCK_S + scpi.CEILING_S      # two blocks of stream and the call ceiling the multimeter uses: a block later than this is a silent unit
 DRAIN_QUIET_S = 0.05                        # the 768 bytes still in flight after a stop took under 10 ms: a 50 ms read that returns nothing means it is over
 DRAIN_MAX_S = 1.0                           # a stream that never stops is given up on after this
@@ -467,6 +470,7 @@ class Ppk2Source(object):
         self.ppk2, self.port, self.reducer, self.started, self.claimed = ppk2, None, None, None, False
         self.capturer = self.wakes = self.store = None
         self.unsaved = 0
+        self._switch = None                                  # the interpreter's switch interval before this session lowered it
 
     def ceiling_s(self, s):
         return BLOCK_CEILING_S + DRAIN_MAX_S + 1.0
@@ -495,6 +499,7 @@ class Ppk2Source(object):
             s.facts.update(p.unit_facts(cal))                # the unit's mode, voltage and output state, for as long as the session holds it
             self.capturer = capture.Capturer(getattr(s, "wake", None))      # the last session's captures stay readable until the next one begins
             capturer = self.capturer
+            self._lower_switch()
             s.facts["wake"] = capturer.profile.to_dict()     # what a wake was taken to be: the sleep and awake levels are None when found from the data (the readings say what was found)
             self.wakes = capture.WakeSet(lambda: list(capturer.items), cal.amps, hold=SPIKE_SAMPLES)
             self.store, self.unsaved = None, 0
@@ -509,22 +514,39 @@ class Ppk2Source(object):
                 except OSError:
                     self.unsaved += 1
         except BaseException:
-            self._close()
+            self._close()                                    # (the session's own end() runs after a begin that failed, and puts the switch interval back)
             raise
 
+    def _lower_switch(self):
+        """Lower the interpreter's switch interval for the session (once: a second call must not take the lowered value for the original)."""
+        if self._switch is None:
+            self._switch = sys.getswitchinterval()
+            sys.setswitchinterval(min(self._switch, SWITCH_INTERVAL_S))
+
+    def _restore_switch(self):
+        if self._switch is not None:                         # the interpreter's own setting goes back as it was
+            sys.setswitchinterval(self._switch)
+            self._switch = None
+
     def _block(self):
-        """The next 20,000 words, or a Fault if they are not all there in BLOCK_CEILING_S."""
+        """The next 20,000 words, or a Fault if the unit sends nothing for BLOCK_CEILING_S. The ceiling is for SILENCE, measured from the last bytes that arrived, not from the start of the block:
+        a block that arrives in many small pieces while this thread is kept waiting for the interpreter (another thread of the service decoding a long wake) is slow, not silent, and what is
+        waiting in the kernel's buffer is read as soon as the thread runs. (Reproduced 2026-11-20 on the bench Pi: a recording had ended 'gone silent' with 13,864 of 20,000 samples seconds after
+        a page asked for a 26 s wake, and a read-only watch ended the same way, 14,285 of 20,000, when the same wake was fetched during it. SWITCH_INTERVAL_S is the other half of the fix.)"""
         p = self.ppk2
         need = BLOCK_SAMPLES * 4
         data = b""
         end = p._mono() + BLOCK_CEILING_S
         while len(data) < need:
             if p._mono() >= end:
-                raise Fault("the PPK2 sent %d of the %d samples of a block in %.2f s: it has gone silent" % (len(data) // 4, BLOCK_SAMPLES, BLOCK_CEILING_S))
+                raise Fault("the PPK2 sent %d of the %d samples of a block and then nothing for %.2f s: it has gone silent" % (len(data) // 4, BLOCK_SAMPLES, BLOCK_CEILING_S))
             try:
-                data += self.port.read(need - len(data))
+                got = self.port.read(need - len(data))
             except OSError as exc:
                 raise Fault("the PPK2's port failed: %s" % exc)
+            if got:
+                data += got
+                end = p._mono() + BLOCK_CEILING_S
         return data
 
     def take(self, s, k):
@@ -546,6 +568,11 @@ class Ppk2Source(object):
         return Reading(b["t"], b["mean"], "CURR", "A", range=b["range"], lo=b["lo"], hi=b["hi"], n=b["n"], dt=b["dt"], facts=facts)
 
     # -- the wakes kept at full rate (docs/specs/ppk2-stages.md) ---------------------------------------
+    def set_wake(self, s, profile):
+        """Change what a wake is for the session that is running, from its next block (the capturer takes it up on the session's own thread)."""
+        self.capturer.request(profile)
+        s.facts["wake"] = profile.to_dict()
+
     def _save(self, c):
         """A recording keeps each wake on disk as it closes. A disk that will not take it does not stop the session: the wake is still in memory and the failure is counted."""
         try:
@@ -570,6 +597,7 @@ class Ppk2Source(object):
 
     def end(self):
         self._close()
+        self._restore_switch()
 
 
 def stored_wakes(directory):

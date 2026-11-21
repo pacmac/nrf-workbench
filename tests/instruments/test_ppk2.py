@@ -790,6 +790,104 @@ class Session(Base):
         self.assertTrue(os.path.exists(os.path.join(self.folder, "quiet.csv")))
         self.assertTrue(self.unit.closed)
 
+    def test_a_block_that_arrives_slowly_in_many_pieces_is_slow_and_not_silent(self):
+        """The bench Pi, 2026-11-20: fetching a 26 s wake (3 s of decoding in another thread) during a session ended it 'gone silent' with 14,285 of 20,000 samples. The unit had not gone
+        quiet: this thread was kept waiting for the interpreter between small reads. Silence is no bytes for the ceiling, from the last bytes that arrived."""
+        real = self.unit.read
+        self.unit.read = lambda size: real(min(size, 4000))                 # 20 pieces a block
+        clock = {"t": 0.0}
+
+        def mono():
+            clock["t"] += 0.05                                              # every look at the clock is 50 ms: a block of 20 reads takes over 2 s of it, far past the 0.65 s ceiling
+            return clock["t"]
+        self.host.config["instruments"]["ppk2"] = "auto"
+        ppk = ppk2.Ppk2(self.host, monotonic=mono)
+        s = sampler.Sampler(None, self.host.streams.meter, self.folder, ppk2=ppk)
+        self.addCleanup(s.stop)
+        s.start("watch", 60, source="ppk2")
+        self.assertTrue(until(lambda: s.session()["stats"]["readings"] >= 3 * 20000, 10), s.session())
+        self.assertEqual(s.session()["state"], "watching", s.session()["reason"])
+
+    def test_a_unit_that_stops_part_way_through_a_block_is_silent_and_the_message_says_how_far_it_got(self):
+        real = self.unit.read
+        sent = {"n": 0}
+
+        def read(size):
+            if sent["n"] >= 8000:
+                return b""                                                  # 2,000 samples of the first block, then nothing
+            out = real(min(size, 4000))
+            sent["n"] += len(out)
+            return out
+        self.unit.read = read
+        clock = {"t": 0.0}
+
+        def mono():
+            clock["t"] += 0.05
+            return clock["t"]
+        self.host.config["instruments"]["ppk2"] = "auto"
+        ppk = ppk2.Ppk2(self.host, monotonic=mono)
+        s = sampler.Sampler(None, self.host.streams.meter, self.folder, ppk2=ppk)
+        self.addCleanup(s.stop)
+        s.start("watch", 60, source="ppk2")
+        self.assertTrue(until(lambda: s.session()["state"] == "error"))
+        self.assertRegex(s.session()["reason"], r"sent 2000 of the 20000 samples of a block and then nothing for 0\.65 s: it has gone silent")
+
+    def known_switch_interval(self):
+        """Start from the interpreter's default, whatever an earlier test left, and put back what was there."""
+        was = sys.getswitchinterval()
+        self.addCleanup(sys.setswitchinterval, was)
+        sys.setswitchinterval(0.005)
+        return 0.005
+
+    def test_asking_twice_to_lower_the_switch_interval_still_puts_the_original_back(self):
+        before = self.known_switch_interval()
+        src = ppk2.Ppk2Source(None)
+        src._lower_switch()
+        src._lower_switch()
+        self.assertEqual(sys.getswitchinterval(), ppk2.SWITCH_INTERVAL_S)
+        src._restore_switch()
+        self.assertEqual(sys.getswitchinterval(), before, "the second call must not have taken the lowered value for the original")
+        src._restore_switch()
+        self.assertEqual(sys.getswitchinterval(), before, "nothing to put back the second time")
+
+    def test_an_interval_already_lower_than_ours_is_left_alone(self):
+        self.known_switch_interval()
+        sys.setswitchinterval(0.0001)
+        src = ppk2.Ppk2Source(None)
+        src._lower_switch()
+        self.assertAlmostEqual(sys.getswitchinterval(), 0.0001, delta=2e-6, msg="the interpreter keeps it in whole microseconds")
+        src._restore_switch()
+        self.assertAlmostEqual(sys.getswitchinterval(), 0.0001, delta=2e-6)
+
+    def test_a_session_lowers_the_interpreters_switch_interval_and_puts_it_back(self):
+        before = self.known_switch_interval()
+        s = self.start_sampler()
+        s.start("watch", 60, source="ppk2")
+        self.assertTrue(until(lambda: s.session()["stats"]["readings"] > 0))
+        self.assertEqual(sys.getswitchinterval(), ppk2.SWITCH_INTERVAL_S, "while it runs a thread waiting for the interpreter waits 0.3 ms, not 5")
+        s.stop()
+        self.assertEqual(sys.getswitchinterval(), before)
+
+    def test_a_session_that_fails_to_begin_leaves_the_switch_interval_alone(self):
+        before = self.known_switch_interval()
+        self.tree.unplug("1-1.2")
+        s = self.start_sampler()
+        s.start("watch", 60, source="ppk2")
+        self.assertTrue(until(lambda: s.session()["state"] == "error"))
+        self.assertEqual(sys.getswitchinterval(), before)
+
+    def test_a_session_that_fails_after_lowering_the_interval_puts_it_back(self):
+        from unittest import mock
+        from nrf_workbench.instruments import capture
+        from nrf_workbench.instruments.source import Fault
+        before = self.known_switch_interval()
+        s = self.start_sampler()
+        with mock.patch.object(capture, "WakeSet", side_effect=Fault("boom")):
+            s.start("watch", 60, source="ppk2")
+            self.assertTrue(until(lambda: s.session()["state"] == "error"))
+        self.assertIn("boom", s.session()["reason"])
+        self.assertEqual(sys.getswitchinterval(), before)
+
     def test_a_unit_that_is_not_there_ends_the_session_with_error(self):
         self.tree.unplug("1-1.2")
         s = self.start_sampler()

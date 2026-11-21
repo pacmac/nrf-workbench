@@ -109,6 +109,13 @@ def no_sideways_scroll(page):
     return page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
 
 
+def open_details(page, testid):
+    """The Meter page folds away the instrument's settings and the stages section (docs/specs/meter-page.md, "Live and replay"): open one if it is shut."""
+    d = page.get_by_test_id(testid)
+    if d.get_attribute("open") is None:
+        d.locator("summary").click()
+
+
 ALLOWED = ((ppk2.META,), (ppk2.START,), (ppk2.STOP,), (ppk2.MODE, 1), (ppk2.MODE, 2), (ppk2.POWER, 0), (ppk2.POWER, 1))
 
 
@@ -137,6 +144,8 @@ def meter_page(page, bench, fake, tag, shot):
     switch = page.get_by_role("group", name="Instrument")
     switch.wait_for()
     check("%s with both instruments there is a switch between them" % tag, switch.get_by_role("button").count() == 2, switch.inner_text())
+    check("%s the instrument's settings are folded away until asked for" % tag, page.get_by_test_id("instrument-details").get_attribute("open") is None and not page.get_by_text("The meter", exact=True).is_visible())
+    open_details(page, "instrument-details")
     check("%s the multimeter is the default and its card shows" % tag, page.get_by_text("The meter", exact=True).is_visible() and page.get_by_text("The power profiler", exact=True).count() == 0)
     switch.get_by_role("button", name="Power profiler").click()
     page.get_by_label("Profiler").wait_for()
@@ -151,8 +160,9 @@ def meter_page(page, bench, fake, tag, shot):
     now = page.get_by_label("Latest reading")
     now.filter(has_text=re.compile(r"^-?[0-9.]+ [nµ]A$")).wait_for()
     check("%s Watch shows the profiler's block mean with an SI prefix, and the session says samples" % tag, True)
-    page.get_by_role("img", name=re.compile(r"^Readings over")).wait_for()
-    check("%s the chart is drawn, with zero on its axis" % tag, "bottom of the chart:" in page.inner_text("body"))
+    page.get_by_role("img", name=re.compile(r"^Readings from")).wait_for()
+    check("%s the chart is drawn, with a labelled axis from zero and times along the bottom" % tag,
+          "The scale starts at 0 A" in page.inner_text("body") and page.get_by_test_id("y-axis").inner_text().startswith("0 A") and page.get_by_test_id("x-axis").inner_text().strip() != "")
     check("%s while it runs the switch and the profiler's own controls are locked" % tag,
           page.get_by_role("group", name="Instrument").get_by_role("button", name="Multimeter").is_disabled()
           and "cannot be asked or changed until it ends" in page.get_by_label("Profiler").inner_text() and page.get_by_role("button", name="Ampere mode").count() == 0)
@@ -172,7 +182,8 @@ def meter_page(page, bench, fake, tag, shot):
     check("%s the unit is asked again once the session is over (the card is back)" % tag,
           page.get_by_label("Profiler").inner_text().startswith("Power profiler E1C5F15B15A3"), page.get_by_label("Profiler").inner_text())
     check("%s a clean run says nothing about lost samples" % tag, "were lost between" not in page.inner_text("body"))
-    check("%s a steady load keeps no wake, and the scope card says so" % tag, page.get_by_text("No wake kept yet.").is_visible())
+    open_details(page, "stages-details")
+    check("%s a steady load keeps no wake, and the stages section says so" % tag, page.get_by_text("No wake kept yet.").is_visible())
 
     # lost samples are said
     bench.unit.lost_at = {6000: 5}
@@ -197,11 +208,11 @@ def meter_page(page, bench, fake, tag, shot):
     listing.get_by_text(re.compile(r"[1-9][0-9,]* samples")).wait_for()
     check("%s the finished recording is listed as the power profiler's, with its samples" % tag, "power profiler" in listing.inner_text() and "profile-1.csv" in listing.inner_text(), listing.inner_text())
     with page.expect_download() as dl:
-        page.get_by_role("button", name="Download profile-1").click()
+        page.get_by_role("button", name="Save profile-1 as a CSV file").click()
     with open(dl.value.path()) as fh:
         text = fh.read().splitlines()
     cells = text[1].split(",")
-    check("%s Download gives the CSV with min, max and n after the old columns" % tag,
+    check("%s Save CSV gives the CSV with min, max and n after the old columns" % tag,
           text[0] == "t_s,wall,value,unit,function,range,nplc,overload,min,max,n" and cells[3] == "A" and cells[10] == "20000" and float(cells[8]) <= float(cells[2]) <= float(cells[9]), text[:2])
     check("%s no sideways scroll on the Meter page" % tag, no_sideways_scroll(page))
     shot("4-recorded")
@@ -216,10 +227,10 @@ def meter_page(page, bench, fake, tag, shot):
     life = page.get_by_label("Battery life")
     page.wait_for_function("(() => { const m = document.querySelector('[aria-label=\"Session\"]').innerText.match(/([0-9,]+) samples/); return m && Number(m[1].replace(/,/g, '')) >= 850000; })()", timeout=30000)
     check("%s the choice starts on the whole recording" % tag,
-          page.get_by_role("button", name="Whole recording").get_attribute("aria-pressed") == "true" and "whole recording it lasts" in life.inner_text(), life.inner_text())
+          page.get_by_role("button", name="Whole recording", exact=True).get_attribute("aria-pressed") == "true" and "whole recording it lasts" in life.inner_text(), life.inner_text())
     page.get_by_role("button", name="Wake/sleep cycle").click()
     check("%s choosing the cycle presses that button and not the other" % tag,
-          page.get_by_role("button", name="Wake/sleep cycle").get_attribute("aria-pressed") == "true" and page.get_by_role("button", name="Whole recording").get_attribute("aria-pressed") == "false")
+          page.get_by_role("button", name="Wake/sleep cycle").get_attribute("aria-pressed") == "true" and page.get_by_role("button", name="Whole recording", exact=True).get_attribute("aria-pressed") == "false")
     page.get_by_label("Battery life").filter(has_text=re.compile(r"^Wakes every 2 s \(3 cycles counted")).wait_for()
     check("%s the cycle line gives the period, the cycles, the average over them and the life" % tag,
           re.match(r"^Wakes every 2 s \(3 cycles counted\)\. Average over them [0-9.]+ [nµm]A\. It lasts [0-9.]+ (hours|days|years)\.$", life.inner_text()) is not None, life.inner_text())
@@ -249,11 +260,14 @@ def meter_page(page, bench, fake, tag, shot):
     wf = page.get_by_label("Wake figures")
     check("%s the wake's figures say how long, the average, the peak and the charge" % tag,
           all(w in wf.inner_text() for w in ("Shown", "Average", "Peak", "Charge")) and "600 ms" in wf.inner_text(), wf.inner_text())
-    linear = page.get_by_text(re.compile(r"^bottom of the chart: 0 A$"))
-    check("%s the scope's axis starts linear, with zero at the bottom (the session chart says the same)" % tag, linear.count() == 2 and page.get_by_text(re.compile(r"^log scale")).count() == 0)
-    page.get_by_label("Log current axis").check()
+    stages_section = page.get_by_test_id("stages-details")
+    linear = stages_section.get_by_text(re.compile(r"^bottom of the chart: 0 A$"))
+    live_scale = page.get_by_text(re.compile(r"^The scale starts at 0 A\."))
+    check("%s the wake's axis starts linear, with zero at the bottom (the live scope's says the same)" % tag,
+          linear.count() == 1 and live_scale.count() == 1 and page.get_by_text(re.compile(r"^log scale")).count() == 0)
+    stages_section.get_by_label("Log current axis").check()
     page.get_by_text(re.compile(r"^log scale, bottom [0-9.]+ [nµ]A$")).wait_for()
-    check("%s the log switch changes the scope's axis and says where its floor is; the session chart is untouched" % tag, linear.count() == 1)
+    check("%s the log switch changes the wake's axis and says where its floor is; the live scope is untouched" % tag, linear.count() == 0 and live_scale.count() == 1)
     box = page.get_by_role("img", name=re.compile(r"^Current of wake")).bounding_box()
     page.mouse.move(box["x"] + box["width"] * 0.30, box["y"] + box["height"] / 2)
     page.mouse.down()
@@ -274,7 +288,7 @@ def meter_page(page, bench, fake, tag, shot):
     shot("5-cycle")
     page.get_by_role("button", name="Stop").click()
     page.get_by_text(re.compile(r"^ended: stopped")).wait_for()
-    page.get_by_role("button", name="Whole recording").click()
+    page.get_by_role("button", name="Whole recording", exact=True).click()
     check("%s going back to the whole recording drops the marks and says so" % tag,
           page.get_by_test_id("wake-mark").count() == 0 and page.get_by_test_id("wake-span").count() == 0 and page.get_by_role("table", name="Sleep and wake").count() == 0
           and "whole recording it lasts" in life.inner_text(), life.inner_text())
@@ -359,15 +373,18 @@ def meter_page(page, bench, fake, tag, shot):
     page.get_by_role("table", name="Stages across the wakes").wait_for(state="detached")
     page.get_by_role("button", name="Stop").click()
     page.get_by_text(re.compile(r"^ended: stopped")).wait_for()
-    page.get_by_role("button", name="Open the wakes of stage-1").click()
+    page.get_by_role("button", name="Replay stage-1", exact=True).click()
     page.get_by_label("Wake", exact=True).locator("option").nth(2).wait_for(state="attached")
     check("%s a finished recording's wakes open from the Recordings list" % tag, page.get_by_label("Wake", exact=True).locator("option").count() >= 3)
     bench.unit.profile = lambda i: (1000 + (i % 7), 0)
     bench.unit.index = bench.unit.counter = 0
 
+    replay_scope(page, tag, shot)
+
     # a wake of 21 s like the bench RAK's (a burst, a 20 s receive window at a tenth of the current, a burst) is ONE wake on the scope, and can be zoomed into
     # (docs/specs/ppk2-stages.md, "The window"); 125 quiet blocks first so that the sleep level (the median block) is asleep through the wake. Desktop only: it takes 50 s at the real rate.
     if tag.endswith("desktop"):
+        page.get_by_role("button", name="Live", exact=True).click()
         bench.unit.profile = lambda i: (30000 if (125 <= i // 20000 < 128 or 228 <= i // 20000 < 230) else 3000 if 128 <= i // 20000 < 228 else 1000, 0)
         bench.unit.index = bench.unit.counter = 0
         bench.unit.lost_at = {}
@@ -380,7 +397,7 @@ def meter_page(page, bench, fake, tag, shot):
             pass
         options = [o.inner_text() for o in pick.locator("option").all()]
         if not check("%s the awake period is one wake of 21.4 s, not a burst and another 21 s later" % tag,
-                     len(options) == 1 and re.match(r"^wake 1, 21\.4 s, peak [0-9.]+ [nµm]A$", options[0]) is not None, (options, page.get_by_label("Session").inner_text()[:200])):
+                     len(options) == 1 and re.match(r"^wake 1, 21\.4 s, peak [0-9.]+ [nµm]A$", options[0]) is not None, (options, page.get_by_label("Session", exact=True).inner_text()[:200])):
             page.get_by_role("button", name="Stop").click()
             page.get_by_text(re.compile(r"^ended: stopped")).wait_for()
             raise SystemExit(1)
@@ -415,6 +432,135 @@ def meter_page(page, bench, fake, tag, shot):
     check("%s switching back shows the multimeter's card and not the profiler's" % tag, page.get_by_text("The power profiler", exact=True).count() == 0)
     page.get_by_role("group", name="Instrument").get_by_role("button", name="Power profiler").click()
     page.get_by_label("Profiler").wait_for()
+
+
+def replay_scope(page, tag, shot):
+    """A recording on the scope (docs/specs/meter-page.md, "Live and replay" and "Events"): the whole of it, the axes, the pointer readout, zoom and pan, the overview, an event marked with two
+    clicks and named, renamed and deleted, and the recording deleted. Starts with the recording stage-1 already replayed."""
+    tabs = page.get_by_role("group", name="What the scope shows")
+    check("%s the scope is on the replay of the recording, and the Live button is there to go back" % tag,
+          tabs.get_by_role("button", name="Replay: stage-1").get_attribute("aria-pressed") == "true" and tabs.get_by_role("button", name="Live", exact=True).get_attribute("aria-pressed") == "false")
+    trace = page.get_by_role("img", name=re.compile(r"^Current of stage-1, from 0 s to "))
+    trace.wait_for()
+    bar = page.get_by_label("Stretch shown", exact=True)
+    check("%s a replay shows the whole recording: all of it, from 0 s" % tag, "all of it" in bar.inner_text() and bar.inner_text().startswith("0 s to "), bar.inner_text())
+    check("%s with all of it shown there is nowhere to go back to or zoom out to, and zooming in is possible" % tag,
+          page.get_by_role("button", name="Show the whole recording").is_disabled() and page.get_by_role("button", name="Back half a screen").is_disabled()
+          and page.get_by_role("button", name="Forward half a screen").is_disabled() and page.get_by_role("button", name="Zoom out").is_disabled()
+          and page.get_by_role("button", name="Zoom in").is_enabled())
+    ylabels = page.get_by_test_id("y-axis").inner_text().split("\n")
+    check("%s the vertical axis has labelled values in the unit, from zero" % tag, len(ylabels) >= 2 and ylabels[0].endswith("A") and re.match(r"^[0-9.]+ [nµm]?A$", ylabels[-1]) is not None, ylabels)
+    check("%s the time axis is labelled" % tag, len([s for s in page.get_by_test_id("x-axis").inner_text().split("\n") if s.strip()]) >= 3, page.get_by_test_id("x-axis").inner_text())
+    trace.scroll_into_view_if_needed()
+    box = trace.bounding_box()
+    read = page.get_by_label("Under the pointer")
+    check("%s before the pointer is over it the readout says how to use the trace" % tag, "Move over the trace" in read.inner_text(), read.inner_text())
+    page.mouse.move(box["x"] + box["width"] * 0.5, box["y"] + box["height"] / 2)
+    check("%s over the trace the pointer reads out the time and the lowest, average and highest of the point under it" % tag,
+          re.match(r"^[0-9.:]+ (s|ms) · lowest [0-9.]+ [nµm]A · average [0-9.]+ [nµm]A · highest [0-9.]+ [nµm]A · each point 200 ms$", read.inner_text()) is not None, read.inner_text())
+    check("%s and a cursor line follows it" % tag, page.get_by_test_id("cursor").count() == 1)
+    page.mouse.move(box["x"] + box["width"] * 0.1, box["y"] + box["height"] / 2)
+    first = read.inner_text()
+    page.mouse.move(box["x"] + box["width"] * 0.9, box["y"] + box["height"] / 2)
+    check("%s moving along the trace changes the time it reads" % tag, first.split(" · ")[0] != read.inner_text().split(" · ")[0], (first, read.inner_text()))
+    page.mouse.move(box["x"] - 40, box["y"] - 40)
+    shot("7-replay")
+    page.get_by_role("button", name="Zoom in").click()
+    page.wait_for_function("document.querySelector('[aria-label=\"Stretch shown\"]').innerText.includes(' of ')")
+    zoomed = bar.inner_text()
+    check("%s zooming in halves the stretch and says how much of the recording it is" % tag, "of" in zoomed and "all of it" not in zoomed, zoomed)
+    check("%s once zoomed, Whole, Back, Forward and Zoom out are there" % tag, all(page.get_by_role("button", name=n).is_enabled() for n in
+          ("Show the whole recording", "Back half a screen", "Forward half a screen", "Zoom out")))
+    lit = page.get_by_test_id("overview-window").bounding_box()
+    strip = page.get_by_test_id("overview").bounding_box()
+    check("%s the overview lights the part shown, about half of the whole" % tag, 0.3 < lit["width"] / strip["width"] < 0.7, (lit, strip))
+    page.get_by_role("button", name="Forward half a screen").click()
+    page.wait_for_function("(o => !document.querySelector('[aria-label=\"Stretch shown\"]').innerText.startsWith(o))", arg=zoomed.split(" to ")[0] + " to ")
+    moved = bar.inner_text()
+    check("%s Forward moves the stretch later and keeps its length" % tag, moved.split(" to ")[0] != zoomed.split(" to ")[0] and moved.split(", ")[1] == zoomed.split(", ")[1], (zoomed, moved))
+    lit2 = page.get_by_test_id("overview-window").bounding_box()
+    check("%s the lit part of the overview moved right with it" % tag, lit2["x"] > lit["x"] + 1, (lit, lit2))
+    page.get_by_role("button", name="Back half a screen").click()
+    page.wait_for_function("(o => document.querySelector('[aria-label=\"Stretch shown\"]').innerText.startsWith(o))", arg=zoomed.split(" to ")[0] + " to ")
+    check("%s Back returns it" % tag, bar.inner_text().startswith(zoomed.split(" to ")[0] + " to "), bar.inner_text())
+    page.get_by_label("Scope trace, focus it to use the keys").focus()
+    page.keyboard.press("ArrowRight")
+    page.wait_for_function("(o => !document.querySelector('[aria-label=\"Stretch shown\"]').innerText.startsWith(o))", arg=zoomed.split(" to ")[0] + " to ")
+    page.keyboard.press("0")
+    page.wait_for_function("document.querySelector('[aria-label=\"Stretch shown\"]').innerText.includes('all of it')")
+    check("%s the keys move it (right arrow) and show all of it again (0)" % tag, "all of it" in bar.inner_text())
+
+    # an event by two clicks
+    page.get_by_role("button", name="Mark an event").click()
+    check("%s Mark an event says what the clicks do" % tag, "Click the trace where the event starts" in read.inner_text(), read.inner_text())
+    trace.scroll_into_view_if_needed()
+    box = trace.bounding_box()
+    page.mouse.click(box["x"] + box["width"] * 0.30, box["y"] + box["height"] / 2)
+    check("%s the first click puts a line where the event starts" % tag, page.get_by_test_id("pending-start").count() == 1 and page.get_by_label("Event name").count() == 0)
+    page.get_by_label("Scope trace, focus it to use the keys").focus()
+    page.keyboard.press("Escape")
+    check("%s Escape drops it" % tag, page.get_by_test_id("pending-start").count() == 0)
+    page.mouse.click(box["x"] + box["width"] * 0.55, box["y"] + box["height"] / 2)
+    page.mouse.click(box["x"] + box["width"] * 0.30, box["y"] + box["height"] / 2)           # the later click first: the earlier one is the start
+    name = page.get_by_label("Event name")
+    name.wait_for()
+    check("%s the second click asks for a name, with a default selected" % tag, name.input_value() == "event 1", name.input_value())
+    note = page.get_by_label("New event").inner_text()
+    check("%s the new event says where it runs and how long" % tag, re.search(r"New event from [0-9.:]+ s to [0-9.:]+ s, ", note) is not None, note)
+    name.fill("burst")
+    page.get_by_role("button", name="Save the event").click()
+    table = page.get_by_role("table", name="Events")
+    table.wait_for()
+    check("%s the saved event is listed with its length, average, peak and charge" % tag,
+          all(w in table.inner_text() for w in ("burst", "Length", "Average current", "Peak", "Charge", "from the readings")) and re.search(r"[0-9.]+ [nµm]A", table.inner_text()) is not None, table.inner_text())
+    check("%s it is shaded between two lines, named on the trace" % tag,
+          page.get_by_test_id("event-span").count() == 1 and page.get_by_test_id("event-start").count() == 1 and page.get_by_test_id("event-end").count() == 1
+          and page.get_by_test_id("event-name").inner_text() == "burst")
+    span = page.get_by_test_id("event-span").bounding_box()
+    check("%s and the shading is where it was clicked, about a quarter of the width" % tag, 0.15 < span["width"] / trace.bounding_box()["width"] < 0.35, span)
+    shot("8-event")
+    page.get_by_role("button", name="Rename burst").click()
+    page.get_by_label("New name for burst").fill("tx burst")
+    page.get_by_role("button", name="Save", exact=True).click()
+    page.get_by_role("table", name="Events").get_by_text("tx burst").wait_for()
+    check("%s an event can be renamed" % tag, page.get_by_test_id("event-name").inner_text() == "tx burst" and page.get_by_role("table", name="Events").get_by_text("burst", exact=True).count() == 0)
+    page.get_by_role("button", name="Move the end of tx burst").click()
+    check("%s Move end asks for a click" % tag, "Click the trace where tx burst should end" in page.inner_text("body"))
+    trace.scroll_into_view_if_needed()
+    box = trace.bounding_box()
+    page.mouse.click(box["x"] + box["width"] * 0.80, box["y"] + box["height"] / 2)
+    page.wait_for_function("document.querySelector('[data-testid=\"event-span\"]').getBoundingClientRect().width > %s" % (box["width"] * 0.35))
+    check("%s the end line moved with the click, and the event is still the one event" % tag, page.get_by_test_id("event-span").count() == 1)
+    page.get_by_role("button", name="Show tx burst").click()
+    page.wait_for_function("!document.querySelector('[aria-label=\"Stretch shown\"]').innerText.includes('all of it')")
+    check("%s Show zooms to the event" % tag, "of" in bar.inner_text() and "all of it" not in bar.inner_text(), bar.inner_text())
+    page.get_by_role("button", name="Live", exact=True).click()
+    page.get_by_role("button", name="Replay stage-1", exact=True).click()
+    page.get_by_role("table", name="Events").wait_for()
+    check("%s the event is kept with the recording: closing the replay and opening it again shows it" % tag, page.get_by_role("table", name="Events").get_by_text("tx burst").count() == 1)
+    page.get_by_role("button", name="Delete the event tx burst").click()
+    page.get_by_text(re.compile(r"^No events yet")).wait_for()
+    check("%s deleting the event takes it off the trace and the table" % tag, page.get_by_test_id("event-span").count() == 0)
+    check("%s no sideways scroll with the replay" % tag, no_sideways_scroll(page))
+
+    # delete a recording
+    listing = page.get_by_label("Recordings")
+    check("%s each recording has Replay, Save CSV and Delete" % tag, all(listing.get_by_role("button", name=n).count() >= 1 for n in ("Replay stage-1", "Save stage-1 as a CSV file", "Delete stage-1")))
+    page.get_by_role("button", name="Delete profile-1", exact=True).click()
+    check("%s Delete asks first, and says what goes with the recording" % tag, "This cannot be undone" in listing.inner_text() and "profile-1.csv" in listing.inner_text())
+    page.get_by_role("button", name="Keep it").click()
+    check("%s Keep it changes nothing" % tag, "profile-1.csv" in listing.inner_text() and "This cannot be undone" not in listing.inner_text())
+    page.get_by_role("button", name="Delete profile-1", exact=True).click()
+    page.get_by_role("button", name="Yes, delete profile-1").click()
+    page.wait_for_function("!document.querySelector('[aria-label=\"Recordings\"]').innerText.includes('profile-1.csv')")
+    check("%s Yes, delete takes it off the list and leaves the others" % tag, "profile-1.csv" not in listing.inner_text() and "stage-1.csv" in listing.inner_text(), listing.inner_text())
+    page.get_by_role("button", name="Delete stage-1", exact=True).click()
+    page.get_by_role("button", name="Yes, delete stage-1").click()
+    page.wait_for_function("!document.querySelector('[aria-label=\"Recordings\"]') || !document.querySelector('[aria-label=\"Recordings\"]').innerText.includes('stage-1.csv')")
+    check("%s deleting the recording that is on the scope puts the scope back on the live session" % tag,
+          page.get_by_role("group", name="What the scope shows").get_by_role("button", name=re.compile(r"^Replay: ")).count() == 0
+          and page.get_by_role("group", name="What the scope shows").get_by_role("button", name="Live", exact=True).get_attribute("aria-pressed") == "true")
+    shot("9-deleted")
 
 
 def controls(page, bench, tag, shot):
@@ -484,6 +630,7 @@ def run_alone(browser):
         page.goto(bench.url)
         page.get_by_role("navigation", name="Pages").wait_for(state="attached")
         go_to(page, "Meter")
+        open_details(page, "instrument-details")
         page.get_by_label("Profiler").wait_for()
         check("alone: the Meter page is there and has the profiler's card and no switch", page.get_by_role("group", name="Instrument").count() == 0)
         page.get_by_role("button", name="Watch", exact=True).click()
