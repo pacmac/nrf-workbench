@@ -465,3 +465,34 @@
     runs: 1
   trial: null
   fix: null
+- id: the-console-page-scrolls
+  type: bug
+  what: the Console page is a flowing page (1,204 px at 1280x720 on the real bench) whose log is a 384
+    px scrolling box, with the macros editor and the crash decoder below it, so the page and the log both
+    scroll; a dashboard page must fit the window
+  spec: docs/specs/navigation.md
+  files:
+  - ui/src/Console.jsx
+  - ui/src/App.jsx
+  - ui/src/ui.jsx
+  test:
+    command:
+    - python3
+    - scripts/verify_console_layout.py
+    criterion: the document does not scroll, the log shows the newest lines that fit with a pager, the
+      input stays on screen, macros open in a drawer, in both themes at 1280x720 and 1440x900
+    runs: 1
+  trial:
+    file: .proofs/the-console-page-scrolls.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-21T22:56:18.945'
+    commit: aff42eb-dirty
+  fix:
+    file: .proofs/the-console-page-scrolls.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-21T23:13:30.075'
+    commit: 0a0738f-dirty

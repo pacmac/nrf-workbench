@@ -1,0 +1,29 @@
+$ python3 scripts/verify_console_layout.py
+FAIL  light 1280x720 the document does not scroll (1106 of 720 px)  -- [1106, 720]
+FAIL  light 1280x720 nothing inside the page scrolls  -- ['DIV.h-96 overflow-auto rounded-lg border border-slate-300 bg-sla']
+FAIL  light 1280x720 the page uses the width beside the nav (888 of 1280 px)  -- [312, 1200, 0, 1106, 1280, 720]
+FAIL  light 1280x720 the page ends at the foot of the window  -- [312, 1200, 0, 1106, 1280, 720]
+FAIL  light 1280x720 the page could be driven  -- Page.wait_for_function: Timeout 20000ms exceeded.
+FAIL  light 1440x900 the document does not scroll (1106 of 900 px)  -- [1106, 900]
+FAIL  light 1440x900 nothing inside the page scrolls  -- ['DIV.h-96 overflow-auto rounded-lg border border-slate-300 bg-sla']
+FAIL  light 1440x900 the page uses the width beside the nav (888 of 1440 px)  -- [392, 1280, 0, 1106, 1440, 900]
+FAIL  light 1440x900 the page ends at the foot of the window  -- [392, 1280, 0, 1106, 1440, 900]
+FAIL  light 1440x900 the page could be driven  -- Page.wait_for_function: Timeout 20000ms exceeded.
+PASS  light 390x844 no horizontal scroll (390 of 390 px)
+PASS  light 390x844 the log and the input are there
+PASS  light 390x844 there is no pager on a phone
+FAIL  dark 1280x720 the document does not scroll (1106 of 720 px)  -- [1106, 720]
+FAIL  dark 1280x720 nothing inside the page scrolls  -- ['DIV.h-96 overflow-auto rounded-lg border border-slate-300 bg-sla']
+FAIL  dark 1280x720 the page uses the width beside the nav (888 of 1280 px)  -- [312, 1200, 0, 1106, 1280, 720]
+FAIL  dark 1280x720 the page ends at the foot of the window  -- [312, 1200, 0, 1106, 1280, 720]
+FAIL  dark 1280x720 the page could be driven  -- Page.wait_for_function: Timeout 20000ms exceeded.
+FAIL  dark 1440x900 the document does not scroll (1106 of 900 px)  -- [1106, 900]
+FAIL  dark 1440x900 nothing inside the page scrolls  -- ['DIV.h-96 overflow-auto rounded-lg border border-slate-300 bg-sla']
+FAIL  dark 1440x900 the page uses the width beside the nav (888 of 1440 px)  -- [392, 1280, 0, 1106, 1440, 900]
+FAIL  dark 1440x900 the page ends at the foot of the window  -- [392, 1280, 0, 1106, 1440, 900]
+FAIL  dark 1440x900 the page could be driven  -- Page.wait_for_function: Timeout 20000ms exceeded.
+PASS  dark 390x844 no horizontal scroll (390 of 390 px)
+PASS  dark 390x844 the log and the input are there
+PASS  dark 390x844 there is no pager on a phone
+
+26 checks, 20 failed. screenshots: /tmp/nrfwb-console-layout-shots-c_3i0a6v

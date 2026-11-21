@@ -1,0 +1,149 @@
+$ python3 scripts/verify_console_layout.py
+PASS  light 1280x720 the document does not scroll (720 of 720 px)
+PASS  light 1280x720 nothing inside the page scrolls
+PASS  light 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 the page ends at the foot of the window
+PASS  light 1280x720 rows are shown, fewer than all 150 (21)
+PASS  light 1280x720 every row lies inside the log
+PASS  light 1280x720 the log is filled: less than one more row of room is left (11 of 20 px)
+PASS  light 1280x720 the newest line is the last row
+PASS  light 1280x720 the pager says which of how many and ends at the newest ((130, 150, 150))
+PASS  light 1280x720 it says it is following
+PASS  light 1280x720 Older pages back by one screen ((109, 129, 150))
+PASS  light 1280x720 it no longer says it is following
+PASS  light 1280x720 a page back stays put when a line arrives
+PASS  light 1280x720 Latest follows again and shows the new line last
+PASS  light 1280x720 the long line is a row, cut to one line
+PASS  light 1280x720 picking it shows the whole of it (315 characters)
+PASS  light 1280x720 the input is on screen
+PASS  light 1280x720 the device heard the line (b'ping\n')
+PASS  light 1280x720 the sent line is in the log
+PASS  light 1280x720 after a send: the document does not scroll (720 of 720 px)
+PASS  light 1280x720 after a send: nothing inside the page scrolls
+PASS  light 1280x720 after a send: the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 after a send: the page ends at the foot of the window
+PASS  light 1280x720 Macros opens over the page
+PASS  light 1280x720 Escape closes it
+PASS  light 1280x720 with the drawer closed: the document does not scroll (720 of 720 px)
+PASS  light 1280x720 with the drawer closed: nothing inside the page scrolls
+PASS  light 1280x720 with the drawer closed: the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 with the drawer closed: the page ends at the foot of the window
+PASS  light 1280x720 a receive-only link disables the input
+PASS  light 1280x720 and says why
+PASS  light 1280x720 on a receive-only link: the document does not scroll (720 of 720 px)
+PASS  light 1280x720 on a receive-only link: nothing inside the page scrolls
+PASS  light 1280x720 on a receive-only link: the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 on a receive-only link: the page ends at the foot of the window
+PASS  light 1440x900 the document does not scroll (900 of 900 px)
+PASS  light 1440x900 nothing inside the page scrolls
+PASS  light 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 the page ends at the foot of the window
+PASS  light 1440x900 rows are shown, fewer than all 150 (30)
+PASS  light 1440x900 every row lies inside the log
+PASS  light 1440x900 the log is filled: less than one more row of room is left (11 of 20 px)
+PASS  light 1440x900 the newest line is the last row
+PASS  light 1440x900 the pager says which of how many and ends at the newest ((123, 152, 152))
+PASS  light 1440x900 it says it is following
+PASS  light 1440x900 Older pages back by one screen ((93, 122, 152))
+PASS  light 1440x900 it no longer says it is following
+PASS  light 1440x900 a page back stays put when a line arrives
+PASS  light 1440x900 Latest follows again and shows the new line last
+PASS  light 1440x900 the long line is a row, cut to one line
+PASS  light 1440x900 picking it shows the whole of it (315 characters)
+PASS  light 1440x900 the input is on screen
+PASS  light 1440x900 the device heard the line (b'ping\n')
+PASS  light 1440x900 the sent line is in the log
+PASS  light 1440x900 after a send: the document does not scroll (900 of 900 px)
+PASS  light 1440x900 after a send: nothing inside the page scrolls
+PASS  light 1440x900 after a send: the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 after a send: the page ends at the foot of the window
+PASS  light 1440x900 Macros opens over the page
+PASS  light 1440x900 Escape closes it
+PASS  light 1440x900 with the drawer closed: the document does not scroll (900 of 900 px)
+PASS  light 1440x900 with the drawer closed: nothing inside the page scrolls
+PASS  light 1440x900 with the drawer closed: the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 with the drawer closed: the page ends at the foot of the window
+PASS  light 1440x900 a receive-only link disables the input
+PASS  light 1440x900 and says why
+PASS  light 1440x900 on a receive-only link: the document does not scroll (900 of 900 px)
+PASS  light 1440x900 on a receive-only link: nothing inside the page scrolls
+PASS  light 1440x900 on a receive-only link: the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 on a receive-only link: the page ends at the foot of the window
+PASS  light 390x844 no horizontal scroll (390 of 390 px)
+PASS  light 390x844 the log and the input are there
+PASS  light 390x844 there is no pager on a phone
+PASS  dark 1280x720 the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 nothing inside the page scrolls
+PASS  dark 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 the page ends at the foot of the window
+PASS  dark 1280x720 rows are shown, fewer than all 150 (21)
+PASS  dark 1280x720 every row lies inside the log
+PASS  dark 1280x720 the log is filled: less than one more row of room is left (11 of 20 px)
+PASS  dark 1280x720 the newest line is the last row
+PASS  dark 1280x720 the pager says which of how many and ends at the newest ((134, 154, 154))
+PASS  dark 1280x720 it says it is following
+PASS  dark 1280x720 Older pages back by one screen ((113, 133, 154))
+PASS  dark 1280x720 it no longer says it is following
+PASS  dark 1280x720 a page back stays put when a line arrives
+PASS  dark 1280x720 Latest follows again and shows the new line last
+PASS  dark 1280x720 the long line is a row, cut to one line
+PASS  dark 1280x720 picking it shows the whole of it (315 characters)
+PASS  dark 1280x720 the input is on screen
+PASS  dark 1280x720 the device heard the line (b'ping\n')
+PASS  dark 1280x720 the sent line is in the log
+PASS  dark 1280x720 after a send: the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 after a send: nothing inside the page scrolls
+PASS  dark 1280x720 after a send: the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 after a send: the page ends at the foot of the window
+PASS  dark 1280x720 Macros opens over the page
+PASS  dark 1280x720 Escape closes it
+PASS  dark 1280x720 with the drawer closed: the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 with the drawer closed: nothing inside the page scrolls
+PASS  dark 1280x720 with the drawer closed: the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 with the drawer closed: the page ends at the foot of the window
+PASS  dark 1280x720 a receive-only link disables the input
+PASS  dark 1280x720 and says why
+PASS  dark 1280x720 on a receive-only link: the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 on a receive-only link: nothing inside the page scrolls
+PASS  dark 1280x720 on a receive-only link: the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 on a receive-only link: the page ends at the foot of the window
+PASS  dark 1440x900 the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 nothing inside the page scrolls
+PASS  dark 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 the page ends at the foot of the window
+PASS  dark 1440x900 rows are shown, fewer than all 150 (30)
+PASS  dark 1440x900 every row lies inside the log
+PASS  dark 1440x900 the log is filled: less than one more row of room is left (11 of 20 px)
+PASS  dark 1440x900 the newest line is the last row
+PASS  dark 1440x900 the pager says which of how many and ends at the newest ((127, 156, 156))
+PASS  dark 1440x900 it says it is following
+PASS  dark 1440x900 Older pages back by one screen ((97, 126, 156))
+PASS  dark 1440x900 it no longer says it is following
+PASS  dark 1440x900 a page back stays put when a line arrives
+PASS  dark 1440x900 Latest follows again and shows the new line last
+PASS  dark 1440x900 the long line is a row, cut to one line
+PASS  dark 1440x900 picking it shows the whole of it (315 characters)
+PASS  dark 1440x900 the input is on screen
+PASS  dark 1440x900 the device heard the line (b'ping\n')
+PASS  dark 1440x900 the sent line is in the log
+PASS  dark 1440x900 after a send: the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 after a send: nothing inside the page scrolls
+PASS  dark 1440x900 after a send: the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 after a send: the page ends at the foot of the window
+PASS  dark 1440x900 Macros opens over the page
+PASS  dark 1440x900 Escape closes it
+PASS  dark 1440x900 with the drawer closed: the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 with the drawer closed: nothing inside the page scrolls
+PASS  dark 1440x900 with the drawer closed: the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 with the drawer closed: the page ends at the foot of the window
+PASS  dark 1440x900 a receive-only link disables the input
+PASS  dark 1440x900 and says why
+PASS  dark 1440x900 on a receive-only link: the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 on a receive-only link: nothing inside the page scrolls
+PASS  dark 1440x900 on a receive-only link: the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 on a receive-only link: the page ends at the foot of the window
+PASS  dark 390x844 no horizontal scroll (390 of 390 px)
+PASS  dark 390x844 the log and the input are there
+PASS  dark 390x844 there is no pager on a phone
+
+146 checks, 0 failed. screenshots: /tmp/nrfwb-console-layout-shots-kbumc1az
