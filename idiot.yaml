@@ -672,3 +672,33 @@
     failures: 0
     at: '2026-11-22T03:34:22.376'
     commit: 33e5f51-dirty
+- id: the-firmware-page-scrolls
+  type: bug
+  what: the Firmware page stacks the ESP32 boards card, a Last result card, the projects list and the
+    chosen project's upload form and package list in one flowing page (964 px at 1280x720 on the real
+    bench, more with more projects and packages), so it scrolls; a dashboard page must fit the window
+  spec: docs/specs/navigation.md
+  files:
+  - ui/src/Firmware.jsx
+  - ui/src/App.jsx
+  test:
+    command:
+    - python3
+    - scripts/verify_firmware_layout.py
+    criterion: the document does not scroll, the projects and the packages page to fit, the ESP32 boards
+      and the whole result open in drawers, in both themes at 1280x720 and 1440x900
+    runs: 1
+  trial:
+    file: .proofs/the-firmware-page-scrolls.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-22T04:33:11.675'
+    commit: 254121d-dirty
+  fix:
+    file: .proofs/the-firmware-page-scrolls.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-22T04:47:44.199'
+    commit: 305ed7b-dirty

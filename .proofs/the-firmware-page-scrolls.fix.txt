@@ -1,0 +1,151 @@
+$ python3 scripts/verify_firmware_layout.py
+PASS  light 1280x720 the document does not scroll (720 of 720 px)
+PASS  light 1280x720 nothing inside the page scrolls
+PASS  light 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 the page ends at the foot of the window
+PASS  light 1280x720 every panel lies inside the page
+PASS  light 1280x720 Projects shows the rows that fit, fewer than all (9 of 14)
+PASS  light 1280x720 every Projects row lies inside its list
+PASS  light 1280x720 the Projects list is filled: less than one more row of room is left (1 of 44 px)
+PASS  light 1280x720 Next pages Projects ((10, 14, 14))
+PASS  light 1280x720 Previous returns to the first
+PASS  light 1280x720 no Projects row on any page has its content cut off by its fixed height (0)
+PASS  light 1280x720 choosing a project shows its panel
+PASS  light 1280x720 Packages in alpha shows the rows that fit, fewer than all (3 of 14)
+PASS  light 1280x720 every Packages in alpha row lies inside its list
+PASS  light 1280x720 the Packages in alpha list is filled: less than one more row of room is left (82 of 84 px)
+PASS  light 1280x720 Next pages Packages in alpha ((4, 6, 14))
+PASS  light 1280x720 Previous returns to the first
+PASS  light 1280x720 no Packages in alpha row on any page has its content cut off by its fixed height (0)
+PASS  light 1280x720 the upload is one row in the panel
+PASS  light 1280x720 each panel's contents fill it down to its foot ([17, 17] px spare)
+PASS  light 1280x720 with a project open: the document does not scroll (720 of 720 px)
+PASS  light 1280x720 with a project open: nothing inside the page scrolls
+PASS  light 1280x720 with a project open: the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 with a project open: the page ends at the foot of the window
+PASS  light 1280x720 with a project open: every panel lies inside the page
+PASS  light 1280x720 the ESP32 boards open in a drawer
+PASS  light 1280x720 Escape closes it
+PASS  light 1280x720 a one-line result is left at the foot (ok
+created
+Details)
+PASS  light 1280x720 with a result shown: the document does not scroll (720 of 720 px)
+PASS  light 1280x720 with a result shown: nothing inside the page scrolls
+PASS  light 1280x720 with a result shown: the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 with a result shown: the page ends at the foot of the window
+PASS  light 1280x720 with a result shown: every panel lies inside the page
+PASS  light 1280x720 Details opens the whole result in a drawer
+PASS  light 1440x900 the document does not scroll (900 of 900 px)
+PASS  light 1440x900 nothing inside the page scrolls
+PASS  light 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 the page ends at the foot of the window
+PASS  light 1440x900 every panel lies inside the page
+PASS  light 1440x900 Projects shows the rows that fit, fewer than all (13 of 15)
+PASS  light 1440x900 every Projects row lies inside its list
+PASS  light 1440x900 the Projects list is filled: less than one more row of room is left (5 of 44 px)
+PASS  light 1440x900 Next pages Projects ((14, 15, 15))
+PASS  light 1440x900 Previous returns to the first
+PASS  light 1440x900 no Projects row on any page has its content cut off by its fixed height (0)
+PASS  light 1440x900 choosing a project shows its panel
+PASS  light 1440x900 Packages in alpha shows the rows that fit, fewer than all (6 of 14)
+PASS  light 1440x900 every Packages in alpha row lies inside its list
+PASS  light 1440x900 the Packages in alpha list is filled: less than one more row of room is left (10 of 84 px)
+PASS  light 1440x900 Next pages Packages in alpha ((7, 12, 14))
+PASS  light 1440x900 Previous returns to the first
+PASS  light 1440x900 no Packages in alpha row on any page has its content cut off by its fixed height (0)
+PASS  light 1440x900 the upload is one row in the panel
+PASS  light 1440x900 each panel's contents fill it down to its foot ([17, 17] px spare)
+PASS  light 1440x900 with a project open: the document does not scroll (900 of 900 px)
+PASS  light 1440x900 with a project open: nothing inside the page scrolls
+PASS  light 1440x900 with a project open: the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 with a project open: the page ends at the foot of the window
+PASS  light 1440x900 with a project open: every panel lies inside the page
+PASS  light 1440x900 the ESP32 boards open in a drawer
+PASS  light 1440x900 Escape closes it
+PASS  light 1440x900 a one-line result is left at the foot (ok
+created
+Details)
+PASS  light 1440x900 with a result shown: the document does not scroll (900 of 900 px)
+PASS  light 1440x900 with a result shown: nothing inside the page scrolls
+PASS  light 1440x900 with a result shown: the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 with a result shown: the page ends at the foot of the window
+PASS  light 1440x900 with a result shown: every panel lies inside the page
+PASS  light 1440x900 Details opens the whole result in a drawer
+PASS  light 390x844 no horizontal scroll (390 of 390 px)
+PASS  light 390x844 there is no pager on a phone
+PASS  dark 1280x720 the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 nothing inside the page scrolls
+PASS  dark 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 the page ends at the foot of the window
+PASS  dark 1280x720 every panel lies inside the page
+PASS  dark 1280x720 Projects shows the rows that fit, fewer than all (9 of 16)
+PASS  dark 1280x720 every Projects row lies inside its list
+PASS  dark 1280x720 the Projects list is filled: less than one more row of room is left (1 of 44 px)
+PASS  dark 1280x720 Next pages Projects ((10, 16, 16))
+PASS  dark 1280x720 Previous returns to the first
+PASS  dark 1280x720 no Projects row on any page has its content cut off by its fixed height (0)
+PASS  dark 1280x720 choosing a project shows its panel
+PASS  dark 1280x720 Packages in alpha shows the rows that fit, fewer than all (3 of 14)
+PASS  dark 1280x720 every Packages in alpha row lies inside its list
+PASS  dark 1280x720 the Packages in alpha list is filled: less than one more row of room is left (82 of 84 px)
+PASS  dark 1280x720 Next pages Packages in alpha ((4, 6, 14))
+PASS  dark 1280x720 Previous returns to the first
+PASS  dark 1280x720 no Packages in alpha row on any page has its content cut off by its fixed height (0)
+PASS  dark 1280x720 the upload is one row in the panel
+PASS  dark 1280x720 each panel's contents fill it down to its foot ([17, 17] px spare)
+PASS  dark 1280x720 with a project open: the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 with a project open: nothing inside the page scrolls
+PASS  dark 1280x720 with a project open: the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 with a project open: the page ends at the foot of the window
+PASS  dark 1280x720 with a project open: every panel lies inside the page
+PASS  dark 1280x720 the ESP32 boards open in a drawer
+PASS  dark 1280x720 Escape closes it
+PASS  dark 1280x720 a one-line result is left at the foot (ok
+created
+Details)
+PASS  dark 1280x720 with a result shown: the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 with a result shown: nothing inside the page scrolls
+PASS  dark 1280x720 with a result shown: the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 with a result shown: the page ends at the foot of the window
+PASS  dark 1280x720 with a result shown: every panel lies inside the page
+PASS  dark 1280x720 Details opens the whole result in a drawer
+PASS  dark 1440x900 the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 nothing inside the page scrolls
+PASS  dark 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 the page ends at the foot of the window
+PASS  dark 1440x900 every panel lies inside the page
+PASS  dark 1440x900 Projects shows the rows that fit, fewer than all (13 of 17)
+PASS  dark 1440x900 every Projects row lies inside its list
+PASS  dark 1440x900 the Projects list is filled: less than one more row of room is left (5 of 44 px)
+PASS  dark 1440x900 Next pages Projects ((14, 17, 17))
+PASS  dark 1440x900 Previous returns to the first
+PASS  dark 1440x900 no Projects row on any page has its content cut off by its fixed height (0)
+PASS  dark 1440x900 choosing a project shows its panel
+PASS  dark 1440x900 Packages in alpha shows the rows that fit, fewer than all (6 of 14)
+PASS  dark 1440x900 every Packages in alpha row lies inside its list
+PASS  dark 1440x900 the Packages in alpha list is filled: less than one more row of room is left (10 of 84 px)
+PASS  dark 1440x900 Next pages Packages in alpha ((7, 12, 14))
+PASS  dark 1440x900 Previous returns to the first
+PASS  dark 1440x900 no Packages in alpha row on any page has its content cut off by its fixed height (0)
+PASS  dark 1440x900 the upload is one row in the panel
+PASS  dark 1440x900 each panel's contents fill it down to its foot ([17, 17] px spare)
+PASS  dark 1440x900 with a project open: the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 with a project open: nothing inside the page scrolls
+PASS  dark 1440x900 with a project open: the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 with a project open: the page ends at the foot of the window
+PASS  dark 1440x900 with a project open: every panel lies inside the page
+PASS  dark 1440x900 the ESP32 boards open in a drawer
+PASS  dark 1440x900 Escape closes it
+PASS  dark 1440x900 a one-line result is left at the foot (ok
+created
+Details)
+PASS  dark 1440x900 with a result shown: the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 with a result shown: nothing inside the page scrolls
+PASS  dark 1440x900 with a result shown: the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 with a result shown: the page ends at the foot of the window
+PASS  dark 1440x900 with a result shown: every panel lies inside the page
+PASS  dark 1440x900 Details opens the whole result in a drawer
+PASS  dark 390x844 no horizontal scroll (390 of 390 px)
+PASS  dark 390x844 there is no pager on a phone
+
+140 checks, 0 failed. screenshots: /tmp/nrfwb-firmware-layout-shots-_4luceu0
