@@ -35,8 +35,8 @@
     exit: 0
     runs: 1
     failures: 0
-    at: '2026-11-21T15:18:23.452'
-    commit: 1cabaf5-dirty
+    at: '2026-11-21T15:20:32.914'
+    commit: 974b64b-dirty
 - id: the-trigger-profile-is-lost-when-the-page-reloads
   type: bug
   what: the five trigger fields live only in MeterPage component state (useState(EMPTY_TRIGGER)), so a
