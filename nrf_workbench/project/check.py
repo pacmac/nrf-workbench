@@ -45,6 +45,8 @@ def check(host, m, plan, entry):
             findings.append({"section": sec, "name": name, "status": "ok" if act == "have" else "unmet", "why": i["why"]})
         elif sec == "firmware":
             findings.append({"section": sec, "name": name, "status": "ok" if act == "have" else "missing", "why": i["why"]})
+        elif sec == "power":                                     # information: an absent board is already the role's own problem, counted once
+            findings.append({"section": sec, "name": name, "status": "ok" if act == "have" else "not_applied", "why": i["why"]})
         elif act in ("have", "use"):
             findings.append({"section": sec, "name": name, "status": "ok", "why": i["why"]})
         elif act == "create":

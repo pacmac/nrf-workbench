@@ -8,7 +8,7 @@ import threading
 import time
 
 from ..core import config
-from ..core.registry import Arg, Command, UsageError
+from ..core.registry import Arg, Command, UnknownCommand, UsageError
 from ..core.result import Result, SUSPECT
 from . import scpi
 
@@ -246,20 +246,47 @@ def register(registry, host):
             raise UsageError(str(exc), sorted(given)[0] if given else "wake_max_s")
         return Result.success(summary, "wake profile changed: it applies from the next block")
 
+    def profile_in_force(ctx):
+        """The power profile of the project whose board is on the profiler, or None (docs/specs/project-power-profile.md). The instruments never import the project area: this asks the
+        registry, as the project area asks it for the stores. A host with no such command, or one that cannot answer, has nothing in force: a session is never blocked by it."""
+        registry = getattr(ctx.host, "registry", None)
+        if registry is None:
+            return None
+        caps = getattr(ctx.host, "capabilities", None)
+        try:
+            res = registry.call("meter.project_profile", {}, ctx, capabilities=set(caps) if caps is not None else None)
+        except UnknownCommand:
+            return None
+        return res.data.get("in_force") if res.ok and isinstance(res.data, dict) else None
+
     def starter(mode):
         def handler(ctx, bound_s, name=None, source=None, wake_sleep_a=None, wake_awake_a=None, wake_hold_s=None, wake_lead_s=None, wake_max_s=None):
             if source is not None and source not in ("meter", "ppk2"):
                 raise UsageError("source is meter or ppk2", "source")
             given = {"wake_sleep_a": wake_sleep_a, "wake_awake_a": wake_awake_a, "wake_hold_s": wake_hold_s, "wake_lead_s": wake_lead_s, "wake_max_s": wake_max_s}
             given = dict((k, v) for k, v in given.items() if v is not None)          # an argument not given arrives as None: it is left to the data
+            try:
+                profiler = sampler(ctx).resolve_source(source) == "ppk2"
+            except samplerlib.Missing as exc:
+                return Result.refused("capability_missing", str(exc), {"source": source})
+            forced = profile_in_force(ctx) if profiler else None            # a multimeter keeps no wakes: it has no profile to take
+            # the profile's trigger is the default and an explicit argument wins, field by field (a person on the page and an agent making the same call get the same capture)
+            trigger = dict(forced["trigger"]) if forced else {}
+            trigger.update((k[len("wake_"):], v) for k, v in given.items())
             wake = None
-            if given:
+            if trigger:
                 try:
-                    wake = capturelib.WakeProfile(wake_sleep_a, wake_awake_a, wake_hold_s, wake_lead_s, wake_max_s)
+                    wake = capturelib.WakeProfile(**trigger)
                 except capturelib.ProfileError as exc:
                     raise UsageError(str(exc), exc.field)
+            profile = None
+            if forced or given:
+                profile = {"project": forced["project"] if forced else None, "role": forced["role"] if forced else None, "source": "project" if forced else "explicit",
+                           "overridden": sorted(given), "events": forced["events"] if forced else []}
             try:
-                summary = sampler(ctx).start(mode, bound_s, name, source, wake)
+                summary = sampler(ctx).start(mode, bound_s, name, source, wake, profile)
+            except samplerlib.BadEvents as exc:
+                return Result.refused("bad_manifest", "the power profile in force has an event the recording refuses: %s" % exc, {})
             except samplerlib.ProfileNotWanted as exc:
                 raise UsageError(str(exc), sorted(given)[0])
             except samplerlib.Busy as exc:

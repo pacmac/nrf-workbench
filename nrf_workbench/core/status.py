@@ -27,7 +27,7 @@ CODES = {
     "intent_not_built": REFUSED, "connection_unknown": REFUSED, "target_unknown": REFUSED,
     "i2c_pins_unclaimed": REFUSED, "bad_manifest": REFUSED, "project_conflict": REFUSED, "project_applied": REFUSED,
     "project_not_applied": REFUSED, "pins_not_controllable": REFUSED, "meter_function": REFUSED,
-    "meter_busy": REFUSED, "meter_idle": REFUSED, "recording_unknown": REFUSED, "capture_unknown": REFUSED, "stage_unknown": REFUSED, "event_unknown": REFUSED, "ppk2_mode": REFUSED, "supply_unconfirmed": REFUSED,
+    "meter_busy": REFUSED, "meter_idle": REFUSED, "recording_unknown": REFUSED, "capture_unknown": REFUSED, "stage_unknown": REFUSED, "event_unknown": REFUSED, "ppk2_mode": REFUSED, "supply_unconfirmed": REFUSED, "profile_not_candidate": REFUSED,
     # failed: it was attempted and went wrong
     "no_reply": FAILED, "touch_failed": FAILED, "bootloader_not_reached": FAILED, "flash_failed": FAILED,
     "run_node_not_returned": FAILED, "write_failed": FAILED, "pins_not_set": FAILED,

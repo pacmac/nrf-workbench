@@ -208,5 +208,117 @@ class Others(unittest.TestCase):
         self.assertGreaterEqual(len(check(text)[1]), 5)
 
 
+class Power(unittest.TestCase):
+    """The `power` section (docs/specs/project-power-profile.md): a role's trigger and named events, judged by the code that judges them on a recording."""
+    ROLES = "name: demo\ndevices:\n  alarm: {nrf: SER1}\n  sensor: {nrf: SER2}\npower:\n%s"
+    FULL = """  alarm:
+    beat_s: 900
+    trigger: {awake_ua: 50, sleep_ua: 25, hold_s: 0.4, lead_s: 0.2, max_s: 40}
+    events:
+      - {name: boot, from: wake, start_s: 0.0, end_s: 1.2}
+      - {name: radio join, from: wake, start_s: 4.0, end_s: 12.1, every: 2, offset: 1}
+      - {name: radio on, from: start, start_s: 2.0, end_s: 14.0}
+"""
+
+    def power(self, body, indent="  alarm:\n"):
+        return self.ROLES % (indent + "".join("    %s\n" % line for line in body.splitlines()))
+
+    def test_a_full_profile_is_normalised_with_the_trigger_in_amps_and_every_default_stated(self):
+        m, errors = check(self.ROLES % self.FULL)
+        self.assertEqual(errors, [])
+        p = m["power"]["alarm"]
+        self.assertEqual(p["beat_s"], 900)
+        for key, ua in (("awake_a", 50), ("sleep_a", 25)):
+            self.assertAlmostEqual(p["trigger"][key], ua / 1e6, places=12, msg="microamps are handed on as amps")
+        self.assertEqual((p["trigger"]["hold_s"], p["trigger"]["lead_s"], p["trigger"]["max_s"]), (0.4, 0.2, 40))
+        self.assertEqual(p["events"], [{"name": "boot", "from": "wake", "start_s": 0.0, "end_s": 1.2, "every": 1, "offset": 0},
+                                       {"name": "radio join", "from": "wake", "start_s": 4.0, "end_s": 12.1, "every": 2, "offset": 1},
+                                       {"name": "radio on", "from": "start", "start_s": 2.0, "end_s": 14.0, "every": 1, "offset": 0}])
+
+    def test_no_power_section_is_an_empty_mapping_and_each_part_alone_is_enough(self):
+        self.assertEqual(check("name: demo\n")[0]["power"], {})
+        only_events = check(self.power("events:\n  - {name: radio on, from: start, start_s: 2, end_s: 14}"))
+        self.assertEqual(only_events[1], [])
+        self.assertEqual(only_events[0]["power"]["alarm"]["trigger"], {})
+        only_trigger = check(self.power("trigger: {max_s: 30}"))
+        self.assertEqual((only_trigger[1], only_trigger[0]["power"]["alarm"]["trigger"], only_trigger[0]["power"]["alarm"]["events"]), ([], {"max_s": 30}, []))
+        beat_only = check(self.power("beat_s: 60"))
+        self.assertEqual((beat_only[1], beat_only[0]["power"]["alarm"]["beat_s"]), ([], 60), "the beat alone is a profile")
+
+    def test_a_profile_that_says_nothing_and_a_role_that_is_not_there_are_refused(self):
+        self.assertTrue(bad(self.power("{}"), "power.alarm"))
+        self.assertTrue(bad("name: demo\ndevices:\n  alarm: {nrf: SER1}\npower:\n  nobody:\n    beat_s: 60\n", "power.nobody: 'nobody' is not a role"))
+        self.assertTrue(bad("name: demo\npower:\n  meter:\n    beat_s: 60\n", "power.meter"))
+        self.assertTrue(bad("name: demo\npower: [a]\n", "power:"))
+
+    def test_an_unknown_key_is_refused_at_each_level(self):
+        self.assertTrue(bad(self.power("beat: 60"), "'beat' is not a field"))
+        self.assertTrue(bad(self.power("trigger: {colour: red}"), "power.alarm.trigger: 'colour'"))
+        self.assertTrue(bad(self.power("events:\n  - {name: a, from: start, start_s: 1, end_s: 2, colour: red}"), "power.alarm.events[0]: 'colour'"))
+
+    def test_the_trigger_is_judged_by_the_wake_profile_and_names_the_field(self):
+        for body, field in (("trigger: {sleep_ua: 50, awake_ua: 50}", "power.alarm.trigger.awake_ua"),
+                            ("trigger: {sleep_ua: 0}", "power.alarm.trigger.sleep_ua"),
+                            ("trigger: {awake_ua: -3}", "power.alarm.trigger.awake_ua"),
+                            ("trigger: {max_s: 121}", "power.alarm.trigger.max_s"),
+                            ("trigger: {max_s: 0.5}", "power.alarm.trigger.max_s"),
+                            ("trigger: {hold_s: 0.1}", "power.alarm.trigger.hold_s"),
+                            ("trigger: {hold_s: 41}", "power.alarm.trigger.hold_s"),
+                            ("trigger: {lead_s: 41}", "power.alarm.trigger.lead_s"),
+                            ("trigger: {max_s: fast}", "power.alarm.trigger.max_s"),
+                            ("trigger: {max_s: true}", "power.alarm.trigger.max_s"),
+                            ("trigger: 50", "power.alarm.trigger")):
+            self.assertTrue(bad(self.power(body), field), body)
+
+    def test_the_beat_is_above_zero_and_within_the_longest_recording(self):
+        for value in ("0", "-5", "43201", "soon", "true"):
+            self.assertTrue(bad(self.power("beat_s: %s" % value), "power.alarm.beat_s"), value)
+        self.assertEqual(check(self.power("beat_s: 43200"))[1], [])
+
+    def test_an_event_states_its_name_its_kind_and_its_times(self):
+        for item, field in (("{from: start, start_s: 1, end_s: 2}", "events[0].name"),
+                            ("{name: '', from: start, start_s: 1, end_s: 2}", "events[0].name"),
+                            ("{name: %s, from: start, start_s: 1, end_s: 2}" % ("x" * 41), "events[0].name"),
+                            ("{name: a, start_s: 1, end_s: 2}", "events[0].from"),
+                            ("{name: a, from: sometime, start_s: 1, end_s: 2}", "events[0].from"),
+                            ("{name: a, from: start, end_s: 2}", "events[0].start_s"),
+                            ("{name: a, from: start, start_s: 1}", "events[0].end_s"),
+                            ("{name: a, from: start, start_s: 2, end_s: 2}", "events[0].end_s"),
+                            ("{name: a, from: start, start_s: -1, end_s: 2}", "events[0].start_s"),
+                            ("{name: a, from: start, start_s: x, end_s: 2}", "events[0].start_s"),
+                            ("a", "events[0]")):
+            self.assertTrue(bad(self.power("events:\n  - %s" % item), "power.alarm.%s" % field), item)
+        self.assertTrue(bad(self.power("events: nope"), "power.alarm.events"))
+
+    def test_every_and_offset_are_for_wake_events_only_and_offset_is_below_every(self):
+        wake = "events:\n  - {name: a, from: wake, start_s: 1, end_s: 2, %s}"
+        self.assertEqual(check(self.power(wake % "every: 8, offset: 7"))[1], [])
+        for extra in ("every: 9", "every: 0", "every: 2, offset: 2", "offset: 1", "every: 2, offset: -1"):
+            self.assertTrue(bad(self.power(wake % extra), "power.alarm.events[0]"), extra)
+        for extra in ("every: 2", "offset: 1"):
+            self.assertTrue(bad(self.power("events:\n  - {name: a, from: start, start_s: 1, end_s: 2, %s}" % extra), "events[0].%s" % extra.split(":")[0]), extra)
+        self.assertEqual(check(self.power("events:\n  - {name: a, from: wake, start_s: -0.2, end_s: 1}"))[1], [], "a stage may begin before the wake")
+
+    def test_a_name_is_unique_ignoring_case_across_both_kinds(self):
+        two = "events:\n  - {name: Radio, from: wake, start_s: 1, end_s: 2}\n  - {name: radio, from: start, start_s: 1, end_s: 2}"
+        self.assertTrue(bad(self.power(two), "power.alarm.events[1].name"))
+
+    def test_wake_events_may_not_overlap_in_wakes_they_share_but_may_where_they_do_not(self):
+        base = "events:\n  - {name: a, from: wake, start_s: 1, end_s: 3, %s}\n  - {name: b, from: wake, start_s: 2, end_s: 4, %s}"
+        self.assertTrue(bad(self.power(base % ("", "")), "power.alarm.events[1]"))
+        self.assertTrue(bad(self.power(base % ("every: 2", "every: 2")), "power.alarm.events[1]"))
+        self.assertEqual(check(self.power(base % ("every: 2, offset: 0", "every: 2, offset: 1")))[1], [], "alternate wakes do not share")
+
+    def test_recording_events_may_overlap_and_nest_as_they_do_on_a_recording(self):
+        two = "events:\n  - {name: awake, from: start, start_s: 0, end_s: 20}\n  - {name: radio, from: start, start_s: 4, end_s: 9}"
+        self.assertEqual(check(self.power(two))[1], [])
+
+    def test_at_most_twelve_events_counting_both_kinds(self):
+        rows = "".join("  - {name: e%d, from: start, start_s: %d, end_s: %d}\n" % (i, i, i + 1) for i in range(12))
+        self.assertEqual(check(self.power("events:\n" + rows))[1], [])
+        more = rows + "  - {name: e12, from: wake, start_s: 1, end_s: 2}\n"
+        self.assertTrue(bad(self.power("events:\n" + more), "at most 12"))
+
+
 if __name__ == "__main__":
     unittest.main()

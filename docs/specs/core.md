@@ -138,6 +138,7 @@ returned, never a tail. **[brief]**
 | `ppk2_unreachable` | failed | no PPK2 is attached (or not the one named), it has no measuring serial port, or the port would not open or failed (`ppk2.md`) | the setting, the serial or the port |
 | `ppk2_mode` | refused | the PPK2 is in the other mode: only source mode supplies a board, so switching the output on is refused in ampere mode (`ppk2.md`) | the mode it is in |
 | `supply_unconfirmed` | refused | a change that can cut or apply a board's supply (leaving source mode with the output on or unknown, or switching the output on) without `accept_supply` (`ppk2.md`) | the mode, what is known of the output |
+| `profile_not_candidate` | refused | `meter.project_use` named a role that has no power profile, is not attached, or belongs to a project that is not applied (`project-power-profile.md`) | the project and the role |
 | `meter_overload` | suspect | a meter reading at SCPI's overload value: the range is too small to trust any number (`meter.md`) | the raw reply, the range |
 | `pin_reserved` | refused | a GPIO assignment to BCM 0 or 1, the HAT ID EEPROM's bus (`gpio.md`), or to a pin the bench's configuration reserves (`pins.reserved`, `pi-uart-move.md`) | the gpio, and `reserved_by: configuration` for a configured one |
 | `pin_not_on_header` | refused | a GPIO assignment to a number that is not on the 40-pin header (0 to 27) | the gpio |

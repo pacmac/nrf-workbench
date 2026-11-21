@@ -50,8 +50,15 @@ class ProfileNotWanted(Exception):
     """A wake profile was given to a session of an instrument that keeps no wakes (the multimeter)."""
 
 
+class BadEvents(ValueError):
+    """An event of the power profile in force that the recording's own rules refuse (the manifest was judged by the same rules, so this means one of them changed)."""
+
+
 class NotRunning(Exception):
     """There is no running session to change."""
+
+
+NO_PROFILE = {"project": None, "role": None, "source": "found", "overridden": []}      # no project's profile was in force and no wake argument was given: everything is found from the data
 
 
 class Session(object):
@@ -69,6 +76,7 @@ class Session(object):
         self.ended = None
         self.wakes_dir = None                                # where a recording keeps its wakes (the profiler's source writes them there)
         self.wake = None                                     # the capture.WakeProfile this session was started with (None: everything found from the data)
+        self.profile = dict(NO_PROFILE)                      # where the wake profile came from (docs/specs/project-power-profile.md, decision 4)
 
 
 def mode_state(mode):
@@ -134,8 +142,28 @@ class Sampler(object):
             raise Missing("this bench has no %s configured" % (name or "instrument"))
         return self.sources[name]
 
-    def start(self, mode, bound_s, name=None, source=None, wake=None):
-        """The session's summary dict. Raises Busy, NameTaken, Missing, or ValueError for a bad bound or name. `wake` is a capture.WakeProfile (the profiler's sessions only)."""
+    def resolve_source(self, name=None):
+        """The name of the source a session started with `source=name` would read (the multimeter when there is one, else the profiler). Raises Missing."""
+        return self._source(name).name
+
+    @staticmethod
+    def _profile_files(events):
+        """(stages, events) a power profile's events make, by the rules a recording applies: a `from: wake` event is a stage, a `from: start` one an event. BadEvents for one that is refused."""
+        stages, recorded = [], []
+        try:
+            for e in events:
+                if e["from"] == "wake":
+                    stages = capture.set_stage(stages, e["name"], e["start_s"], e["end_s"], e["every"], e["offset"])
+                else:
+                    recorded = eventlib.set_event(recorded, e["name"], e["start_s"], e["end_s"])
+        except (capture.StageError, eventlib.EventError) as exc:
+            raise BadEvents("%s: %s" % (e["name"], exc))
+        return stages, recorded
+
+    def start(self, mode, bound_s, name=None, source=None, wake=None, profile=None):
+        """The session's summary dict. Raises Busy, NameTaken, Missing, BadEvents, or ValueError for a bad bound or name. `wake` is a capture.WakeProfile (the profiler's sessions only).
+        `profile` is where it came from, {project, role, source, overridden, events} (docs/specs/project-power-profile.md): it is reported with the session and in a recording's sidecar,
+        and a recording starts with its events (a watch keeps no files, so it takes only the trigger, which is `wake`)."""
         if mode not in ("watch", "record"):
             raise ValueError("mode is watch or record")
         if isinstance(bound_s, bool) or not isinstance(bound_s, (int, float)) or not MIN_BOUND_S <= bound_s <= MAX_BOUND_S:
@@ -146,6 +174,7 @@ class Sampler(object):
             src = self._source(source)
             if wake is not None and src.name != "ppk2":
                 raise ProfileNotWanted("a multimeter session keeps no wakes, so it has no wake profile")
+            profile_stages, profile_events = self._profile_files((profile or {}).get("events") or []) if mode == "record" else ([], [])
             self._count += 1
             wall = self._wall()
             if mode == "record":
@@ -161,11 +190,20 @@ class Sampler(object):
                 self._prune()
             s = Session(self._count, mode, float(bound_s), name if mode == "record" else None, wall, self._mono(), src)
             s.wake = wake
+            if profile:
+                s.profile = {"project": profile["project"], "role": profile["role"], "source": profile["source"], "overridden": list(profile["overridden"])}
             if mode == "record":
                 s.wakes_dir = os.path.join(self.folder, name + ".wakes")
                 s.file = open(os.path.join(self.folder, name + ".csv"), "w")
                 s.file.write(HEADER)
                 s.file.flush()
+                try:
+                    if profile_stages:
+                        capture.save_stages(os.path.join(self.folder, name + ".stages.json"), profile_stages)
+                    if profile_events:
+                        eventlib.save_events(os.path.join(self.folder, name + ".events.json"), profile_events)
+                except OSError:
+                    pass                                         # as the sidecar: a disk that will not take a small file does not stop the recording; the person sees the stages are not there
                 self._sidecar(s, ended=None)
             self._session = s
             self._publish_state(s)
@@ -299,7 +337,7 @@ class Sampler(object):
         elapsed = (s.ended - s.started) if s.ended else self._mono() - s.t0
         return dict({"session": s.number, "source": s.source.name, "state": s.state, "mode": s.mode, "name": s.name, "started": s.started,
                      "elapsed_s": round(elapsed, 3), "bound_s": s.bound_s, "reason": s.reason, "function": s.function, "unit": s.unit,
-                     "stats": s.stats.to_dict(self._current(s))}, **s.facts)
+                     "profile": dict(s.profile), "stats": s.stats.to_dict(self._current(s))}, **s.facts)
 
     def _publish_state(self, s):
         self.bus.publish("meter.state", "meter", self._summary(s))
@@ -309,7 +347,7 @@ class Sampler(object):
         try:
             with open(os.path.join(self.folder, s.name + ".json"), "w") as fh:
                 json.dump(dict({"name": s.name, "source": s.source.name, "started": s.started, "ended": ended, "reason": s.reason, "bound_s": s.bound_s,
-                                "function": s.function, "unit": s.unit, "stats": s.stats.to_dict(self._current(s))}, **s.facts), fh)
+                                "function": s.function, "unit": s.unit, "profile": s.profile, "stats": s.stats.to_dict(self._current(s))}, **s.facts), fh)
         except OSError:
             pass
 

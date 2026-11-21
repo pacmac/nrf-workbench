@@ -1,0 +1,125 @@
+$ bash -c python3 tests/project/test_manifest.py && python3 tests/project/test_power.py && python3 tests/instruments/test_session_profile.py
+..................................
+----------------------------------------------------------------------
+Ran 34 tests in 0.033s
+
+OK
+....................
+----------------------------------------------------------------------
+Ran 20 tests in 0.088s
+
+OK
+F..EEF.EFFEEE
+======================================================================
+ERROR: test_the_sidecar_of_a_session_with_no_profile_says_found (__main__.TheEventsAreWrittenAtTheStart.test_the_sidecar_of_a_session_with_no_profile_says_found)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_session_profile.py", line 130, in test_the_sidecar_of_a_session_with_no_profile_says_found
+    self.assertEqual(self.sidecar("rak-2")["profile"], {"project": None, "role": None, "source": "found", "overridden": []})
+                     ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+KeyError: 'profile'
+
+======================================================================
+ERROR: test_the_sidecar_says_where_the_profile_came_from (__main__.TheEventsAreWrittenAtTheStart.test_the_sidecar_says_where_the_profile_came_from)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_session_profile.py", line 125, in test_the_sidecar_says_where_the_profile_came_from
+    self.assertEqual(self.sidecar("rak-1")["profile"], {"project": "demo", "role": "alarm", "source": "project", "overridden": ["wake_hold_s"]})
+                     ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+KeyError: 'profile'
+
+======================================================================
+ERROR: test_a_profile_of_events_alone_leaves_the_trigger_to_the_data (__main__.TheTriggerIsTheDefault.test_a_profile_of_events_alone_leaves_the_trigger_to_the_data)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_session_profile.py", line 94, in test_a_profile_of_events_alone_leaves_the_trigger_to_the_data
+    self.assertEqual((s["wake"]["sleep_a"], s["wake"]["max_s"], s["profile"]["source"]), (None, 40.0, "project"))
+                                                                ~^^^^^^^^^^^
+KeyError: 'profile'
+
+======================================================================
+ERROR: test_explicit_arguments_with_no_profile_in_force_say_explicit (__main__.TheTriggerIsTheDefault.test_explicit_arguments_with_no_profile_in_force_say_explicit)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_session_profile.py", line 88, in test_explicit_arguments_with_no_profile_in_force_say_explicit
+    self.assertEqual(self.sampler.session()["profile"], {"project": None, "role": None, "source": "explicit", "overridden": ["wake_hold_s"]})
+                     ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+KeyError: 'profile'
+
+======================================================================
+ERROR: test_with_no_project_area_at_all_nothing_is_in_force_and_nothing_fails (__main__.TheTriggerIsTheDefault.test_with_no_project_area_at_all_nothing_is_in_force_and_nothing_fails)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_session_profile.py", line 69, in test_with_no_project_area_at_all_nothing_is_in_force_and_nothing_fails
+    self.assertEqual(self.sampler.session()["profile"]["source"], "found")
+                     ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+KeyError: 'profile'
+
+======================================================================
+ERROR: test_with_nothing_in_force_the_session_is_exactly_as_before (__main__.TheTriggerIsTheDefault.test_with_nothing_in_force_the_session_is_exactly_as_before)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_session_profile.py", line 64, in test_with_nothing_in_force_the_session_is_exactly_as_before
+    self.assertEqual(self.sampler.session()["profile"], {"project": None, "role": None, "source": "found", "overridden": []})
+                     ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+KeyError: 'profile'
+
+======================================================================
+FAIL: test_a_recording_starts_with_the_profiles_wake_events_as_stages_and_its_start_events_as_events (__main__.TheEventsAreWrittenAtTheStart.test_a_recording_starts_with_the_profiles_wake_events_as_stages_and_its_start_events_as_events)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_session_profile.py", line 118, in test_a_recording_starts_with_the_profiles_wake_events_as_stages_and_its_start_events_as_events
+    self.assertEqual([(s["name"], s["start_s"], s["end_s"], s["every"], s["offset"]) for s in stages], [("boot", 0.0, 1.2, 1, 0)])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [] != [('boot', 0.0, 1.2, 1, 0)]
+
+Second list contains 1 additional elements.
+First extra element 0:
+('boot', 0.0, 1.2, 1, 0)
+
+- []
++ [('boot', 0.0, 1.2, 1, 0)]
+
+======================================================================
+FAIL: test_a_bad_explicit_value_is_still_a_usage_error_naming_its_field (__main__.TheTriggerIsTheDefault.test_a_bad_explicit_value_is_still_a_usage_error_naming_its_field)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_session_profile.py", line 98, in test_a_bad_explicit_value_is_still_a_usage_error_naming_its_field
+    with self.assertRaises(UsageError) as cm:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+AssertionError: UsageError not raised
+
+======================================================================
+FAIL: test_a_watch_with_no_wake_arguments_takes_the_trigger_of_the_profile_in_force (__main__.TheTriggerIsTheDefault.test_a_watch_with_no_wake_arguments_takes_the_trigger_of_the_profile_in_force)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_session_profile.py", line 75, in test_a_watch_with_no_wake_arguments_takes_the_trigger_of_the_profile_in_force
+    self.assertEqual(s["wake"], {"sleep_a": self.sleep_a, "awake_a": None, "hold_s": 0.6, "lead_s": 0.2, "max_s": 30.0})
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'sleep_a': None, 'awake_a': None, 'hold_s': 0.2, 'le[21 chars]40.0} != {'sleep_a': 4.3236906296380246e-05, 'awake_a': None, [39 chars]30.0}
+- {'awake_a': None, 'hold_s': 0.2, 'lead_s': 0.2, 'max_s': 40.0, 'sleep_a': None}
++ {'awake_a': None,
++  'hold_s': 0.6,
++  'lead_s': 0.2,
++  'max_s': 30.0,
++  'sleep_a': 4.3236906296380246e-05}
+
+======================================================================
+FAIL: test_an_explicit_argument_wins_for_its_field_and_the_profile_supplies_the_rest (__main__.TheTriggerIsTheDefault.test_an_explicit_argument_wins_for_its_field_and_the_profile_supplies_the_rest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_session_profile.py", line 83, in test_an_explicit_argument_wins_for_its_field_and_the_profile_supplies_the_rest
+    self.assertEqual(s["wake"], {"sleep_a": self.sleep_a, "awake_a": None, "hold_s": 0.4, "lead_s": 0.2, "max_s": 30.0})
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'sleep_a': None, 'awake_a': None, 'hold_s': 0.4, 'le[21 chars]40.0} != {'sleep_a': 4.3236906296380246e-05, 'awake_a': None, [39 chars]30.0}
+- {'awake_a': None, 'hold_s': 0.4, 'lead_s': 0.2, 'max_s': 40.0, 'sleep_a': None}
++ {'awake_a': None,
++  'hold_s': 0.4,
++  'lead_s': 0.2,
++  'max_s': 30.0,
++  'sleep_a': 4.3236906296380246e-05}
+
+----------------------------------------------------------------------
+Ran 13 tests in 2.333s
+
+FAILED (failures=4, errors=6)

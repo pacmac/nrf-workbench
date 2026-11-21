@@ -1,0 +1,183 @@
+# Every accusation this repo is under, and what trying it proved.
+# Written only by ~/.claude/hooks/idiot.py. Verdicts are derived, never typed.
+- id: a-project-cannot-carry-the-trigger-profile
+  type: new
+  what: a project's manifest has no section for what counts as a wake, so applying a project does not
+    select its trigger profile as it does its pins
+  spec: docs/specs/project-power-profile.md
+  files:
+  - nrf_workbench/project/manifest.py
+  - nrf_workbench/project/plan.py
+  - nrf_workbench/project/check.py
+  - nrf_workbench/project/commands.py
+  - nrf_workbench/project/power.py
+  - nrf_workbench/instruments/meter.py
+  - nrf_workbench/instruments/sampler.py
+  test:
+    command:
+    - bash
+    - -c
+    - python3 tests/project/test_manifest.py && python3 tests/project/test_power.py && python3 tests/instruments/test_session_profile.py
+    criterion: a manifest with a power section validates, plans, applies, checks and releases like the
+      pins section; its profile is in force only for an applied project whose board is attached; and a
+      session started with no wake_* arguments uses it, writes its events into a recording and says in
+      the sidecar where it came from
+    runs: 1
+  trial:
+    file: .proofs/a-project-cannot-carry-the-trigger-profile.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-21T15:14:00.819'
+    commit: 1cabaf5-dirty
+  fix:
+    file: .proofs/a-project-cannot-carry-the-trigger-profile.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-21T15:18:23.452'
+    commit: 1cabaf5-dirty
+- id: the-trigger-profile-is-lost-when-the-page-reloads
+  type: bug
+  what: the five trigger fields live only in MeterPage component state (useState(EMPTY_TRIGGER)), so a
+    reload or a new visit starts blank and nothing stores them
+  spec: docs/specs/ppk2-stages.md
+  files:
+  - ui/src/MeterPage.jsx
+  - ui/src/meter/trigger.js
+  - ui/src/meter/Trigger.jsx
+  test:
+    command: null
+    criterion: after a reload the Meter page shows the trigger that was last applied
+    runs: 1
+  trial: null
+  fix: null
+- id: the-capture-card-offers-only-fixed-periods
+  type: new
+  what: the Meter capture card offers five fixed durations (DURATIONS) and no one-shot or continuous choice;
+    Peter wants a typed length and a one-shot / continuous switch
+  spec: docs/specs/meter-page.md
+  files:
+  - ui/src/MeterPage.jsx
+  test:
+    command: null
+    criterion: a length can be typed in seconds, minutes or hours and a one-shot / continuous switch is
+      on the card
+    runs: 1
+  trial: null
+  fix: null
+- id: the-dashboard-shell-scrolls-and-is-capped-at-six-xl
+  type: new
+  what: 'App.jsx wraps every page in max-w-6xl with pb-12 and no page owns a height, so pages scroll and
+    do not fill the window; Peter: dashboards do not scroll'
+  spec: docs/specs/navigation.md
+  files:
+  - ui/src/App.jsx
+  test:
+    command: null
+    criterion: at 1280x720 and 390x800 no page has a scrollbar and the page fills the space beside the
+      nav
+    runs: 1
+  trial: null
+  fix: null
+- id: console-lines-are-not-kept-past-a-restart
+  type: new
+  what: the console log is held in memory only, so a service restart empties it and a past wake cannot
+    be matched to the lines the firmware printed
+  spec: docs/specs/power-workbench.md
+  files:
+  - nrf_workbench/console/broker.py
+  - nrf_workbench/console/history.py
+  test:
+    command: null
+    criterion: lines received before a restart are returned by console.history after it
+    runs: 1
+  trial: null
+  fix: null
+- id: the-capture-card-cannot-stop-on-wakes
+  type: new
+  what: a recording can only stop after a fixed length; it cannot stop when N wakes have started and ended,
+    and the page offers five fixed periods
+  spec: docs/specs/power-workbench.md
+  files:
+  - nrf_workbench/instruments/sampler.py
+  - nrf_workbench/instruments/meter.py
+  - ui/src/MeterPage.jsx
+  test:
+    command: null
+    criterion: meter.record with stop_after_wakes=1 ends after the first wake closes and not before
+    runs: 1
+  trial: null
+  fix: null
+- id: a-wakes-length-includes-its-lead-in-and-tail
+  type: bug
+  what: a capture's duration_s is the lead-in block plus the awake blocks plus one tail block, so it is
+    about 0.4 s longer than the awake period, and nothing reports the awake period alone
+  spec: docs/specs/power-workbench.md
+  files:
+  - nrf_workbench/instruments/capture.py
+  test:
+    command: null
+    criterion: a synthetic wake of known length reports awake_s equal to it and capture_s longer by the
+      lead-in and tail
+    runs: 1
+  trial: null
+  fix: null
+- id: the-cycle-table-uses-its-own-wake-rule
+  type: bug
+  what: the page's cycle table decides what a wake is by a block's highest sample over half the peak,
+    not by the wake profile, so it and the capture disagree (21.6 s against 22.6 s on the bench RAK)
+  spec: docs/specs/power-workbench.md
+  files:
+  - ui/src/meter/cycle.js
+  test:
+    command: null
+    criterion: on one synthetic recording the cycle table and the wake table give the same wake length
+    runs: 1
+  trial: null
+  fix: null
+- id: no-command-gives-battery-life
+  type: new
+  what: battery life is worked out only in the browser; no command returns the beat period, charge per
+    beat and days at a capacity, so an agent and the page can quote different numbers
+  spec: docs/specs/power-workbench.md
+  files:
+  - nrf_workbench/instruments/meter.py
+  - nrf_workbench/instruments/life.py
+  test:
+    command: null
+    criterion: meter.life returns days for a recording and capacity, equal to what the page shows
+    runs: 1
+  trial: null
+  fix: null
+- id: no-per-wake-table
+  type: new
+  what: meter.captures has no wall start, charge, awake length, count of stretches above a level or outlier
+    flag per wake, so an odd wake cannot be found without hand arithmetic
+  spec: docs/specs/power-workbench.md
+  files:
+  - nrf_workbench/instruments/capture.py
+  - nrf_workbench/instruments/meter.py
+  - nrf_workbench/instruments/sampler.py
+  test:
+    command: null
+    criterion: meter.wake_table flags a wake with a mid-window burst and one longer than the median
+    runs: 1
+  trial: null
+  fix: null
+- id: nothing-says-what-was-happening-at-a-moment
+  type: new
+  what: no command or view gives the supply state, current, phase and console lines at one instant of
+    a recording
+  spec: docs/specs/power-workbench.md
+  files:
+  - nrf_workbench/instruments/meter.py
+  - nrf_workbench/instruments/sampler.py
+  - nrf_workbench/instruments/at.py
+  test:
+    command: null
+    criterion: meter.at at a known instant of a synthetic recording returns its current, phase and the
+      console lines placed by offset and by wall
+    runs: 1
+  trial: null
+  fix: null

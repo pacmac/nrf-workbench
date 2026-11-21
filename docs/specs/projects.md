@@ -117,6 +117,10 @@ field is `bad_manifest`, not a guess. Unknown keys are `bad_manifest` (a typo is
 `firmware` or `expect` must be in `devices`. `firmware.<role>.id` is a stored package id (8 or more hex characters) and must be of the
 right kind for the role (a DFU package for an nRF role, an ESP package for an ESP32 role).
 
+**`power` (added 2026-11-21, `project-power-profile.md`):** a mapping of role to `{beat_s, trigger, events}`: what counts as a wake for that role's board and the named stretches of
+its power trace, in force on the profiler while the project is applied and the board is attached. Nothing is created or owned for it (the manifest is the store), so apply and
+release do nothing for it; plan and check show one informational item per profiled role.
+
 ## Ownership: what apply may touch and release may remove
 
 A record a project creates carries `project: <name>` (connections, pins, targets) or the `<project>.` prefix (macros). **Release removes

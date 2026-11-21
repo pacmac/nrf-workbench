@@ -186,6 +186,11 @@ different lengths give the mean and the shortest to longest; a two-burst wake ta
 a visible minimum width. 12 more mutants, none survive. Browser (`scripts/verify_ppk2_live.py`): the choice starts on the whole recording, pressing the cycle shows "Wakes every 2 s (3 cycles counted)" with the average and life, the chart marks the four wakes, pressing the
 whole recording drops them, no sideways scroll, both themes, phone and desktop.
 
+## Later: the trigger and the named events come from the project (2026-11-21)
+
+The five trigger fields are no longer only page state: a project's manifest `power` section gives a role's trigger and events, and `meter.project_profile` says which is in force.
+The page's use of it, and the redesign of the page (two instruments, no scrolling, stop after N wakes), are `project-power-profile.md` ("Not in this task") and `power-workbench.md`.
+
 ## Files this spec allows
 
 `nrf_workbench/instruments/{sampler,meter}.py`, `nrf_workbench/core/{config,events,status}.py`, `nrf_workbench/api/feed.py`, `nrf_workbench/service.py`, `ui/src/{App.jsx,Meter.jsx,MeterPage.jsx,help.js,Home.jsx,Devices.jsx}`,

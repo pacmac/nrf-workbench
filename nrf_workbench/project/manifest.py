@@ -10,6 +10,8 @@ import math
 
 import yaml
 
+from ..instruments import capture as capturelib
+from ..instruments import events as eventlib
 from ..instruments.meter import EXPECT as METER_FUNCTIONS
 
 SLUG = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
@@ -21,7 +23,13 @@ NOTES_MAX = 4000
 ROLE_RESERVED = ("i2c", "meter")   # an `expect` key that is not a role
 PI_PREFIX = "uart:"
 BAUDS = (9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600)
-SECTIONS = ("name", "purpose", "requires", "devices", "esp32", "wiring", "pins", "macros", "firmware", "expect", "notes")
+SECTIONS = ("name", "purpose", "requires", "devices", "esp32", "wiring", "pins", "macros", "firmware", "expect", "power", "notes")
+POWER_KEYS = ("beat_s", "trigger", "events")
+BEAT_MAX_S = 43200                # the longest recording a session may make (core.md, bound_s): a board that wakes less often than that cannot be seen waking
+POWER_EVENTS_MAX = capturelib.MAX_STAGES      # a table a person reads, as for stages: one limit for both kinds of event in a profile
+# the manifest's trigger fields (microamps, as a person reads a profile) and the wake profile's own (amps); a field not here is not a trigger field
+TRIGGER_FIELDS = {"sleep_ua": "sleep_a", "awake_ua": "awake_a", "hold_s": "hold_s", "lead_s": "lead_s", "max_s": "max_s"}
+POWER_EVENT_KEYS = ("name", "from", "start_s", "end_s", "every", "offset")
 PIN_COMMON = ("gpio", "name", "direction", "service", "action", "purpose", "active_low", "voltage_v", "voltage_verified")
 PIN_INPUT, PIN_OUTPUT = ("pull",), ("initial", "max_pulse_ms", "drives_dut")
 
@@ -240,6 +248,119 @@ def _expect(raw, roles, errors):
     return out
 
 
+def _trigger(raw, where, errors):
+    """The fields of a capture.WakeProfile (amps and seconds) that the manifest gives, judged by WakeProfile itself so the manifest never restates its ranges; {} when none is given."""
+    if not isinstance(raw, dict):
+        errors.append("%s: a mapping of any of %s" % (where, ", ".join(TRIGGER_FIELDS)))
+        return {}
+    _unknown(where, raw, tuple(TRIGGER_FIELDS), errors)
+    given, ok = {}, not set(raw) - set(TRIGGER_FIELDS)
+    for key, arg in TRIGGER_FIELDS.items():
+        if raw.get(key) is None:
+            continue                                      # blank: found from the data
+        if not _number(raw[key]):
+            errors.append("%s.%s: a number" % (where, key))
+            ok = False
+        else:
+            given[arg] = raw[key] / 1e6 if key.endswith("_ua") else raw[key]        # microamps to amps
+    if not ok:
+        return {}
+    try:
+        capturelib.WakeProfile(**given)
+    except capturelib.ProfileError as exc:
+        names = dict(("wake_" + arg, key) for key, arg in TRIGGER_FIELDS.items())
+        text = str(exc)
+        for internal, key in names.items():
+            text = text.replace(internal, key)
+        field = names.get(exc.field, exc.field)
+        errors.append("%s.%s: %s" % (where, field, text.replace("amps", "microamps") if field.endswith("_ua") else text))
+        return {}
+    return given
+
+
+def _power_events(raw, where, errors):
+    """[{name, from, start_s, end_s, every, offset}] in the order written. A `from: wake` event is judged by capture.set_stage and a `from: start` one by events.set_event: the rules a recording applies."""
+    out = []
+    if not isinstance(raw, list):
+        errors.append("%s: a list of {name, from, start_s, end_s}" % where)
+        return out
+    if len(raw) > POWER_EVENTS_MAX:
+        errors.append("%s: at most %d events (both kinds together)" % (where, POWER_EVENTS_MAX))
+        return out
+    stages, recorded, names = [], [], set()
+    for i, item in enumerate(raw):
+        at = "%s[%d]" % (where, i)
+        if not isinstance(item, dict):
+            errors.append("%s: a mapping" % at)
+            continue
+        _unknown(at, item, POWER_EVENT_KEYS, errors)
+        if set(item) - set(POWER_EVENT_KEYS):
+            continue
+        kind = item.get("from")
+        if kind not in ("wake", "start"):
+            errors.append("%s.from: wake (seconds from a wake's start) or start (seconds from the recording's start)" % at)
+            continue
+        if kind == "start" and ("every" in item or "offset" in item):
+            for key in ("every", "offset"):
+                if key in item:
+                    errors.append("%s.%s: only for from: wake (a recording's own clock has no wakes to count)" % (at, key))
+            continue
+        name = item["name"].strip() if isinstance(item.get("name"), str) else ""
+        if name and name.lower() in names:
+            errors.append("%s.name: %r is used twice (names are unique ignoring case, whichever kind)" % (at, name))
+            continue
+        every, offset = item.get("every", 1), item.get("offset", 0)
+        try:
+            if kind == "wake":
+                stages = capturelib.set_stage(stages, name, item.get("start_s"), item.get("end_s"), every, offset)
+            else:
+                recorded = eventlib.set_event(recorded, name, item.get("start_s"), item.get("end_s"))
+        except (capturelib.StageError, eventlib.EventError) as exc:
+            errors.append("%s.%s: %s" % (at, exc.field, exc))
+            continue
+        names.add(name.lower())
+        out.append({"name": name, "from": kind, "start_s": float(item["start_s"]), "end_s": float(item["end_s"]),
+                    "every": every if kind == "wake" else 1, "offset": offset if kind == "wake" else 0})
+    return out
+
+
+def _power(raw, roles, errors):
+    """{role: {beat_s, trigger, events}} (docs/specs/project-power-profile.md): how a board's power is read, for the role whose board it is."""
+    out = {}
+    if not isinstance(raw, dict):
+        errors.append("power: a mapping of role to {beat_s, trigger, events}")
+        return out
+    for role, spec in raw.items():
+        where = "power.%s" % role
+        if role not in roles:
+            errors.append("%s: %r is not a role in devices" % (where, role))
+            continue
+        if not isinstance(spec, dict) or not spec:
+            errors.append("%s: a mapping of at least one of %s" % (where, ", ".join(POWER_KEYS)))
+            continue
+        _unknown(where, spec, POWER_KEYS, errors)
+        if set(spec) - set(POWER_KEYS):
+            continue
+        before = len(errors)
+        profile = {"beat_s": None, "trigger": {}, "events": []}
+        if "beat_s" in spec:
+            beat = spec["beat_s"]
+            if not _number(beat) or not 0 < beat <= BEAT_MAX_S:
+                errors.append("%s.beat_s: a number of seconds above 0, at most %d" % (where, BEAT_MAX_S))
+            else:
+                profile["beat_s"] = beat
+        if "trigger" in spec:
+            profile["trigger"] = _trigger(spec["trigger"], "%s.trigger" % where, errors)
+        if "events" in spec:
+            profile["events"] = _power_events(spec["events"], "%s.events" % where, errors)
+        if len(errors) == before:
+            if profile["beat_s"] is None and not profile["trigger"] and not profile["events"]:
+                errors.append("%s: states nothing: give beat_s, a trigger field or an event" % where)
+            else:
+                out[role] = profile
+    return out
+
+
 def validate(text, name):
     if not isinstance(text, str):
         return None, ["the manifest is text"]
@@ -274,7 +395,8 @@ def validate(text, name):
          "pins": _pins(raw["pins"], errors) if "pins" in raw else [],
          "macros": _macros(raw["macros"], name, errors) if "macros" in raw else {},
          "firmware": _firmware(raw["firmware"], roles, errors) if "firmware" in raw else {},
-         "expect": _expect(raw["expect"], roles, errors) if "expect" in raw else {"console": {}, "i2c": None, "meter": None}}
+         "expect": _expect(raw["expect"], roles, errors) if "expect" in raw else {"console": {}, "i2c": None, "meter": None},
+         "power": _power(raw["power"], roles, errors) if "power" in raw else {}}
     for section, key in (("esp32", "name"), ("wiring", "name"), ("pins", "name"), ("pins", "gpio")):
         seen = set()
         for item in m[section]:

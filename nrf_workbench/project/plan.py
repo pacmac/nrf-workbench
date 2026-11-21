@@ -24,7 +24,7 @@ from ..wiring import commands as wiring_commands
 from ..wiring import detect, piuart
 from . import manifest as mf
 
-SECTION_ORDER = ("requires", "esp32", "wiring", "pins", "macros", "firmware")
+SECTION_ORDER = ("requires", "esp32", "wiring", "pins", "macros", "power", "firmware")
 # the key of `owns` in state.json for each manifest section
 OWNS = {"esp32": "targets", "wiring": "connections", "pins": "pins", "macros": "macros"}
 
@@ -238,6 +238,14 @@ def make_plan(host, call, m, owners, own_state):
         else:
             items.append(item("macros", full, "conflict", "a macro named %s exists with other lines, %s" % (full, _owner_text(owners.get(("macros", full)))),
                               True, "project_conflict"))
+
+    # ---- power profiles: informational, never blocks an apply. A profile is read from the manifest when needed (nothing to create or own);
+    # it is in force while this project is applied and the role's board is attached, and the role list above already says whether it is.
+    by_role = dict((r["role"], r) for r in roles)
+    for role in sorted(m["power"]):
+        here = by_role[role]["attached"]
+        items.append(item("power", role, "have" if here else "unresolved",
+                          "in force while the project is applied" if here else "no board attached, so this profile is not in force", False))
 
     # ---- firmware: informational, never blocks an apply
     store = programmer_commands._store(host) if host.config["paths"].get("firmware") else None

@@ -162,6 +162,11 @@ survivor being equivalent (no value exceeds the top). Browser (`scripts/verify_p
   now each wake's own half-peak; the lead-in of one block cut a long RX run-in, so it now goes back over awake blocks (at most 5); the stage table needs to know wakes of two kinds (`every`/`offset`).
 - **Not proven:** that every cycle looks like these four (4 were seen in each hour, 8 in all); the glitch hold-out of 3 samples is checked on one kind of edge only; stages by number rather than by shape; nothing here is a battery measurement.
 
+## Later: the profile follows the project (2026-11-21)
+
+The wake profile and the stages and events a recording starts with can come from the project whose board is on the profiler: a session started with no `wake_*` argument takes the
+profile in force, an explicit argument wins field by field, and the sidecar's `profile` says where it came from. See `project-power-profile.md`; where they differ that one is later.
+
 ## Files this spec allows
 
 `nrf_workbench/instruments/{capture,ppk2,sampler,meter}.py`, `nrf_workbench/core/status.py`, `docs/specs/{ppk2-stages,ppk2,meter-page,core}.md`, `ui/src/MeterPage.jsx`, `ui/src/meter/*`, `ui/src/help.js`,

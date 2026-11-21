@@ -11,9 +11,11 @@ from . import apply as applymod
 from . import check as checkmod
 from . import manifest as mf
 from . import plan as planmod
+from . import power as powermod
 from .store import ProjectStore, StoreError
 
 WIRING = ("wiring",)
+POWER_READ, POWER_WRITE = ("wiring", "meter_stream"), ("wiring", "meter_store")     # the choice is a file in the meter's folder
 
 
 def _store(host):
@@ -110,7 +112,12 @@ def _list(registry):
     return _guard(handler)
 
 
-def _role_view(host, m, plan, role):
+def _roles_of(host, call):
+    """What power.py needs of the plan: a manifest's roles, each with whether its board is attached."""
+    return lambda m: _plan_of(host, call, m)["roles"]
+
+
+def _role_view(host, m, plan, role, forced=None):
     spec = m["devices"][role]
     base = next(r for r in plan["roles"] if r["role"] == role)
     link = checkmod._link_for(m, role)
@@ -121,7 +128,8 @@ def _role_view(host, m, plan, role):
             "mode": (boards.get(spec["key"]) or {}).get("mode") if spec["kind"] == "nrf" else None,
             "console": {"link": link, "state": (st or {}).get("state"), "rx_only": (st or {}).get("rx_only"), "baud": (st or {}).get("baud")} if link else None,
             "firmware": {"id": (m["firmware"].get(role) or {}).get("id"), "in_store": bool(fw and fw["action"] == "have"), "why": fw["why"] if fw else ""}
-            if role in m["firmware"] else None}
+            if role in m["firmware"] else None,
+            "power": {"profile": role in m["power"], "in_force": bool(forced and (forced["project"], forced["role"]) == (m["name"], role))}}
 
 
 def _show(registry):
@@ -141,10 +149,11 @@ def _show(registry):
         findings, summary = checkmod.check(host, m, plan, entry)
         state, word = checkmod.state_word(summary, entry)
         link_names = [l for l in (checkmod._link_for(m, r) for r in m["devices"]) if l]
+        forced = powermod.resolve(host, st, _roles_of(host, call))["in_force"] if m["power"] else None
         data = {"name": project, "purpose": m["purpose"], "notes": m["notes"], "manifest": True, "applied": summary["applied"],
                 "pending": summary["pending"], "state": state, "word": word,
                 "requires": [{"item": i["name"], "met": i["action"] == "have", "how": i["why"]} for i in plan["items"] if i["section"] == "requires"],
-                "roles": [_role_view(host, m, plan, r) for r in sorted(m["devices"])],
+                "roles": [_role_view(host, m, plan, r, forced) for r in sorted(m["devices"])], "power": m["power"],
                 "resources": {"esp32": [e["name"] for e in m["esp32"]], "connections": [w["name"] for w in m["wiring"]],
                               "pins": [{"name": p["name"], "gpio": p["gpio"], "service": p["service"]} for p in m["pins"]],
                               "macros": [planmod.stored_macro(project, n) for n in sorted(m["macros"])], "i2c": m["expect"]["i2c"],
@@ -236,7 +245,36 @@ def _check(registry):
 
 def _release(registry):
     def handler(ctx, project):
-        return applymod.release(_store(ctx.host), _caller(registry, ctx), project)
+        res = applymod.release(_store(ctx.host), _caller(registry, ctx), project)
+        if res.ok:
+            powermod.clear_choice(ctx.host, project)          # a board named under test is not carried past the release of its project
+        return res
+    return _guard(handler)
+
+
+# -- the board under test (docs/specs/project-power-profile.md) ------------------------------------
+def _profile(registry):
+    def handler(ctx):
+        host = ctx.host
+        data = powermod.resolve(host, _store(host), _roles_of(host, _caller(registry, ctx)))
+        f = data["in_force"]
+        return Result.success(data, "%s in force: %s" % ("profile", "%s of %s" % (f["role"], f["project"]) if f else "none"))
+    return _guard(handler)
+
+
+def _use(registry):
+    def handler(ctx, project, role):
+        host = ctx.host
+        if not mf.SLUG.match(project or ""):
+            raise UsageError("a project name is 1 to 64 characters from a-z 0-9 . _ - , starting with a letter or a digit", "project")
+        if role == "":
+            powermod.clear_choice(host)
+            return Result.success({"under_test": None}, "no board is named under test")
+        reason, key = powermod.refusal_reason(host, _store(host), _roles_of(host, _caller(registry, ctx)), project, role)
+        if reason:
+            return Result.refused("profile_not_candidate", reason, {"project": project, "role": role})
+        powermod.write_choice(host, project, role, key)
+        return Result.success({"under_test": {"project": project, "role": role}}, "%s of %s is the board under test" % (role, project))
     return _guard(handler)
 
 
@@ -319,6 +357,13 @@ def register(registry, host):
     add(Command("project.measure", "Read the multimeter once against the project's expect.meter (function, min, max) and say whether the reading is "
                 "inside. Reads only: the meter's setting is never changed.", _measure(registry), args=(p,), requires=WIRING,
                 result="function, unit, value, min, max, met"))
+    add(Command("meter.project_profile", "Which role's power profile (the trigger and the named events of a project's manifest `power` section) is in force on the profiler: "
+                "the one board of an applied project that is attached with a profile, or the one named under test. Lists every candidate and why one is not in force. "
+                "Reads only.", _profile(registry), requires=POWER_READ, result="in_force, candidates, under_test"))
+    add(Command("meter.project_use", "Name the board under test when more than one attached board of an applied project has a power profile: the profiler is one instrument "
+                "and nothing says which board is wired to it. `role` empty clears the choice. Refused (profile_not_candidate) for a role that has no profile, is not "
+                "attached, or belongs to a project that is not applied.", _use(registry),
+                args=(p, Arg("role", doc="the role in the project's devices, or empty to clear")), requires=POWER_WRITE, effect="write", result="under_test"))
     add(Command("project.flash", "Flash a role's declared firmware to its board, with the same required time limits as the flash commands. "
                 "One role per call.", _flash(registry),
                 args=(p, Arg("role", doc="the role in the manifest's devices"),
