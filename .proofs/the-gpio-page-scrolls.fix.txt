@@ -1,0 +1,97 @@
+$ python3 scripts/verify_gpio_layout.py
+PASS  light 1280x720 the document does not scroll (720 of 720 px)
+PASS  light 1280x720 nothing outside the form panel scrolls
+PASS  light 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 the page ends at the foot of the window
+PASS  light 1280x720 both panels lie inside the page
+PASS  light 1280x720 the map holds all forty pins (40)
+PASS  light 1280x720 every pin lies inside the map
+PASS  light 1280x720 no pin row is under 22 px high (the smallest is 28 px)
+PASS  light 1280x720 the twenty rows share the panel's height: the last ends at the foot of the map (0 px short)
+PASS  light 1280x720 odd pins are on the left and even pins on the right, 1 at the top
+PASS  light 1280x720 a reserved pin stays disabled
+PASS  light 1280x720 picking a GPIO selects it
+PASS  light 1280x720 its assignment form is in the panel
+PASS  light 1280x720 choosing an output opens its extra fields
+PASS  light 1280x720 with an output form open: the document does not scroll (720 of 720 px)
+PASS  light 1280x720 with an output form open: nothing outside the form panel scrolls
+PASS  light 1280x720 with an output form open: the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 with an output form open: the page ends at the foot of the window
+PASS  light 1280x720 with an output form open: both panels lie inside the page
+PASS  light 1280x720 the form's panel lies inside its card, not past it
+PASS  light 1280x720 a form taller than the panel can be scrolled inside it (856 of 577 px)
+PASS  light 1440x900 the document does not scroll (900 of 900 px)
+PASS  light 1440x900 nothing outside the form panel scrolls
+PASS  light 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 the page ends at the foot of the window
+PASS  light 1440x900 both panels lie inside the page
+PASS  light 1440x900 the map holds all forty pins (40)
+PASS  light 1440x900 every pin lies inside the map
+PASS  light 1440x900 no pin row is under 22 px high (the smallest is 37 px)
+PASS  light 1440x900 the twenty rows share the panel's height: the last ends at the foot of the map (0 px short)
+PASS  light 1440x900 odd pins are on the left and even pins on the right, 1 at the top
+PASS  light 1440x900 a reserved pin stays disabled
+PASS  light 1440x900 picking a GPIO selects it
+PASS  light 1440x900 its assignment form is in the panel
+PASS  light 1440x900 choosing an output opens its extra fields
+PASS  light 1440x900 with an output form open: the document does not scroll (900 of 900 px)
+PASS  light 1440x900 with an output form open: nothing outside the form panel scrolls
+PASS  light 1440x900 with an output form open: the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 with an output form open: the page ends at the foot of the window
+PASS  light 1440x900 with an output form open: both panels lie inside the page
+PASS  light 1440x900 the form's panel lies inside its card, not past it
+PASS  light 1440x900 a form taller than the panel can be scrolled inside it (840 of 757 px)
+PASS  light 1024x500 the document does not scroll (500 of 500 px)
+PASS  light 1024x500 the map's panel scrolls inside itself ([True, 'auto'])
+PASS  light 1024x500 scrolled to the end, pin 40 is in view
+PASS  light 390x844 no horizontal scroll (390 of 390 px)
+PASS  light 390x844 the map is there
+PASS  dark 1280x720 the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 nothing outside the form panel scrolls
+PASS  dark 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 the page ends at the foot of the window
+PASS  dark 1280x720 both panels lie inside the page
+PASS  dark 1280x720 the map holds all forty pins (40)
+PASS  dark 1280x720 every pin lies inside the map
+PASS  dark 1280x720 no pin row is under 22 px high (the smallest is 28 px)
+PASS  dark 1280x720 the twenty rows share the panel's height: the last ends at the foot of the map (0 px short)
+PASS  dark 1280x720 odd pins are on the left and even pins on the right, 1 at the top
+PASS  dark 1280x720 a reserved pin stays disabled
+PASS  dark 1280x720 picking a GPIO selects it
+PASS  dark 1280x720 its assignment form is in the panel
+PASS  dark 1280x720 choosing an output opens its extra fields
+PASS  dark 1280x720 with an output form open: the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 with an output form open: nothing outside the form panel scrolls
+PASS  dark 1280x720 with an output form open: the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 with an output form open: the page ends at the foot of the window
+PASS  dark 1280x720 with an output form open: both panels lie inside the page
+PASS  dark 1280x720 the form's panel lies inside its card, not past it
+PASS  dark 1280x720 a form taller than the panel can be scrolled inside it (856 of 577 px)
+PASS  dark 1440x900 the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 nothing outside the form panel scrolls
+PASS  dark 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 the page ends at the foot of the window
+PASS  dark 1440x900 both panels lie inside the page
+PASS  dark 1440x900 the map holds all forty pins (40)
+PASS  dark 1440x900 every pin lies inside the map
+PASS  dark 1440x900 no pin row is under 22 px high (the smallest is 37 px)
+PASS  dark 1440x900 the twenty rows share the panel's height: the last ends at the foot of the map (0 px short)
+PASS  dark 1440x900 odd pins are on the left and even pins on the right, 1 at the top
+PASS  dark 1440x900 a reserved pin stays disabled
+PASS  dark 1440x900 picking a GPIO selects it
+PASS  dark 1440x900 its assignment form is in the panel
+PASS  dark 1440x900 choosing an output opens its extra fields
+PASS  dark 1440x900 with an output form open: the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 with an output form open: nothing outside the form panel scrolls
+PASS  dark 1440x900 with an output form open: the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 with an output form open: the page ends at the foot of the window
+PASS  dark 1440x900 with an output form open: both panels lie inside the page
+PASS  dark 1440x900 the form's panel lies inside its card, not past it
+PASS  dark 1440x900 a form taller than the panel can be scrolled inside it (840 of 757 px)
+PASS  dark 1024x500 the document does not scroll (500 of 500 px)
+PASS  dark 1024x500 the map's panel scrolls inside itself ([True, 'auto'])
+PASS  dark 1024x500 scrolled to the end, pin 40 is in view
+PASS  dark 390x844 no horizontal scroll (390 of 390 px)
+PASS  dark 390x844 the map is there
+
+94 checks, 0 failed. screenshots: /tmp/nrfwb-gpio-layout-t4l904s7

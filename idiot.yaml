@@ -613,3 +613,33 @@
     failures: 0
     at: '2026-11-22T01:40:34.387'
     commit: ab3dd44-dirty
+- id: the-gpio-page-scrolls
+  type: bug
+  what: the GPIO page stacks a 20-row pin table (each row 44 px) above the assignment form, 1,158 px at
+    1280x720 on the real bench, so it scrolls; a dashboard page must fit the window
+  spec: docs/specs/navigation.md
+  files:
+  - ui/src/Gpio.jsx
+  - ui/src/App.jsx
+  test:
+    command:
+    - python3
+    - scripts/verify_gpio_layout.py
+    criterion: the document does not scroll, all forty pins are on screen in rows no smaller than 22 px,
+      the assignment form is in a panel that scrolls only inside itself, in both themes at 1280x720 and
+      1440x900
+    runs: 1
+  trial:
+    file: .proofs/the-gpio-page-scrolls.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-22T02:31:47.613'
+    commit: 40db7b8-dirty
+  fix:
+    file: .proofs/the-gpio-page-scrolls.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-22T02:40:19.431'
+    commit: f8b4533-dirty

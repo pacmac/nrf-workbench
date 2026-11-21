@@ -1,0 +1,59 @@
+$ python3 scripts/verify_gpio_layout.py
+FAIL  light 1280x720 the document does not scroll (1158 of 720 px)  -- [1158, 720]
+PASS  light 1280x720 nothing outside the form panel scrolls
+FAIL  light 1280x720 the page uses the width beside the nav (888 of 1280 px)  -- [312, 1200, 0, 1157.5, 1280, 720]
+FAIL  light 1280x720 the page ends at the foot of the window  -- [312, 1200, 0, 1157.5, 1280, 720]
+PASS  light 1280x720 both panels lie inside the page
+PASS  light 1280x720 the map holds all forty pins (40)
+PASS  light 1280x720 every pin lies inside the map
+PASS  light 1280x720 no pin row is under 22 px high (the smallest is 40 px)
+PASS  light 1280x720 odd pins are on the left and even pins on the right, 1 at the top
+PASS  light 1280x720 a reserved pin stays disabled
+PASS  light 1280x720 picking a GPIO selects it
+FAIL  light 1280x720 its assignment form is in the panel
+FAIL  light 1280x720 the page could be driven  -- Locator.select_option: Timeout 20000ms exceeded.
+FAIL  light 1440x900 the document does not scroll (1158 of 900 px)  -- [1158, 900]
+PASS  light 1440x900 nothing outside the form panel scrolls
+FAIL  light 1440x900 the page uses the width beside the nav (888 of 1440 px)  -- [392, 1280, 0, 1157.5, 1440, 900]
+FAIL  light 1440x900 the page ends at the foot of the window  -- [392, 1280, 0, 1157.5, 1440, 900]
+PASS  light 1440x900 both panels lie inside the page
+PASS  light 1440x900 the map holds all forty pins (40)
+PASS  light 1440x900 every pin lies inside the map
+PASS  light 1440x900 no pin row is under 22 px high (the smallest is 40 px)
+PASS  light 1440x900 odd pins are on the left and even pins on the right, 1 at the top
+PASS  light 1440x900 a reserved pin stays disabled
+PASS  light 1440x900 picking a GPIO selects it
+FAIL  light 1440x900 its assignment form is in the panel
+FAIL  light 1440x900 the page could be driven  -- Locator.select_option: Timeout 20000ms exceeded.
+PASS  light 390x844 no horizontal scroll (390 of 390 px)
+PASS  light 390x844 the map is there
+FAIL  dark 1280x720 the document does not scroll (1158 of 720 px)  -- [1158, 720]
+PASS  dark 1280x720 nothing outside the form panel scrolls
+FAIL  dark 1280x720 the page uses the width beside the nav (888 of 1280 px)  -- [312, 1200, 0, 1157.5, 1280, 720]
+FAIL  dark 1280x720 the page ends at the foot of the window  -- [312, 1200, 0, 1157.5, 1280, 720]
+PASS  dark 1280x720 both panels lie inside the page
+PASS  dark 1280x720 the map holds all forty pins (40)
+PASS  dark 1280x720 every pin lies inside the map
+PASS  dark 1280x720 no pin row is under 22 px high (the smallest is 40 px)
+PASS  dark 1280x720 odd pins are on the left and even pins on the right, 1 at the top
+PASS  dark 1280x720 a reserved pin stays disabled
+PASS  dark 1280x720 picking a GPIO selects it
+FAIL  dark 1280x720 its assignment form is in the panel
+FAIL  dark 1280x720 the page could be driven  -- Locator.select_option: Timeout 20000ms exceeded.
+FAIL  dark 1440x900 the document does not scroll (1158 of 900 px)  -- [1158, 900]
+PASS  dark 1440x900 nothing outside the form panel scrolls
+FAIL  dark 1440x900 the page uses the width beside the nav (888 of 1440 px)  -- [392, 1280, 0, 1157.5, 1440, 900]
+FAIL  dark 1440x900 the page ends at the foot of the window  -- [392, 1280, 0, 1157.5, 1440, 900]
+PASS  dark 1440x900 both panels lie inside the page
+PASS  dark 1440x900 the map holds all forty pins (40)
+PASS  dark 1440x900 every pin lies inside the map
+PASS  dark 1440x900 no pin row is under 22 px high (the smallest is 40 px)
+PASS  dark 1440x900 odd pins are on the left and even pins on the right, 1 at the top
+PASS  dark 1440x900 a reserved pin stays disabled
+PASS  dark 1440x900 picking a GPIO selects it
+FAIL  dark 1440x900 its assignment form is in the panel
+FAIL  dark 1440x900 the page could be driven  -- Locator.select_option: Timeout 20000ms exceeded.
+PASS  dark 390x844 no horizontal scroll (390 of 390 px)
+PASS  dark 390x844 the map is there
+
+56 checks, 20 failed. screenshots: /tmp/nrfwb-gpio-layout-r0y84xz9
