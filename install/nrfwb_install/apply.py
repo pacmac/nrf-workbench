@@ -57,6 +57,9 @@ def host_yaml_text(prefix, listen=None):
             "  events: {retain: 1000, max_age_days: 7}\n"
             "  activity: {retain: 5000, max_age_days: 30}\n"
             "  console: {retain: 20000, max_age_days: 7}\n"
+            "# The console's lines kept on disk, so a restart loses none and a wake can be matched to what the firmware printed:\n"
+            "# 20 MB per link, the live feed's own worst case (20000 lines of at most 1024 bytes), so the disk holds at least what the feed does.\n"
+            "console_log: {max_mb: 20}\n"
             % (json.dumps(store_path(prefix)), json.dumps(wiring_path(prefix)), json.dumps(console_path(prefix)),
                json.dumps(gpio_path(prefix))))
 

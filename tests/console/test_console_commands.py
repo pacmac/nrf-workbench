@@ -43,7 +43,7 @@ def raw_link(**kw):
 class Rig(object):
     """A built service over a pty pair, with the broker started and every guard real."""
 
-    def __init__(self, tmp, raws=None, bounds=True, links_path=True, console_dir=True, open_port=Port, start=True):
+    def __init__(self, tmp, raws=None, bounds=True, links_path=True, console_dir=True, open_port=Port, start=True, log_mb=None):
         self.tmp = tmp
         self.tree = Tree()
         self.master, self.slave = os.openpty()
@@ -61,7 +61,7 @@ class Rig(object):
         streams = {"events": {"retain": 100, "max_age_days": 1}, "activity": {"retain": 100, "max_age_days": 1}}
         if bounds:
             streams["console"] = {"retain": 1000, "max_age_days": 1}
-        self.cfg, problems = cfgmod.load(env={}, overrides={"paths": paths, "streams": streams})
+        self.cfg, problems = cfgmod.load(env={}, overrides={"paths": paths, "streams": streams, "console_log": {"max_mb": log_mb}})
         assert problems == [], problems
         self.a, self.b = socket.socketpair()
         hooks = {"tool": "/fake/uploader", "open_port": open_port, "open_uevents": lambda: self.a,
@@ -141,12 +141,12 @@ class Presence(Base):
     def test_every_console_command_is_registered_with_its_effect(self):
         r = self.rig()
         rows = dict((c.name, c) for c in r.registry.commands(r.caps) if c.name.startswith("console."))
-        self.assertEqual(sorted(rows), ["console.links", "console.macro_delete", "console.macro_list", "console.macro_run",
+        self.assertEqual(sorted(rows), ["console.history", "console.links", "console.macro_delete", "console.macro_list", "console.macro_run",
                                         "console.macro_set", "console.reopen", "console.send", "console.since"])
         self.assertEqual(sorted(n for n, c in rows.items() if c.effect == "write"),
                          ["console.macro_delete", "console.macro_run", "console.macro_set", "console.reopen", "console.send"])
         self.assertEqual(sorted(n for n, c in rows.items() if c.needs_service),
-                         ["console.macro_run", "console.reopen", "console.send", "console.since"])
+                         ["console.history", "console.macro_run", "console.reopen", "console.send", "console.since"])
 
 
 class Reading(Base):

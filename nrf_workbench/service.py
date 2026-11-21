@@ -32,6 +32,7 @@ from .core.sessions import SessionStore
 from .console import commands as console_commands
 from .console import links as console_links
 from .console.broker import Broker
+from .console.history import LineLog
 from .console.port import Port
 from .dashboard import server as dashboard_server
 from .bench import commands as bench_commands
@@ -78,6 +79,7 @@ class Host(object):
         # the console (docs/specs/console.md): the declared links, the file's own problems, and the broker that owns
         # the adapters, which only a running service has (build() sets it; the CLI's local mode leaves it None)
         self.console, self.console_links, self.console_problems = None, [], []
+        self.console_log = None                 # the LineLog that keeps the console's lines on disk; None unless console_log.max_mb is set
         self.registry = None
         self._services, self._guard = {}, threading.Lock()
 
@@ -232,6 +234,8 @@ def build_streams(cfg):
         absent["console"] = "no bound configured: set streams.console.retain (lines) and streams.console.max_age_days"
     else:
         console = Bus(*bounds)
+    if cfg["paths"]["console"] and cfg["console_log"]["max_mb"] is None:      # only a bench that has a console is told its lines are not kept
+        absent["console_log"] = "no bound configured: set console_log.max_mb (megabytes kept per link); until then the console's lines are lost on a restart"
     bounds = cfgmod.stream_bounds(cfg, "meter")
     if bounds is None:
         if cfg["instruments"]["meter"] or cfg["instruments"]["ppk2"]:      # only a bench that has an instrument is told its readings stream is off
@@ -257,6 +261,10 @@ def build(cfg, token=None, sysfs="/sys", devroot="/dev", proc="/proc", hooks=Non
         extra = {"open_uevents": hooks["open_uevents"]} if hooks.get("open_uevents") else {}
         resolve = hooks.get("console_resolve") or (lambda link: console_links.resolve(link, host.sysfs, host.devroot))
         host.console = Broker(host.console_links, resolve, hooks.get("open_port", Port), host.streams.console, **extra)
+        mb = cfg["console_log"]["max_mb"]
+        if mb is not None:                       # the lines go to `<paths.console>/log/<link>/`: the macros file lives beside it, so a link can never collide with it
+            host.console_log = LineLog(os.path.join(cfg["paths"]["console"], "log"), mb * 1024 * 1024)
+            host.console_log.attach(host.streams.console)
     sessions = SessionStore(MAX_SESSIONS, SESSION_MAX_AGE_S)
     host.sessions = sessions
     auth = Auth(token, cfg["service"]["access"], sessions)

@@ -46,6 +46,10 @@ DEFAULTS = {
         "console": {"retain": None, "max_age_days": None},
         "meter": {"retain": None, "max_age_days": None},     # the multimeter's readings, counted in READINGS (docs/specs/meter-page.md)
     },
+    # The console's lines kept on disk (docs/specs/power-workbench.md, "Console persistence"): megabytes kept PER LINK, no default. Unset
+    # means the lines are not kept past a restart and `console.history` says so. It is its own section because the streams above count
+    # lines and days and this one counts bytes.
+    "console_log": {"max_mb": None},
 }
 
 SECONDS_PER_DAY = 86400
@@ -201,6 +205,9 @@ def validate(cfg):
     ppk2 = cfg["instruments"]["ppk2"]
     if ppk2 is not None and (not isinstance(ppk2, str) or not (ppk2 == "auto" or (1 <= len(ppk2) <= 64 and ppk2.isalnum()))):
         problems.append("instruments.ppk2 must be auto or the PPK2's USB serial (letters and digits)")
+    mb = cfg["console_log"]["max_mb"]
+    if mb is not None and (isinstance(mb, bool) or not isinstance(mb, (int, float)) or not 0 < mb < float("inf")):
+        problems.append("console_log.max_mb must be a positive number of megabytes (or unset: the console's lines are not kept past a restart)")
     for name, bounds in cfg["streams"].items():
         retain, days = bounds["retain"], bounds["max_age_days"]
         if retain is None and days is None:

@@ -77,6 +77,25 @@ def _since(ctx, link, cursor=0):
                           "%d line%s" % (len(page["lines"]), "" if len(page["lines"]) == 1 else "s"))
 
 
+def _history(ctx, link, from_wall, to_wall):
+    """The kept lines of a link with from_wall <= host time < to_wall, from disk, so they answer across a restart. At most as many as the
+    live feed retains (`streams.console.retain`), with `more` and `next_from_wall` when the range held more."""
+    if to_wall <= from_wall:
+        raise UsageError("to_wall is after from_wall", "to_wall")
+    refusal = _need_service(ctx)
+    if refusal is not None:
+        return refusal
+    host = ctx.host
+    if host.console_log is None:
+        return Result.refused("no_bound", "the console's lines are not kept: set console_log.max_mb (megabytes kept per link) and restart")
+    st, refusal = _link_state(host, link)
+    if refusal is not None:
+        return refusal
+    page = host.console_log.between(link, from_wall, to_wall, host.config["streams"]["console"]["retain"])
+    page.update(host.console_log.status(), link=link)
+    return Result.success(page, "%d line%s%s" % (len(page["lines"]), "" if len(page["lines"]) == 1 else "s", ", more after" if page["more"] else ""))
+
+
 # -- sending --------------------------------------------------------------------------------------
 def _send_line(host, link, text, bound_s):
     """Send one line on a link, with every guard. A Result either way."""
@@ -194,6 +213,10 @@ def register(registry, host):
                 args=(_LINK, Arg("cursor", type="int", required=False, default=0,
                                  doc="a byte offset; the next cursor from the last call (0 reads everything retained)")),
                 requires=CONSOLE, needs_service=True, result="lines (offset, bytes, text, reply), next, lost"))
+    add(Command("console.history", "Read the lines a link has logged between two host times, from disk: they survive a restart.", _history,
+                args=(_LINK, Arg("from_wall", type="float", unit="s", doc="the start, host time in seconds since 1970 (inclusive)"),
+                      Arg("to_wall", type="float", unit="s", doc="the end, host time in seconds since 1970 (exclusive)")),
+                requires=CONSOLE, needs_service=True, result="lines (wall, offset, text, partial), more, next_from_wall, kept_from, written, write_errors, last_error"))
     add(Command("console.send", "Send one line on a link that can transmit.", _send,
                 args=(_LINK, Arg("text", doc="the line to send, at most %d bytes, no newline: the link's own line ending is added" % LINE_CAP_BYTES),
                       Arg("bound_s", type="float", required=False, unit="s",
