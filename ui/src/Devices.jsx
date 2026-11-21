@@ -1,10 +1,12 @@
 import { useContext, useState } from "react";
 import { writeJson } from "./api.js";
-import DeviceRow from "./DeviceRow.jsx";
+import DeviceRow, { deviceLine } from "./DeviceRow.jsx";
 import { PROJECT_NAME } from "./format.js";
-import { Button, Card, Field, NavContext, PageHeader, SlugNote, cx, inputClass } from "./ui.jsx";
+import { KIND_TEXT, STATE_TEXT } from "./overview.js";
+import { Button, Card, Field, FitList, Lamp, NavContext, PageHeader, SlugNote, cx, inputClass, useWide } from "./ui.jsx";
 import { ResultView } from "./Commands.jsx";
 import Meter from "./meter/Meter.jsx";
+import { Drawer } from "./meter/Monitor.jsx";
 import { ProfilerCheck } from "./meter/Profiler.jsx";
 
 // Every device in one list, connected or not, so what is here and what is not can be read at a glance. A row opens to its detail and its
@@ -86,8 +88,10 @@ function Detail({ d, commands, onFlash, onChanged, onDone }) {
 const TABS = [["connected", "Connected"], ["absent", "Not attached"], ["all", "All"]];
 
 export default function Devices({ overview, commands, onFlash, onChanged, onDone }) {
+  const wide = useWide();
   const [tab, setTab] = useState("connected");
   const [open, setOpen] = useState(null);
+  const [drawer, setDrawer] = useState(null);                   // the wide page's drawers: "profiler" or "meter"
   const { data, error } = overview;
   if (!data) {
     return (
@@ -103,19 +107,63 @@ export default function Devices({ overview, commands, onFlash, onChanged, onDone
   const counts = { connected: here.length, absent: gone.length, all: all.length };
   const shown = tab === "connected" ? here : tab === "absent" ? gone : all;
   const empty = { connected: "Nothing is attached. Plug a board in.", absent: "Every device the bench knows is attached.", all: "No device is attached or known." };
+  const tabs = (
+    <div role="tablist" aria-label="Show devices" className="flex shrink-0 gap-1 border-b border-slate-300 dark:border-slate-700">
+      {TABS.map(([id, label]) => (
+        <button key={id} role="tab" type="button" aria-selected={tab === id} onClick={() => setTab(id)}
+          className={cx("min-h-11 border-b-2 px-3 text-[15px] font-medium", tab === id
+            ? "border-slate-900 text-slate-900 dark:border-slate-100 dark:text-slate-100"
+            : "border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100")}>
+          {label} <span className="font-normal text-slate-600 dark:text-slate-400">{counts[id]}</span>
+        </button>
+      ))}
+    </div>
+  );
+
+  // The wide page (docs/specs/navigation.md, "Full-height pages", Devices): the devices as a paged list of fixed rows, the chosen one's detail in a panel beside it, the instrument checks in drawers.
+  if (wide) {
+    const has = (name) => (commands || []).some((c) => c.name === name);
+    const chosen = all.find((d) => d.id === open) || null;
+    return (
+      <div className="relative flex min-h-0 flex-1 flex-col gap-2">
+        <PageHeader title="Devices" topic="devices" aside={(
+          <>
+            {has("ppk2.show") && <Button tone="quiet" onClick={() => setDrawer("profiler")}>Power profiler</Button>}
+            {has("meter.show") && <Button tone="quiet" onClick={() => setDrawer("meter")}>Multimeter</Button>}
+          </>
+        )} />
+        {tabs}
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-3" style={{ gridTemplateRows: "minmax(0, 1fr)" }}>
+          <Card className="flex min-h-0 flex-col">
+            <FitList label="Devices" rowH={56} items={shown} keyOf={(d) => d.id} empty={empty[tab]}
+              render={(d) => (
+                <button type="button" aria-pressed={open === d.id} onClick={() => setOpen(open === d.id ? null : d.id)}
+                  className={cx("flex h-full w-full min-w-0 items-center gap-3 rounded-md px-2 text-left", open === d.id ? "bg-slate-100 dark:bg-slate-800" : "hover:bg-slate-50 dark:hover:bg-slate-800/60", d.state === "absent" && "text-slate-600 dark:text-slate-400")}>
+                  <Lamp state={d.state} size={16} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[15px] font-medium">{d.label} <span className="text-[13px] font-normal text-slate-600 dark:text-slate-400">{d.model && d.kind === "nrf" ? `${KIND_TEXT[d.kind]}, ${d.model}` : KIND_TEXT[d.kind]}</span></span>
+                    <span className="block truncate text-[13px] text-slate-600 dark:text-slate-400">{deviceLine(d) || " "}</span>
+                  </span>
+                  <span className={cx("max-w-[40%] shrink-0 truncate text-[13px]", d.state === "attention" ? "font-medium text-amber-700 dark:text-amber-300" : "text-slate-600 dark:text-slate-400")}>{STATE_TEXT[d.state]}</span>
+                </button>
+              )} />
+          </Card>
+          <Card className="flex min-h-0 flex-col" title={chosen ? chosen.label : "Detail"}>
+            <div data-testid="work" className="min-h-0 flex-1 overflow-y-auto">
+              {chosen ? <Detail key={chosen.id} d={chosen} commands={commands} onFlash={onFlash} onChanged={onChanged} onDone={onDone} /> : <p className="text-[15px] text-slate-600 dark:text-slate-400">Choose a device to see its detail and what can be done with it.</p>}
+            </div>
+          </Card>
+        </div>
+        {drawer === "profiler" && <Drawer title="Power profiler" onClose={() => setDrawer(null)}><ProfilerCheck commands={commands} onDone={onDone} /></Drawer>}
+        {drawer === "meter" && <Drawer title="Multimeter" onClose={() => setDrawer(null)}><Meter commands={commands} onDone={onDone} /></Drawer>}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader title="Devices" topic="devices" />
-      <div role="tablist" aria-label="Show devices" className="flex gap-1 border-b border-slate-300 dark:border-slate-700">
-        {TABS.map(([id, label]) => (
-          <button key={id} role="tab" type="button" aria-selected={tab === id} onClick={() => setTab(id)}
-            className={cx("min-h-11 border-b-2 px-3 text-[15px] font-medium", tab === id
-              ? "border-slate-900 text-slate-900 dark:border-slate-100 dark:text-slate-100"
-              : "border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100")}>
-            {label} <span className="font-normal text-slate-600 dark:text-slate-400">{counts[id]}</span>
-          </button>
-        ))}
-      </div>
+      {tabs}
       <Card className="p-0!">
         {shown.length === 0 ? (
           <p className="px-4 py-4 text-[13px] text-slate-600 dark:text-slate-400">{empty[tab]}</p>

@@ -382,7 +382,7 @@ def run(browser, bench, theme, size, shots):
             # Home no longer scrolls on a desktop (docs/specs/navigation.md, "Full-height pages"), so a page that still flows is used, in a window too short to hold it.
             size = page.viewport_size
             page.set_viewport_size({"width": size["width"], "height": 400})
-            open_page("Devices")
+            open_page("Wiring")
             page.evaluate("window.scrollTo(0, 100000)")
             check("%s the sidebar stays in view while a long page scrolls" % tag,
                   page.evaluate("window.scrollY") > 0 and nav_shape(page)["side_top"] == 0, (page.evaluate("window.scrollY"), nav_shape(page)))

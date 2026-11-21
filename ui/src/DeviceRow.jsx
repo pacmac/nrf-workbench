@@ -33,7 +33,7 @@ export default function DeviceRow({ d, onOpen, open, children }) {
         <Lamp state={d.state} size={16} />
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-baseline gap-x-2">
-            <span className="text-[15px] font-medium">{d.label}</span>
+            <span className="min-w-0 text-[15px] font-medium [overflow-wrap:anywhere]">{d.label}</span>{/* a label with no space in it (a USB product string can be 126 characters) is broken where it must be, never wider than the row */}
             <span className="text-[13px] text-slate-600 dark:text-slate-400">{d.model && d.kind === "nrf" ? `${KIND_TEXT[d.kind]}, ${d.model}` : KIND_TEXT[d.kind]}</span>
           </span>
           {line && <span className="block text-[13px] text-slate-600 dark:text-slate-400">{line}</span>}
