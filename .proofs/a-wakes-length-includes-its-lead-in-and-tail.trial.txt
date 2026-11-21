@@ -1,0 +1,60 @@
+$ python3 tests/instruments/test_awake_period.py
+EEEEEE
+======================================================================
+ERROR: test_a_dip_shorter_than_the_hold_off_is_inside_the_awake_period (__main__.OnTheCapturer.test_a_dip_shorter_than_the_hold_off_is_inside_the_awake_period)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_awake_period.py", line 38, in test_a_dip_shorter_than_the_hold_off_is_inside_the_awake_period
+    self.assertAlmostEqual(w.awake_s, 7 * BLOCK, places=9, msg="3 awake, 1 quiet inside it, 3 awake")
+                           ^^^^^^^^^
+AttributeError: 'Capture' object has no attribute 'awake_s'
+
+======================================================================
+ERROR: test_a_wake_cut_at_the_longest_wake_has_no_tail (__main__.OnTheCapturer.test_a_wake_cut_at_the_longest_wake_has_no_tail)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_awake_period.py", line 43, in test_a_wake_cut_at_the_longest_wake_has_no_tail
+    self.assertEqual((w.lead_blocks, w.tail_blocks), (1, 0))
+                      ^^^^^^^^^^^^^
+AttributeError: 'Capture' object has no attribute 'lead_blocks'
+
+======================================================================
+ERROR: test_a_wake_of_known_length_reports_it_and_the_capture_is_longer_by_the_lead_in_and_tail (__main__.OnTheCapturer.test_a_wake_of_known_length_reports_it_and_the_capture_is_longer_by_the_lead_in_and_tail)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_awake_period.py", line 32, in test_a_wake_of_known_length_reports_it_and_the_capture_is_longer_by_the_lead_in_and_tail
+    self.assertEqual((w.lead_blocks, w.tail_blocks, w.blocks), (1, 1, 9))
+                      ^^^^^^^^^^^^^
+AttributeError: 'Capture' object has no attribute 'lead_blocks'
+
+======================================================================
+ERROR: test_a_wake_with_no_lead_in_has_none_to_take_off (__main__.OnTheCapturer.test_a_wake_with_no_lead_in_has_none_to_take_off)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_awake_period.py", line 48, in test_a_wake_with_no_lead_in_has_none_to_take_off
+    self.assertEqual((w.lead_blocks, w.tail_blocks), (0, 1))
+                      ^^^^^^^^^^^^^
+AttributeError: 'Capture' object has no attribute 'lead_blocks'
+
+======================================================================
+ERROR: test_a_wake_read_back_from_disk_says_it_again (__main__.ThroughTheSession.test_a_wake_read_back_from_disk_says_it_again)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_awake_period.py", line 70, in test_a_wake_read_back_from_disk_says_it_again
+    self.assertEqual((again["awake_s"], again["capture_s"]), (live["awake_s"], live["capture_s"]))
+                      ~~~~~^^^^^^^^^^^
+KeyError: 'awake_s'
+
+======================================================================
+ERROR: test_meter_captures_says_the_awake_period_and_the_capture_length (__main__.ThroughTheSession.test_meter_captures_says_the_awake_period_and_the_capture_length)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_awake_period.py", line 59, in test_meter_captures_says_the_awake_period_and_the_capture_length
+    self.assertAlmostEqual(row["awake_s"], 7 * BLOCK, places=6)
+                           ~~~^^^^^^^^^^^
+KeyError: 'awake_s'
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.356s
+
+FAILED (errors=6)

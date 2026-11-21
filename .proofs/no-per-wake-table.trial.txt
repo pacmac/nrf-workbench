@@ -1,0 +1,6 @@
+$ python3 tests/instruments/test_wake_table.py
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_wake_table.py", line 19, in <module>
+    from nrf_workbench.instruments import capture, waketable  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ImportError: cannot import name 'waketable' from 'nrf_workbench.instruments' (/usr/share/pac/dev/projects/rakbench/nrf_workbench/instruments/__init__.py)

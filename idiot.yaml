@@ -190,12 +190,26 @@
   files:
   - nrf_workbench/instruments/capture.py
   test:
-    command: null
+    command:
+    - python3
+    - tests/instruments/test_awake_period.py
     criterion: a synthetic wake of known length reports awake_s equal to it and capture_s longer by the
       lead-in and tail
     runs: 1
-  trial: null
-  fix: null
+  trial:
+    file: .proofs/a-wakes-length-includes-its-lead-in-and-tail.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-21T21:39:59.657'
+    commit: cfab95d-dirty
+  fix:
+    file: .proofs/a-wakes-length-includes-its-lead-in-and-tail.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-21T21:48:50.348'
+    commit: a6468e5-dirty
 - id: the-cycle-table-uses-its-own-wake-rule
   type: bug
   what: the page's cycle table decides what a wake is by a block's highest sample over half the peak,
@@ -229,15 +243,30 @@
     flag per wake, so an odd wake cannot be found without hand arithmetic
   spec: docs/specs/power-workbench.md
   files:
+  - nrf_workbench/instruments/waketable.py
   - nrf_workbench/instruments/capture.py
   - nrf_workbench/instruments/meter.py
   - nrf_workbench/instruments/sampler.py
   test:
-    command: null
+    command:
+    - python3
+    - tests/instruments/test_wake_table.py
     criterion: meter.wake_table flags a wake with a mid-window burst and one longer than the median
     runs: 1
-  trial: null
-  fix: null
+  trial:
+    file: .proofs/no-per-wake-table.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-21T21:39:59.766'
+    commit: cfab95d-dirty
+  fix:
+    file: .proofs/no-per-wake-table.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-21T21:48:55.418'
+    commit: a6468e5-dirty
 - id: nothing-says-what-was-happening-at-a-moment
   type: new
   what: no command or view gives the supply state, current, phase and console lines at one instant of

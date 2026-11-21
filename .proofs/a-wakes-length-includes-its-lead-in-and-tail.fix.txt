@@ -1,0 +1,6 @@
+$ python3 tests/instruments/test_awake_period.py
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.354s
+
+OK
