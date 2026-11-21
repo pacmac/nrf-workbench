@@ -913,7 +913,7 @@ class Session(Base):
         s.stop()
         reads = [e.payload for e in self.host.streams.meter.since(0).events if e.type == "meter.reading"]
         self.assertEqual(reads[0]["facts"]["lost"], 4)
-        self.assertEqual(set(reads[-1]["facts"]), {"lost", "filtered", "rate_low", "captures"})
+        self.assertEqual(set(reads[-1]["facts"]), {"lost", "filtered", "rate_low", "captures", "wakes"})
 
     def test_a_stream_slower_than_98000_a_second_is_flagged(self):
         clock = {"t": 0.0}

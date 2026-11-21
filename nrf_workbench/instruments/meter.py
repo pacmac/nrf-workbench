@@ -260,15 +260,19 @@ def register(registry, host):
         return res.data.get("in_force") if res.ok and isinstance(res.data, dict) else None
 
     def starter(mode):
-        def handler(ctx, bound_s, name=None, source=None, wake_sleep_a=None, wake_awake_a=None, wake_hold_s=None, wake_lead_s=None, wake_max_s=None):
+        def handler(ctx, bound_s=None, name=None, source=None, wake_sleep_a=None, wake_awake_a=None, wake_hold_s=None, wake_lead_s=None, wake_max_s=None, stop_after_wakes=None):
             if source is not None and source not in ("meter", "ppk2"):
                 raise UsageError("source is meter or ppk2", "source")
+            if bound_s is None and stop_after_wakes is None:
+                raise UsageError("bound_s is needed: how long to run at most, 1 to 43200 seconds (or stop_after_wakes, which gives up after 12 h when no bound is given)", "bound_s")
             given = {"wake_sleep_a": wake_sleep_a, "wake_awake_a": wake_awake_a, "wake_hold_s": wake_hold_s, "wake_lead_s": wake_lead_s, "wake_max_s": wake_max_s}
             given = dict((k, v) for k, v in given.items() if v is not None)          # an argument not given arrives as None: it is left to the data
             try:
                 profiler = sampler(ctx).resolve_source(source) == "ppk2"
             except samplerlib.Missing as exc:
                 return Result.refused("capability_missing", str(exc), {"source": source})
+            if stop_after_wakes is not None and not profiler:
+                raise UsageError("a multimeter session keeps no wakes, so it cannot stop after them", "stop_after_wakes")
             forced = profile_in_force(ctx) if profiler else None            # a multimeter keeps no wakes: it has no profile to take
             # the profile's trigger is the default and an explicit argument wins, field by field (a person on the page and an agent making the same call get the same capture)
             trigger = dict(forced["trigger"]) if forced else {}
@@ -284,11 +288,11 @@ def register(registry, host):
                 profile = {"project": forced["project"] if forced else None, "role": forced["role"] if forced else None, "source": "project" if forced else "explicit",
                            "overridden": sorted(given), "events": forced["events"] if forced else []}
             try:
-                summary = sampler(ctx).start(mode, bound_s, name, source, wake, profile)
+                summary = sampler(ctx).start(mode, bound_s, name, source, wake, profile, stop_after_wakes)
             except samplerlib.BadEvents as exc:
                 return Result.refused("bad_manifest", "the power profile in force has an event the recording refuses: %s" % exc, {})
             except samplerlib.ProfileNotWanted as exc:
-                raise UsageError(str(exc), sorted(given)[0])
+                raise UsageError(str(exc), sorted(given)[0] if given else "stop_after_wakes")
             except samplerlib.Busy as exc:
                 return Result.refused("meter_busy", "%s: stop it first (meter.stop)" % exc, {"session": exc.session})
             except samplerlib.NameTaken as exc:
@@ -296,8 +300,11 @@ def register(registry, host):
             except samplerlib.Missing as exc:
                 return Result.refused("capability_missing", str(exc), {"source": source})
             except ValueError as exc:
-                raise UsageError(str(exc), "name" if "name" in str(exc) else "bound_s")
-            return Result.success(summary, "%s started for at most %g s" % ("recording" if mode == "record" else "watch", summary["bound_s"]))
+                raise UsageError(str(exc), "stop_after_wakes" if str(exc).startswith("stop_after_wakes") else "name" if "name" in str(exc) else "bound_s")
+            what = "recording" if mode == "record" else "watch"
+            if stop_after_wakes is not None:
+                return Result.success(summary, "%s started: it ends after %d whole wake%s, and gives up after %g s" % (what, stop_after_wakes, "" if stop_after_wakes == 1 else "s", summary["bound_s"]))
+            return Result.success(summary, "%s started for at most %g s" % (what, summary["bound_s"]))
         return handler
 
     def stop(ctx):
@@ -409,7 +416,8 @@ def register(registry, host):
             return unknown(exc, recording)
         return Result.success(data, "%d stage%s over %d wake%s" % (len(data["stages"]), "" if len(data["stages"]) == 1 else "s", data["wakes"], "" if data["wakes"] == 1 else "s"))
 
-    bound = Arg("bound_s", type="float", unit="s", doc="how long to run at most, 1 to 43200 (12 h): nothing runs unbounded")
+    bound = Arg("bound_s", type="float", required=False, unit="s", doc="how long to run at most, 1 to 43200 (12 h): nothing runs unbounded. Needed unless stop_after_wakes is given, when it is the give-up and defaults to 43200")
+    stop_wakes = Arg("stop_after_wakes", type="int", required=False, doc="power profiler only: end when this many whole wakes have closed (1 to 216000); a wake already under way when the session began, or cut at wake_max_s, is kept and not counted. The session says how it ended in ended_by")
     source = Arg("source", required=False, doc="the instrument to read: meter (the multimeter, the default when it is configured) or ppk2 (the Nordic Power Profiler)")
     # What a wake is, for the power profiler's sessions (docs/specs/ppk2-stages.md, "The wake profile"). Left out, every one is found from the data.
     wake_args = (Arg("wake_sleep_a", type="float", required=False, unit="A", doc="the profiler's wake rule: the current the board sleeps at, in amps; left out it is found as the lowest tenth of the readings"),
@@ -418,16 +426,16 @@ def register(registry, host):
                  Arg("wake_lead_s", type="float", required=False, unit="s", doc="sleep kept before a wake, 0 up to wake_max_s (default 0.2)"),
                  Arg("wake_max_s", type="float", required=False, unit="s", doc="the longest wake kept whole, 1 to 120 (default 40); a longer one is cut there and marked"))
     add(Command("meter.watch", "Start a live session: a reading every period, pushed to the page and kept as a chart, nothing written to disk. At most 12 h.",
-                starter("watch"), args=(bound, source) + wake_args, requires=STREAM, effect="write", result="session, source, state, mode, started, bound_s, stats"))
+                starter("watch"), args=(bound, source) + wake_args + (stop_wakes,), requires=STREAM, effect="write", result="session, source, state, mode, started, bound_s, stop_after_wakes, stats"))
     add(Command("meter.record", "Start a recording: a live session that also appends every reading to a CSV file on the Pi. At most 12 h; the newest 10 files are kept.",
-                starter("record"), args=(bound, Arg("name", required=False, doc="the file's name: a-z 0-9 . _ -, default the start time"), source) + wake_args,
-                requires=STORE, effect="write", result="session, source, state, mode, name, started, bound_s, stats"))
+                starter("record"), args=(bound, Arg("name", required=False, doc="the file's name: a-z 0-9 . _ -, default the start time"), source) + wake_args + (stop_wakes,),
+                requires=STORE, effect="write", result="session, source, state, mode, name, started, bound_s, stop_after_wakes, stats"))
     add(Command("meter.wake_set", "Change what a wake is for the running power-profiler session, from its next block: the trigger can be changed during a capture. Every field left out goes back to being found from the data.",
                 wake_set, args=wake_args, requires=STREAM, effect="write", result="session, source, state, mode, wake"))
     add(Command("meter.stop", "End the running session now. Already stopped is fine.", stop, requires=STREAM, effect="write", result="the session as it ended"))
     add(Command("meter.session", "The session's state, time and statistics: readings, min, max, mean and, for a current, the charge in mAh.",
                 lambda ctx: Result.success(sampler(ctx).session(), "ok"), requires=STREAM,
-                result="session, state, mode, name, started, elapsed_s, bound_s, reason, function, unit, stats"))
+                result="session, state, mode, name, started, elapsed_s, bound_s, stop_after_wakes, wakes, reason, ended_by (wakes_done, time_reached, gave_up, stopped or error; null while it runs), function, unit, stats"))
     add(Command("meter.profile", "The whole session so far as buckets of lowest, highest and mean, with the live feed cursor to carry on from. Bounded at 2000 buckets however long it runs.",
                 lambda ctx: Result.success(sampler(ctx).profile(), "ok"), requires=STREAM, result="session, cursor, epoch, unit, function, buckets, stats, state"))
     recording_arg = Arg("recording", required=False, doc="a recording's name (meter.recordings): its saved wakes, read from disk; without it, the last session's, from memory")

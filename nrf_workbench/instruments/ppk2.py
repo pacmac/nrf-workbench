@@ -500,7 +500,8 @@ class Ppk2Source(object):
             self.capturer = capture.Capturer(getattr(s, "wake", None))      # the last session's captures stay readable until the next one begins
             capturer = self.capturer
             self._lower_switch()
-            s.facts["wake"] = capturer.profile.to_dict()     # what a wake was taken to be: the sleep and awake levels are None when found from the data (the readings say what was found)
+            s.facts["wakes"] = 0                             # whole wakes closed: said from the start, so a session that saw none says 0 and not nothing
+            s.facts["wake"] = capturer.profile.to_dict()    # what a wake was taken to be: the sleep and awake levels are None when found from the data (the readings say what was found)
             self.wakes = capture.WakeSet(lambda: list(capturer.items), cal.amps, hold=SPIKE_SAMPLES)
             self.store, self.unsaved = None, 0
             folder = getattr(s, "wakes_dir", None)
@@ -558,7 +559,8 @@ class Ppk2Source(object):
             b = r.block(data)
         self.capturer.feed(data, b["t"] - b["dt"], b["mean"], b["hi"], r.lost - before)      # a wake is kept at full rate (docs/specs/ppk2-stages.md)
         elapsed = p._mono() - self.started
-        facts = {"lost": r.lost, "filtered": r.filtered, "rate_low": bool(elapsed >= RATE_AFTER_S and r.words / elapsed < RATE_LOW_HZ), "captures": self.capturer.kept}
+        facts = {"lost": r.lost, "filtered": r.filtered, "rate_low": bool(elapsed >= RATE_AFTER_S and r.words / elapsed < RATE_LOW_HZ), "captures": self.capturer.kept,
+                 "wakes": self.capturer.whole}                  # the whole wakes closed so far: what a session that stops after N wakes counts (docs/specs/power-workbench.md, "Capture")
         levels = self.capturer.levels()
         for key in ("sleep_a", "awake_a"):                  # the levels in force now, 4 figures (a reading is an event: keep it small); absent until the data gives a sleep level
             if levels[key] is not None:

@@ -20,6 +20,7 @@ from .envelope import Envelope, Stats
 from .source import Fault, Reading
 
 MIN_BOUND_S, MAX_BOUND_S = 1, 43200          # 12 h: about 216,000 readings and 13 MB of CSV at NPLC 10 (docs/specs/meter-page.md)
+MAX_WAKES = int(MAX_BOUND_S / capture.BLOCK_S)      # a wake is at least one 0.2 s block, so 12 h holds at most 43200 / 0.2 = 216,000 of them (docs/specs/power-workbench.md, "Capture")
 KEEP_RECORDINGS = 10                         # newest files kept: 10 x 13 MB = 130 MB at most
 RECORDING_SUFFIXES = (".csv", ".json", ".stages.json", ".events.json")      # what a recording keeps beside its saved wakes folder
 SETTING_EVERY = 10                           # re-ask function, range and NPLC every 10 readings: about 2 s at NPLC 10, not 4 extra queries on every reading
@@ -74,7 +75,9 @@ class Session(object):
         self.thread = None
         self.file = None
         self.ended = None
-        self.wakes_dir = None                                # where a recording keeps its wakes (the profiler's source writes them there)
+        self.ended_by = None                                 # why it ended: wakes_done, time_reached, gave_up, stopped or error; None while it runs
+        self.stop_after_wakes = None                         # end when this many whole wakes have closed (the profiler's sessions only)
+        self.wakes_dir = None                               # where a recording keeps its wakes (the profiler's source writes them there)
         self.wake = None                                     # the capture.WakeProfile this session was started with (None: everything found from the data)
         self.profile = dict(NO_PROFILE)                      # where the wake profile came from (docs/specs/project-power-profile.md, decision 4)
 
@@ -160,12 +163,17 @@ class Sampler(object):
             raise BadEvents("%s: %s" % (e["name"], exc))
         return stages, recorded
 
-    def start(self, mode, bound_s, name=None, source=None, wake=None, profile=None):
-        """The session's summary dict. Raises Busy, NameTaken, Missing, BadEvents, or ValueError for a bad bound or name. `wake` is a capture.WakeProfile (the profiler's sessions only).
+    def start(self, mode, bound_s, name=None, source=None, wake=None, profile=None, stop_after_wakes=None):
+        """The session's summary dict. Raises Busy, NameTaken, Missing, BadEvents, or ValueError for a bad bound, count or name. `wake` is a capture.WakeProfile (the profiler's sessions only).
+        `stop_after_wakes` ends the session when that many whole wakes have closed (`bound_s` is then the give-up: None means the 12 h maximum); the profiler's sessions only.
         `profile` is where it came from, {project, role, source, overridden, events} (docs/specs/project-power-profile.md): it is reported with the session and in a recording's sidecar,
         and a recording starts with its events (a watch keeps no files, so it takes only the trigger, which is `wake`)."""
         if mode not in ("watch", "record"):
             raise ValueError("mode is watch or record")
+        if stop_after_wakes is not None and (isinstance(stop_after_wakes, bool) or not isinstance(stop_after_wakes, int) or not 1 <= stop_after_wakes <= MAX_WAKES):
+            raise ValueError("stop_after_wakes is a whole number from 1 to %d: a wake is at least one 0.2 s block and 12 h holds that many" % MAX_WAKES)
+        if bound_s is None and stop_after_wakes is not None:
+            bound_s = MAX_BOUND_S                            # no ceiling given: the give-up is the 12 h maximum, never a period guessed from the board
         if isinstance(bound_s, bool) or not isinstance(bound_s, (int, float)) or not MIN_BOUND_S <= bound_s <= MAX_BOUND_S:
             raise ValueError("bound_s is %d to %d seconds" % (MIN_BOUND_S, MAX_BOUND_S))
         with self._lock:
@@ -174,6 +182,8 @@ class Sampler(object):
             src = self._source(source)
             if wake is not None and src.name != "ppk2":
                 raise ProfileNotWanted("a multimeter session keeps no wakes, so it has no wake profile")
+            if stop_after_wakes is not None and src.name != "ppk2":
+                raise ProfileNotWanted("a multimeter session keeps no wakes, so it cannot stop after them")
             profile_stages, profile_events = self._profile_files((profile or {}).get("events") or []) if mode == "record" else ([], [])
             self._count += 1
             wall = self._wall()
@@ -190,6 +200,7 @@ class Sampler(object):
                 self._prune()
             s = Session(self._count, mode, float(bound_s), name if mode == "record" else None, wall, self._mono(), src)
             s.wake = wake
+            s.stop_after_wakes = stop_after_wakes
             if profile:
                 s.profile = {"project": profile["project"], "role": profile["role"], "source": profile["source"], "overridden": list(profile["overridden"])}
             if mode == "record":
@@ -266,7 +277,7 @@ class Sampler(object):
 
     # -- the thread -----------------------------------------------------------------------------------
     def _run(self, s):
-        k, reason, state = 0, "", "idle"
+        k, reason, state, ended_by = 0, "", "idle", None
         source = s.source
         try:
             try:
@@ -277,6 +288,7 @@ class Sampler(object):
                 while not s.stop.is_set():
                     if self._mono() - s.t0 >= s.bound_s:
                         reason = "the time bound was reached"
+                        ended_by = "time_reached" if s.stop_after_wakes is None else "gave_up"      # with a count wanted, the bound is the give-up: the wakes did not come
                         break
                     r = source.take(s, k)
                     if r.t is None:
@@ -288,18 +300,21 @@ class Sampler(object):
                     s.range, s.nplc = r.range, r.nplc
                     self._take(s, r)
                     k += 1
+                    if s.stop_after_wakes is not None and s.facts.get("wakes", 0) >= s.stop_after_wakes:      # the Nth whole wake has closed (its tail included): event-driven off the capture's own close
+                        reason, ended_by = "%d whole wake%s recorded" % (s.stop_after_wakes, "" if s.stop_after_wakes == 1 else "s"), "wakes_done"
+                        break
                 if not reason:
-                    reason = "stopped"                         # the loop ended because stop() was called
+                    reason, ended_by = "stopped", "stopped"    # the loop ended because stop() was called
             except Fault as exc:
-                reason, state = str(exc), "error"
+                reason, state, ended_by = str(exc), "error", "error"
         finally:
             try:
                 source.end()
             except Exception as exc:                           # closing an instrument must not stop the session's own books being closed
                 if state != "error":
-                    reason, state = "closing the instrument failed: %s" % exc, "error"
+                    reason, state, ended_by = "closing the instrument failed: %s" % exc, "error", "error"
             with self._lock:
-                s.state, s.reason, s.ended = state, reason, self._wall()
+                s.state, s.reason, s.ended, s.ended_by = state, reason, self._wall(), ended_by
                 if s.file is not None:
                     try:
                         s.file.close()
@@ -336,7 +351,8 @@ class Sampler(object):
     def _summary(self, s):
         elapsed = (s.ended - s.started) if s.ended else self._mono() - s.t0
         return dict({"session": s.number, "source": s.source.name, "state": s.state, "mode": s.mode, "name": s.name, "started": s.started,
-                     "elapsed_s": round(elapsed, 3), "bound_s": s.bound_s, "reason": s.reason, "function": s.function, "unit": s.unit,
+                     "elapsed_s": round(elapsed, 3), "bound_s": s.bound_s, "reason": s.reason, "ended_by": s.ended_by, "stop_after_wakes": s.stop_after_wakes,
+                     "function": s.function, "unit": s.unit,
                      "profile": dict(s.profile), "stats": s.stats.to_dict(self._current(s))}, **s.facts)
 
     def _publish_state(self, s):
@@ -346,15 +362,15 @@ class Sampler(object):
         """The facts about a recording the CSV does not carry, written when it starts and again when it ends: so a recording a killed service left is known to have been cut short."""
         try:
             with open(os.path.join(self.folder, s.name + ".json"), "w") as fh:
-                json.dump(dict({"name": s.name, "source": s.source.name, "started": s.started, "ended": ended, "reason": s.reason, "bound_s": s.bound_s,
-                                "function": s.function, "unit": s.unit, "profile": s.profile, "stats": s.stats.to_dict(self._current(s))}, **s.facts), fh)
+                json.dump(dict({"name": s.name, "source": s.source.name, "started": s.started, "ended": ended, "reason": s.reason, "ended_by": s.ended_by, "bound_s": s.bound_s,
+                                "stop_after_wakes": s.stop_after_wakes, "function": s.function, "unit": s.unit, "profile": s.profile, "stats": s.stats.to_dict(self._current(s))}, **s.facts), fh)
         except OSError:
             pass
 
     def session(self):
         with self._lock:
             return self._summary(self._session) if self._session is not None else {
-                "session": 0, "source": None, "state": "idle", "mode": None, "name": None, "started": None, "elapsed_s": 0, "bound_s": None, "reason": "",
+                "session": 0, "source": None, "state": "idle", "mode": None, "name": None, "started": None, "elapsed_s": 0, "bound_s": None, "reason": "", "ended_by": None, "stop_after_wakes": None,
                 "function": None, "unit": None, "stats": Stats().to_dict()}
 
     def profile(self):

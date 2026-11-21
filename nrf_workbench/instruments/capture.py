@@ -125,6 +125,7 @@ class Capture(object):
         self._z, self._pieces, self._words, self._blob = zlib.compressobj(ZLIB_LEVEL), [], 0, None
         self.lost = 0
         self.truncated = False
+        self.partial = False                                  # its rising edge was not seen: the block before it was not judged asleep (a recording that opened on it, no level yet, or the rest of a wake the longest-wake cut ended)
         self.peak = 0.0
         self.blocks = 0
         self.stats = None                                     # wake_at_s, mean and peak of the decoded samples, worked out the first time they are asked for
@@ -171,6 +172,8 @@ class Capturer(object):
         self.items = collections.deque(maxlen=keep)
         self.count = 0                                        # captures begun so far, which is also the number of the last
         self.kept = 0                                         # captures finished and kept: what the feed reports, so a page asks only once a wake can be read
+        self.whole = 0                                        # captures closed that are whole at both ends: neither partial nor truncated (docs/specs/power-workbench.md, "Capture"). What stop_after_wakes counts
+        self._prev_asleep = False                             # the block before the one being fed was judged asleep (a level was known and the block was under it): nothing before the first block
         self._ring = collections.deque(maxlen=self.profile.lead_blocks)      # (data, t0, lost, mean) of the last blocks, newest last: where a capture's lead-in comes from
         self._open = None
         self._pending = []                                    # (data, lost, high) of the quiet blocks of an open wake that have not yet lasted hold_s: part of it if it wakes again
@@ -215,6 +218,7 @@ class Capturer(object):
                 self.count += 1
                 lead = list(self._ring)[-(self.max_blocks - 1):]          # the wake itself needs at least one block of the longest wake
                 o = self._open = Capture(self.count, lead[0][1] if lead else t0, limit)
+                o.partial = not self._prev_asleep
                 self._pending = []
                 for blk in lead:
                     self._add(o, blk[0], blk[2], high=None)
@@ -234,6 +238,7 @@ class Capturer(object):
                 self._pending = []
                 self._close()
         self._ring.append((data, t0, lost, mean))
+        self._prev_asleep = limit is not None and not awake
 
     def _check_cap(self, o):
         if o.blocks >= self.max_blocks and self._open is o:
@@ -254,6 +259,8 @@ class Capturer(object):
         if self.on_close is not None:
             self.on_close(done)                                # saved before it is counted: when the feed says it exists, it can be read
         self.kept += 1
+        if not done.partial and not done.truncated:
+            self.whole += 1
 
     def get(self, n):
         for c in self.items:
@@ -333,7 +340,7 @@ class WakeStore(object):
         packed = c.blob if c.blob is not None else zlib.compress(c.data, ZLIB_LEVEL)
         with open(self._path(c.n, "bin"), "wb") as fh:
             fh.write(packed)
-        meta = {"n": c.n, "t0": c.t0, "level": c.level, "lost": c.lost, "truncated": c.truncated, "peak": c.peak, "samples": c.samples, "stats": c.stats}
+        meta = {"n": c.n, "t0": c.t0, "level": c.level, "lost": c.lost, "truncated": c.truncated, "partial": c.partial, "peak": c.peak, "samples": c.samples, "stats": c.stats}
         tmp = self._path(c.n, "json.tmp")
         with open(tmp, "w") as fh:
             json.dump(meta, fh)
@@ -371,6 +378,7 @@ class WakeStore(object):
             except (OSError, ValueError, KeyError):
                 continue
             c.lost, c.truncated, c.peak, c.stats = m.get("lost", 0), bool(m.get("truncated")), m.get("peak", 0.0), m.get("stats")
+            c.partial = bool(m.get("partial"))                 # a wake saved before this was recorded says nothing: it is read as whole
             out.append(c)
         return out
 
@@ -429,7 +437,7 @@ class WakeSet(object):
             if c.stats is None or "held" not in c.stats:
                 self._values(c)
             out.append({"n": c.n, "t0": round(c.t0, 6), "wake_at_s": c.stats["wake_at_s"], "duration_s": c.samples / float(SAMPLE_RATE_HZ), "samples": c.samples,
-                        "lost": c.lost, "truncated": c.truncated, "peak": c.stats["peak"], "mean": c.stats["mean"], "held": c.stats["held"]})
+                        "lost": c.lost, "truncated": c.truncated, "partial": c.partial, "peak": c.stats["peak"], "mean": c.stats["mean"], "held": c.stats["held"]})
         return out
 
     def envelope(self, n, t0=None, t1=None, points=POINTS_DEFAULT):

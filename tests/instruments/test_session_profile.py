@@ -103,7 +103,7 @@ class TheTriggerIsTheDefault(FromTheProject):
     def test_a_multimeter_session_ignores_the_profile_and_is_not_refused(self):
         self.sampler.sources["meter"] = types.SimpleNamespace(name="meter")
         seen = []
-        self.sampler.start = lambda mode, bound_s, name=None, source=None, wake=None, profile=None: seen.append((mode, source, wake, profile)) or {"bound_s": float(bound_s)}
+        self.sampler.start = lambda mode, bound_s, name=None, source=None, wake=None, profile=None, stop_after_wakes=None: seen.append((mode, source, wake, profile)) or {"bound_s": float(bound_s)}
         self.force(trigger={"sleep_a": self.sleep_a}, events=[BOOT, RADIO])
         res = self.call("meter.watch", {"bound_s": 60, "source": "meter"})
         self.assertTrue(res.ok, getattr(res, "message", res))
