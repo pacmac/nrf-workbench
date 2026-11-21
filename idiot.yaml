@@ -791,3 +791,35 @@
     failures: 0
     at: '2026-11-22T06:52:55.160'
     commit: 03a1811-dirty
+- id: the-wiring-page-grows-past-the-window
+  type: bug
+  what: the Wiring page stacks an inbox box for every adapter plugged in but not connected, a card for
+    every board, the chosen board's wires and its add form in one flowing page (2,274 px at 1280x720 with
+    12 boards and 16 adapters on the test bench); it fits the real bench today only because few are attached;
+    a dashboard page must keep fitting as the bench grows
+  spec: docs/specs/navigation.md
+  files:
+  - ui/src/wiring/Wiring.jsx
+  - ui/src/App.jsx
+  test:
+    command:
+    - python3
+    - scripts/verify_wiring_layout.py
+    criterion: with 12 boards and 16 adapters the document does not scroll, the boards page to fit, the
+      unconnected adapters are in a drawer, the chosen board's wires and form are in a panel that scrolls
+      only inside itself, in both themes at 1280x720 and 1440x900
+    runs: 1
+  trial:
+    file: .proofs/the-wiring-page-grows-past-the-window.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-22T06:56:52.978'
+    commit: f7fb4cd-dirty
+  fix:
+    file: .proofs/the-wiring-page-grows-past-the-window.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-22T07:19:04.248'
+    commit: fd99d5d-dirty

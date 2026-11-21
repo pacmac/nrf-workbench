@@ -1,0 +1,141 @@
+$ python3 scripts/verify_wiring_layout.py
+PASS  light 1280x720 the document does not scroll (720 of 720 px)
+PASS  light 1280x720 nothing outside the wires panel scrolls
+PASS  light 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 the page ends at the foot of the window
+PASS  light 1280x720 every panel lies inside the page
+PASS  light 1280x720 the devices panel is filled down to its foot ([17] px spare)
+PASS  light 1280x720 the list shows the boards that fit, fewer than all (7 of 12)
+PASS  light 1280x720 every board lies inside the list
+PASS  light 1280x720 the list is filled: less than one more row of room is left (18 of 64 px)
+PASS  light 1280x720 Next pages to the later boards ((8, 12, 12))
+PASS  light 1280x720 Previous returns to the first
+PASS  light 1280x720 no board on any page has its card cut off by its fixed height (0)
+PASS  light 1280x720 a one-line notice counts the adapters not connected (13, at least the 12 USB ones)
+PASS  light 1280x720 the notice is one line high (58 px)
+PASS  light 1280x720 the drawer holds every adapter the notice counts (13 of 13)
+PASS  light 1280x720 Escape closes it
+PASS  light 1280x720 choosing a board with no wire shows that in the panel
+PASS  light 1280x720 the chosen board's wire is in the panel (1)
+PASS  light 1280x720 with a board's wires shown: the document does not scroll (720 of 720 px)
+PASS  light 1280x720 with a board's wires shown: nothing outside the wires panel scrolls
+PASS  light 1280x720 with a board's wires shown: the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 with a board's wires shown: the page ends at the foot of the window
+PASS  light 1280x720 with a board's wires shown: every panel lies inside the page
+PASS  light 1280x720 with a board's wires shown: the devices panel is filled down to its foot ([17] px spare)
+PASS  light 1280x720 Connect something opens its form inside the panel
+PASS  light 1280x720 with the form open: the document does not scroll (720 of 720 px)
+PASS  light 1280x720 with the form open: nothing outside the wires panel scrolls
+PASS  light 1280x720 with the form open: the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 with the form open: the page ends at the foot of the window
+PASS  light 1280x720 with the form open: every panel lies inside the page
+PASS  light 1280x720 with the form open: the devices panel is filled down to its foot ([17] px spare)
+PASS  light 1280x720 the panel lies inside its card
+PASS  light 1440x900 the document does not scroll (900 of 900 px)
+PASS  light 1440x900 nothing outside the wires panel scrolls
+PASS  light 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 the page ends at the foot of the window
+PASS  light 1440x900 every panel lies inside the page
+PASS  light 1440x900 the devices panel is filled down to its foot ([17] px spare)
+PASS  light 1440x900 the list shows the boards that fit, fewer than all (10 of 12)
+PASS  light 1440x900 every board lies inside the list
+PASS  light 1440x900 the list is filled: less than one more row of room is left (6 of 64 px)
+PASS  light 1440x900 Next pages to the later boards ((11, 12, 12))
+PASS  light 1440x900 Previous returns to the first
+PASS  light 1440x900 no board on any page has its card cut off by its fixed height (0)
+PASS  light 1440x900 a one-line notice counts the adapters not connected (13, at least the 12 USB ones)
+PASS  light 1440x900 the notice is one line high (58 px)
+PASS  light 1440x900 the drawer holds every adapter the notice counts (13 of 13)
+PASS  light 1440x900 Escape closes it
+PASS  light 1440x900 choosing a board with no wire shows that in the panel
+PASS  light 1440x900 the chosen board's wire is in the panel (1)
+PASS  light 1440x900 with a board's wires shown: the document does not scroll (900 of 900 px)
+PASS  light 1440x900 with a board's wires shown: nothing outside the wires panel scrolls
+PASS  light 1440x900 with a board's wires shown: the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 with a board's wires shown: the page ends at the foot of the window
+PASS  light 1440x900 with a board's wires shown: every panel lies inside the page
+PASS  light 1440x900 with a board's wires shown: the devices panel is filled down to its foot ([17] px spare)
+PASS  light 1440x900 Connect something opens its form inside the panel
+PASS  light 1440x900 with the form open: the document does not scroll (900 of 900 px)
+PASS  light 1440x900 with the form open: nothing outside the wires panel scrolls
+PASS  light 1440x900 with the form open: the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 with the form open: the page ends at the foot of the window
+PASS  light 1440x900 with the form open: every panel lies inside the page
+PASS  light 1440x900 with the form open: the devices panel is filled down to its foot ([17] px spare)
+PASS  light 1440x900 the panel lies inside its card
+PASS  light 1024x440 the document does not scroll (440 of 440 px)
+PASS  light 1024x440 the wires and the form are taller than the panel and scroll inside it (779 of 223 px)
+PASS  light 1024x440 scrolled to its end, the form's last button is in view
+PASS  light 390x844 no horizontal scroll (390 of 390 px)
+PASS  light 390x844 the adapters are listed on the page, with no pager (13)
+PASS  dark 1280x720 the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 nothing outside the wires panel scrolls
+PASS  dark 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 the page ends at the foot of the window
+PASS  dark 1280x720 every panel lies inside the page
+PASS  dark 1280x720 the devices panel is filled down to its foot ([17] px spare)
+PASS  dark 1280x720 the list shows the boards that fit, fewer than all (7 of 12)
+PASS  dark 1280x720 every board lies inside the list
+PASS  dark 1280x720 the list is filled: less than one more row of room is left (18 of 64 px)
+PASS  dark 1280x720 Next pages to the later boards ((8, 12, 12))
+PASS  dark 1280x720 Previous returns to the first
+PASS  dark 1280x720 no board on any page has its card cut off by its fixed height (0)
+PASS  dark 1280x720 a one-line notice counts the adapters not connected (13, at least the 12 USB ones)
+PASS  dark 1280x720 the notice is one line high (58 px)
+PASS  dark 1280x720 the drawer holds every adapter the notice counts (13 of 13)
+PASS  dark 1280x720 Escape closes it
+PASS  dark 1280x720 choosing a board with no wire shows that in the panel
+PASS  dark 1280x720 the chosen board's wire is in the panel (1)
+PASS  dark 1280x720 with a board's wires shown: the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 with a board's wires shown: nothing outside the wires panel scrolls
+PASS  dark 1280x720 with a board's wires shown: the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 with a board's wires shown: the page ends at the foot of the window
+PASS  dark 1280x720 with a board's wires shown: every panel lies inside the page
+PASS  dark 1280x720 with a board's wires shown: the devices panel is filled down to its foot ([17] px spare)
+PASS  dark 1280x720 Connect something opens its form inside the panel
+PASS  dark 1280x720 with the form open: the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 with the form open: nothing outside the wires panel scrolls
+PASS  dark 1280x720 with the form open: the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 with the form open: the page ends at the foot of the window
+PASS  dark 1280x720 with the form open: every panel lies inside the page
+PASS  dark 1280x720 with the form open: the devices panel is filled down to its foot ([17] px spare)
+PASS  dark 1280x720 the panel lies inside its card
+PASS  dark 1440x900 the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 nothing outside the wires panel scrolls
+PASS  dark 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 the page ends at the foot of the window
+PASS  dark 1440x900 every panel lies inside the page
+PASS  dark 1440x900 the devices panel is filled down to its foot ([17] px spare)
+PASS  dark 1440x900 the list shows the boards that fit, fewer than all (10 of 12)
+PASS  dark 1440x900 every board lies inside the list
+PASS  dark 1440x900 the list is filled: less than one more row of room is left (6 of 64 px)
+PASS  dark 1440x900 Next pages to the later boards ((11, 12, 12))
+PASS  dark 1440x900 Previous returns to the first
+PASS  dark 1440x900 no board on any page has its card cut off by its fixed height (0)
+PASS  dark 1440x900 a one-line notice counts the adapters not connected (13, at least the 12 USB ones)
+PASS  dark 1440x900 the notice is one line high (58 px)
+PASS  dark 1440x900 the drawer holds every adapter the notice counts (13 of 13)
+PASS  dark 1440x900 Escape closes it
+PASS  dark 1440x900 choosing a board with no wire shows that in the panel
+PASS  dark 1440x900 the chosen board's wire is in the panel (1)
+PASS  dark 1440x900 with a board's wires shown: the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 with a board's wires shown: nothing outside the wires panel scrolls
+PASS  dark 1440x900 with a board's wires shown: the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 with a board's wires shown: the page ends at the foot of the window
+PASS  dark 1440x900 with a board's wires shown: every panel lies inside the page
+PASS  dark 1440x900 with a board's wires shown: the devices panel is filled down to its foot ([17] px spare)
+PASS  dark 1440x900 Connect something opens its form inside the panel
+PASS  dark 1440x900 with the form open: the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 with the form open: nothing outside the wires panel scrolls
+PASS  dark 1440x900 with the form open: the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 with the form open: the page ends at the foot of the window
+PASS  dark 1440x900 with the form open: every panel lies inside the page
+PASS  dark 1440x900 with the form open: the devices panel is filled down to its foot ([17] px spare)
+PASS  dark 1440x900 the panel lies inside its card
+PASS  dark 1024x440 the document does not scroll (440 of 440 px)
+PASS  dark 1024x440 the wires and the form are taller than the panel and scroll inside it (779 of 223 px)
+PASS  dark 1024x440 scrolled to its end, the form's last button is in view
+PASS  dark 390x844 no horizontal scroll (390 of 390 px)
+PASS  dark 390x844 the adapters are listed on the page, with no pager (13)
+
+138 checks, 0 failed. screenshots: /tmp/nrfwb-wiring-layout-e33qgvdq
