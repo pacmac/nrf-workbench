@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TOPICS, topicText } from "./help.js";
-import { Lamp, PageHeader, cx, inputClass } from "./ui.jsx";
+import { Lamp, PageHeader, cx, inputClass, useWide } from "./ui.jsx";
 
 // Help is the only place that explains (docs/specs/dashboard-redesign.md, "Help"): a topic list, and one short, structured topic at a time.
 // On a phone the list is the whole screen until a topic is chosen, and a Back button returns to it.
@@ -86,12 +86,44 @@ function Topic({ t, onTopic, onGo }) {
 }
 
 export default function Help({ topic, direct, onTopic, onGo }) {
+  const wide = useWide();
+  const reader = useRef(null);
   const [query, setQuery] = useState("");
   const [reading, setReading] = useState(Boolean(direct));          // phone: false shows the list, true shows the topic
   const q = query.trim().toLowerCase();
   const shown = TOPICS.filter((t) => !q || topicText(t).includes(q));
   const current = TOPICS.find((t) => t.id === topic) || TOPICS[0];
   const choose = (id) => { onTopic(id); setReading(true); window.scrollTo(0, 0); };
+  useEffect(() => { if (reader.current) reader.current.scrollTop = 0; }, [current.id]);      // a topic is read from its top
+
+  // The wide page (docs/specs/navigation.md, "Full-height pages", Help): the topics in compact rows beside a reader that scrolls only inside itself.
+  if (wide) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-2">
+        <PageHeader title="Help" />
+        <div className="grid min-h-0 flex-1 grid-cols-[16rem_minmax(0,1fr)] gap-3" style={{ gridTemplateRows: "minmax(0, 1fr)" }}>
+          <nav aria-label="Help topics" className="flex min-h-0 flex-col gap-2">
+            <input className={inputClass} type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search help" aria-label="Search help" autoComplete="off" />
+            <ul className="min-h-0 overflow-y-auto rounded-md border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+              {shown.map((t) => (
+                <li key={t.id} className="border-b border-slate-200 last:border-b-0 dark:border-slate-800">
+                  <button type="button" onClick={() => choose(t.id)} aria-current={t.id === current.id ? "true" : undefined}
+                    className={cx("flex min-h-10 w-full items-center px-4 text-left text-[15px]", t.id === current.id ? "bg-slate-100 font-semibold dark:bg-slate-800" : "hover:bg-slate-50 dark:hover:bg-slate-800/60")}>
+                    {t.title}
+                  </button>
+                </li>
+              ))}
+              {shown.length === 0 && <li className="px-4 py-3 text-[13px] text-slate-600 dark:text-slate-400">No topic matches.</li>}
+            </ul>
+          </nav>
+          <div ref={reader} data-testid="work" className="min-h-0 overflow-y-auto rounded-md border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+            <Topic t={current} onTopic={choose} onGo={onGo} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader title="Help" />
