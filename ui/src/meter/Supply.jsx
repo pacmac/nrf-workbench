@@ -77,9 +77,9 @@ export function Supply({ commands, shown, running, session, reload, onDone }) {
         {u && modeCmd && (
           <div role="group" aria-label="What the unit does" className="flex gap-1">
             {[["source", "Source", "Source mode"], ["ampere", "Ampere", "Ampere mode"]].map(([m, label, full]) => (
-              <Button key={m} tone={u.mode === m ? "primary" : "quiet"} className={SEG} aria-pressed={u.mode === m} disabled={locked || u.mode === m} aria-label={full}
+              <Button key={m} tone={u.mode === m ? "primary" : "quiet"} className={SEG} aria-pressed={u.mode === m} disabled={locked} aria-label={full}
                 title={`${full}: ${m === "source" ? "the unit supplies the board" : "the board has its own supply and the unit only monitors it"}`}
-                onClick={() => (m === "ampere" && u.supply !== "off" ? setAsk({ kind: "mode", mode: m }) : act(modeCmd, { mode: m }))}>{label}</Button>
+                onClick={() => { if (u.mode === m) return; if (m === "ampere" && u.supply !== "off") setAsk({ kind: "mode", mode: m }); else act(modeCmd, { mode: m }); }}>{label}</Button>
             ))}
           </div>
         )}
