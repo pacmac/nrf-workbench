@@ -419,3 +419,51 @@
     failures: 0
     at: '2026-11-21T19:18:41.863'
     commit: 5244d1b-dirty
+- id: the-activity-page-scrolls
+  type: bug
+  what: the Activity page lists every retained entry in one flowing page (11,205 px at 1280x720 on the
+    real bench), so it scrolls; a dashboard page must fit the window and page its rows
+  spec: docs/specs/navigation.md
+  files:
+  - ui/src/Activity.jsx
+  - ui/src/ui.jsx
+  - ui/src/meter/Monitor.jsx
+  - ui/src/App.jsx
+  test:
+    command:
+    - python3
+    - scripts/verify_activity_layout.py
+    criterion: the document does not scroll, the rows shown fit the list, a pager pages them, newest first,
+      in both themes at 1280x720 and 1440x900
+    runs: 1
+  trial:
+    file: .proofs/the-activity-page-scrolls.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-21T21:55:56.655'
+    commit: d1453b5-dirty
+  fix:
+    file: .proofs/the-activity-page-scrolls.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-21T22:02:51.161'
+    commit: 46b6073-dirty
+- id: the-serial-callers-test-fails-intermittently-in-the-full-suite
+  type: bug
+  what: tests/instruments/test_meter.py::Transport::test_callers_are_served_one_at_a_time failed in 2
+    of 4 full-suite runs on 2026-11-21 and passes alone and with its own file; 4 concurrent meter.read
+    calls against a 50 ms fake are expected to all succeed, so either a read ceiling is hit under load
+    or callers are not served one at a time; not yet diagnosed
+  spec: docs/specs/meter.md
+  files:
+  - tests/instruments/test_meter.py
+  - nrf_workbench/instruments/meter.py
+  - nrf_workbench/instruments/scpi.py
+  test:
+    command: null
+    criterion: the test passes in 20 of 20 full-suite runs, or the cause is found and named
+    runs: 1
+  trial: null
+  fix: null
