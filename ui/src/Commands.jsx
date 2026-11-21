@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { readJson, writeFile, writeJson } from "./api.js";
-import { Button, Card, Chip, ClassBadge, Field, Json, PageHeader, cx, inputClass } from "./ui.jsx";
+import { Button, Card, Chip, ClassBadge, Field, FitList, Json, PageHeader, cx, inputClass, useWide } from "./ui.jsx";
 
 // The Commands page is GENERATED from GET api/commands: one form per registry row, nothing written per
 // command. A new command appears here the moment the service registers it. Reads go to the row's path with a
@@ -189,8 +189,10 @@ function pickers(overview, packages) {
 
 // The command list on the left, the form on the right. Search narrows the list; the form is generated from the registry row.
 export default function Commands({ commands, overview, onDone }) {
+  const wide = useWide();
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState("all");
+  const [area, setArea] = useState("all");                  // the wide page's area choice: the part of a command's name before the dot
   const [chosen, setChosen] = useState(null);
   const [packages, setPackages] = useState([]);
   const form = useRef(null);
@@ -210,12 +212,55 @@ export default function Commands({ commands, overview, onDone }) {
 
   if (commands === null) return <Card title="Commands"><p className="text-sm text-slate-600 dark:text-slate-400">Loading…</p></Card>;
   const q = query.trim().toLowerCase();
-  const shown = commands.filter((c) => (kind === "all" || (kind === "read") === (c.effect === "read")) && (!q || c.name.includes(q) || c.summary.toLowerCase().includes(q)));
+  const shown = commands.filter((c) => (kind === "all" || (kind === "read") === (c.effect === "read")) && (area === "all" || c.name.split(".")[0] === area)
+    && (!q || c.name.includes(q) || c.summary.toLowerCase().includes(q)));
   const areas = {};
   shown.forEach((c) => { (areas[c.name.split(".")[0]] = areas[c.name.split(".")[0]] || []).push(c); });
   const current = commands.find((c) => c.name === chosen) || null;
   const choose = (c) => setChosen(c.name);
   const suggest = pickers(overview, packages);
+  const filter = (
+    <div role="group" aria-label="Show" className="flex gap-1">
+      {[["all", "All"], ["read", "Reads"], ["write", "Changes"]].map(([id, label]) => (
+        <button key={id} type="button" aria-pressed={kind === id} onClick={() => setKind(id)}
+          className={cx("min-h-9 flex-1 rounded-md px-2 text-[13px] font-medium", kind === id
+            ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+            : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700")}>{label}</button>
+      ))}
+    </div>
+  );
+  // The wide page (docs/specs/navigation.md, "Full-height pages", Commands): the commands as a paged list of one-line rows, and the form in a panel that may scroll inside itself.
+  if (wide) {
+    const areaNames = [...new Set(commands.map((c) => c.name.split(".")[0]))].sort();
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-2">
+        <PageHeader title="Commands" topic="commands" aside={<span className="text-[13px] text-slate-600 dark:text-slate-400">{commands.length} on this host</span>} />
+        <div className="grid min-h-0 flex-1 grid-cols-[19rem_minmax(0,1fr)] gap-3" style={{ gridTemplateRows: "minmax(0, 1fr)" }}>
+          <Card className="flex min-h-0 flex-col gap-2">
+            <input className={inputClass} type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search commands" aria-label="Search commands" autoComplete="off" />
+            {filter}
+            <select aria-label="Area" className={inputClass} value={area} onChange={(e) => setArea(e.target.value)}>
+              <option value="all">All areas</option>
+              {areaNames.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+            <FitList label="Commands" rowH={36} items={shown} keyOf={(c) => c.name} empty="No command matches."
+              render={(c) => (
+                <button type="button" onClick={() => choose(c)} aria-current={chosen === c.name ? "true" : undefined}
+                  className={cx("flex h-full w-full items-center gap-2 rounded-md px-2 text-left", chosen === c.name ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900" : "hover:bg-slate-100 dark:hover:bg-slate-800")}>
+                  <span className="min-w-0 flex-1 truncate font-mono text-[13px]">{c.name}</span>
+                  <span className="shrink-0 text-[12px] opacity-70">{c.effect === "read" ? "read" : "changes"}</span>
+                </button>
+              )} />
+          </Card>
+          <Card className="flex min-h-0 flex-col" title={current ? current.name : undefined} aside={current ? <Chip tone={current.effect === "read" ? "slate" : "amber"}>{current.effect === "read" ? "reads only" : "changes things"}</Chip> : undefined}>
+            <div data-testid="work" className="min-h-0 flex-1 overflow-y-auto">
+              {current ? <CommandForm key={current.name} command={current} onDone={onDone} suggest={suggest} /> : <p className="text-[15px] text-slate-600 dark:text-slate-400">Choose a command.</p>}
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="space-y-4">
       <PageHeader title="Commands" topic="commands" aside={<span className="text-[13px] text-slate-600 dark:text-slate-400">{commands.length} on this host</span>} />

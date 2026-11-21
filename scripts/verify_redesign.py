@@ -343,15 +343,15 @@ def run(browser, bench, theme, size, shots):
               and sum(1 for n in names if "scan" in n or "transfer" in n or "buses" in n) == 3, names)
         search.fill("")
         search.fill("devices")
-        listing.get_by_role("button", name=re.compile(r"^name")).click()
+        listing.get_by_role("button", name=re.compile(r"^(devices\.)?name\b")).click()       # a wide window lists the whole name (devices.name), a phone the part after its area
         page.get_by_role("heading", name="devices.name").wait_for()
         picks = page.get_by_role("group", name="Choose serial").get_by_role("button")
         check("%s a serial is offered as a pick from the boards the bench has, not typed blind" % tag, picks.count() == 1 and picks.first.get_attribute("title") == SERIAL, picks.all_inner_texts())
         picks.first.click()
         check("%s one press on a pick fills the box" % tag, page.get_by_label(re.compile("^serial")).input_value() == SERIAL)
         shot("9-commands")
-        search.fill("")
-        listing.get_by_role("button", name=re.compile(r"^buses")).click()
+        search.fill("buses")                                  # a wide window pages the list, so the command is found by searching, not by being on the first page
+        listing.get_by_role("button", name=re.compile(r"^(i2c\.)?buses\b")).click()
         page.get_by_role("button", name="Read", exact=True).click()
         page.get_by_text("i2c_enabled").first.wait_for()
         check("%s a command runs from the page and the whole result shows" % tag, True)
