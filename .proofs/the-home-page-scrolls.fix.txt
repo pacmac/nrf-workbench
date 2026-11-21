@@ -1,0 +1,121 @@
+$ python3 scripts/verify_home_layout.py
+PASS  light 1280x720 the document does not scroll (720 of 720 px)
+PASS  light 1280x720 nothing inside the page scrolls
+PASS  light 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 the page ends at the foot of the window
+PASS  light 1280x720 every section lies inside the page
+PASS  light 1280x720 the Devices section is on screen
+PASS  light 1280x720 the Connections section is on screen
+PASS  light 1280x720 the Recent activity section is on screen
+PASS  light 1280x720 the The Pi section is on screen
+PASS  light 1280x720 Devices shows the rows that fit, fewer than all (9 of 18)
+PASS  light 1280x720 every device row lies inside the list
+PASS  light 1280x720 the Devices list is filled: less than one more row of room is left (48 of 52 px)
+PASS  light 1280x720 no device row's content is cut off by its fixed height
+PASS  light 1280x720 Next pages to the later devices ((10, 18, 18))
+PASS  light 1280x720 Previous returns to the first ((1, 9, 18))
+PASS  light 1280x720 Recent activity has 3 shares of its column to Connections' 2 (ratio 1.50)
+PASS  light 1280x720 Recent activity pages too ((1, 5, 30))
+PASS  light 1280x720 Recent activity is newest first (['seed.29', 'seed.28', 'seed.27'])
+PASS  light 1280x720 the header is a strip of 40 pins
+PASS  light 1280x720 every pin lies inside The Pi's tile
+PASS  light 1280x720 the strip is two rows high (40 px), not a column of twenty
+PASS  light 1280x720 the power profiler check opens over the page
+PASS  light 1280x720 Escape closes it
+PASS  light 1280x720 with the drawer closed: the document does not scroll (720 of 720 px)
+PASS  light 1280x720 with the drawer closed: nothing inside the page scrolls
+PASS  light 1280x720 with the drawer closed: the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 with the drawer closed: the page ends at the foot of the window
+PASS  light 1280x720 with the drawer closed: every section lies inside the page
+PASS  light 1440x900 the document does not scroll (900 of 900 px)
+PASS  light 1440x900 nothing inside the page scrolls
+PASS  light 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 the page ends at the foot of the window
+PASS  light 1440x900 every section lies inside the page
+PASS  light 1440x900 the Devices section is on screen
+PASS  light 1440x900 the Connections section is on screen
+PASS  light 1440x900 the Recent activity section is on screen
+PASS  light 1440x900 the The Pi section is on screen
+PASS  light 1440x900 Devices shows the rows that fit, fewer than all (13 of 18)
+PASS  light 1440x900 every device row lies inside the list
+PASS  light 1440x900 the Devices list is filled: less than one more row of room is left (20 of 52 px)
+PASS  light 1440x900 no device row's content is cut off by its fixed height
+PASS  light 1440x900 Next pages to the later devices ((14, 18, 18))
+PASS  light 1440x900 Previous returns to the first ((1, 13, 18))
+PASS  light 1440x900 Recent activity has 3 shares of its column to Connections' 2 (ratio 1.50)
+PASS  light 1440x900 Recent activity pages too ((1, 7, 30))
+PASS  light 1440x900 Recent activity is newest first (['seed.29', 'seed.28', 'seed.27'])
+PASS  light 1440x900 the header is a strip of 40 pins
+PASS  light 1440x900 every pin lies inside The Pi's tile
+PASS  light 1440x900 the strip is two rows high (40 px), not a column of twenty
+PASS  light 1440x900 the power profiler check opens over the page
+PASS  light 1440x900 Escape closes it
+PASS  light 1440x900 with the drawer closed: the document does not scroll (900 of 900 px)
+PASS  light 1440x900 with the drawer closed: nothing inside the page scrolls
+PASS  light 1440x900 with the drawer closed: the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 with the drawer closed: the page ends at the foot of the window
+PASS  light 1440x900 with the drawer closed: every section lies inside the page
+PASS  light 390x844 no horizontal scroll (390 of 390 px)
+PASS  light 390x844 the sections flow: Devices and Recent activity are there
+PASS  light 390x844 there is no pager on a phone
+PASS  dark 1280x720 the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 nothing inside the page scrolls
+PASS  dark 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 the page ends at the foot of the window
+PASS  dark 1280x720 every section lies inside the page
+PASS  dark 1280x720 the Devices section is on screen
+PASS  dark 1280x720 the Connections section is on screen
+PASS  dark 1280x720 the Recent activity section is on screen
+PASS  dark 1280x720 the The Pi section is on screen
+PASS  dark 1280x720 Devices shows the rows that fit, fewer than all (9 of 18)
+PASS  dark 1280x720 every device row lies inside the list
+PASS  dark 1280x720 the Devices list is filled: less than one more row of room is left (48 of 52 px)
+PASS  dark 1280x720 no device row's content is cut off by its fixed height
+PASS  dark 1280x720 Next pages to the later devices ((10, 18, 18))
+PASS  dark 1280x720 Previous returns to the first ((1, 9, 18))
+PASS  dark 1280x720 Recent activity has 3 shares of its column to Connections' 2 (ratio 1.50)
+PASS  dark 1280x720 Recent activity pages too ((1, 5, 30))
+PASS  dark 1280x720 Recent activity is newest first (['seed.29', 'seed.28', 'seed.27'])
+PASS  dark 1280x720 the header is a strip of 40 pins
+PASS  dark 1280x720 every pin lies inside The Pi's tile
+PASS  dark 1280x720 the strip is two rows high (40 px), not a column of twenty
+PASS  dark 1280x720 the power profiler check opens over the page
+PASS  dark 1280x720 Escape closes it
+PASS  dark 1280x720 with the drawer closed: the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 with the drawer closed: nothing inside the page scrolls
+PASS  dark 1280x720 with the drawer closed: the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 with the drawer closed: the page ends at the foot of the window
+PASS  dark 1280x720 with the drawer closed: every section lies inside the page
+PASS  dark 1440x900 the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 nothing inside the page scrolls
+PASS  dark 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 the page ends at the foot of the window
+PASS  dark 1440x900 every section lies inside the page
+PASS  dark 1440x900 the Devices section is on screen
+PASS  dark 1440x900 the Connections section is on screen
+PASS  dark 1440x900 the Recent activity section is on screen
+PASS  dark 1440x900 the The Pi section is on screen
+PASS  dark 1440x900 Devices shows the rows that fit, fewer than all (13 of 18)
+PASS  dark 1440x900 every device row lies inside the list
+PASS  dark 1440x900 the Devices list is filled: less than one more row of room is left (20 of 52 px)
+PASS  dark 1440x900 no device row's content is cut off by its fixed height
+PASS  dark 1440x900 Next pages to the later devices ((14, 18, 18))
+PASS  dark 1440x900 Previous returns to the first ((1, 13, 18))
+PASS  dark 1440x900 Recent activity has 3 shares of its column to Connections' 2 (ratio 1.50)
+PASS  dark 1440x900 Recent activity pages too ((1, 7, 30))
+PASS  dark 1440x900 Recent activity is newest first (['seed.29', 'seed.28', 'seed.27'])
+PASS  dark 1440x900 the header is a strip of 40 pins
+PASS  dark 1440x900 every pin lies inside The Pi's tile
+PASS  dark 1440x900 the strip is two rows high (40 px), not a column of twenty
+PASS  dark 1440x900 the power profiler check opens over the page
+PASS  dark 1440x900 Escape closes it
+PASS  dark 1440x900 with the drawer closed: the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 with the drawer closed: nothing inside the page scrolls
+PASS  dark 1440x900 with the drawer closed: the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 with the drawer closed: the page ends at the foot of the window
+PASS  dark 1440x900 with the drawer closed: every section lies inside the page
+PASS  dark 390x844 no horizontal scroll (390 of 390 px)
+PASS  dark 390x844 the sections flow: Devices and Recent activity are there
+PASS  dark 390x844 there is no pager on a phone
+
+118 checks, 0 failed. screenshots: /tmp/nrfwb-home-layout-shots-s390l3_q

@@ -496,3 +496,34 @@
     failures: 0
     at: '2026-11-21T23:13:30.075'
     commit: 0a0738f-dirty
+- id: the-home-page-scrolls
+  type: bug
+  what: the Home page is a flowing page (1,293 px at 1280x720 on the real bench) of eight sections whose
+    lists, the Pi's 20-row pin map and the instrument checks' results all grow it, so it scrolls; the
+    first page a person sees must be one screen
+  spec: docs/specs/navigation.md
+  files:
+  - ui/src/Home.jsx
+  - ui/src/App.jsx
+  - ui/src/DeviceRow.jsx
+  test:
+    command:
+    - python3
+    - scripts/verify_home_layout.py
+    criterion: the document does not scroll, each list shows the rows that fit with a pager, the Pi header
+      is a two-row strip, the profiler check opens in a drawer, in both themes at 1280x720 and 1440x900
+    runs: 1
+  trial:
+    file: .proofs/the-home-page-scrolls.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-21T23:55:31.028'
+    commit: b89cd81-dirty
+  fix:
+    file: .proofs/the-home-page-scrolls.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-22T00:08:29.464'
+    commit: 57b4fe7-dirty
