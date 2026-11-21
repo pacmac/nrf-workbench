@@ -27,7 +27,7 @@ const PAGES = [["home", "Home"], ["devices", "Devices"], ["projects", "Projects"
 const DAILY = 4;      // the bar holds four pages and More: five equal cells at 390 px are 78 px each, past the 44 px touch target
 // Pages that own the window: from 768 px up they fill the width beside the nav and the whole height, and nothing on them scrolls (docs/specs/navigation.md, "Full-height pages").
 // A phone keeps the page flow until a page has its own narrow layout. A page joins this list when it has been laid out to fit.
-const FULL_PAGES = ["home", "meter", "activity", "console", "commands", "gpio", "help"];
+const FULL_PAGES = ["home", "meter", "activity", "console", "commands", "gpio", "help", "firmware"];
 
 // How many activity rows the browser keeps in memory. Same derivation as the draw limit: the server's retention
 // is the real bound, this only stops a tab that stays open for weeks from growing without limit. 5 x the

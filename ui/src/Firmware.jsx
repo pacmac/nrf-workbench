@@ -3,7 +3,8 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useEffect, useState } from "react";
 import { readJson, writeFile, writeJson } from "./api.js";
 import { DEFAULT_PROJECT, ESP_BAUDS, PROJECT_NAME, PROJECT_RULE_TEXT, bytesText, espFlashBoundS, when } from "./format.js";
-import { Button, Card, Chip, Field, PageHeader, SlugNote, inputClass } from "./ui.jsx";
+import { Button, Card, Chip, ClassBadge, Field, FitList, PageHeader, SlugNote, cx, inputClass, useWide } from "./ui.jsx";
+import { Drawer } from "./meter/Monitor.jsx";
 import { ResultView } from "./Commands.jsx";
 import EspTargets, { useEspTargets } from "./Esp32.jsx";
 
@@ -19,6 +20,8 @@ const itemClass = "flex min-h-10 cursor-default select-none items-center rounded
 const dangerItemClass = "flex min-h-10 cursor-default select-none items-center rounded-md px-3 py-2 text-sm text-red-700 outline-none data-[highlighted]:bg-red-50 dark:text-red-300 dark:data-[highlighted]:bg-red-950";
 
 export default function Firmware({ commands, boards, onFlash, onDone, refreshKey = 0 }) {
+  const wide = useWide();
+  const [drawer, setDrawer] = useState(null);                         // the wide page's drawers: "esp" or "result"
   const find = (name) => (commands || []).find((c) => c.name === name) || null;
   const list = find("firmware.list");
   const put = find("firmware.put");
@@ -135,12 +138,179 @@ export default function Firmware({ commands, boards, onFlash, onDone, refreshKey
     run: removeProject,
   });
 
+  // One package's row: its name and what it is, and the Flash and More buttons. `tight` cuts each line to the row's width: the wide page's rows are a fixed height.
+  const packageContent = (s, tight) => {
+    const name = s.name || "unnamed";
+    const others = projects.filter((p) => p !== project);
+    return (
+      <>
+        <div className="min-w-0 flex-1">
+          <p className={cx("font-medium", tight ? "truncate" : "break-words")}>{name}</p>
+          <p className={cx("text-xs text-slate-600 dark:text-slate-400", tight && "truncate")}>
+            <span className="font-mono" title={s.sha256}>{s.sha256.slice(0, 8)}</span> · {bytesText(s.image_bytes || s.bytes)} · {s.kind ? espWhat(s) : `${s.packets} packets · SoftDevice ${(s.softdevice_req || []).join(", ") || "none"}`}
+          </p>
+          <p className={cx("text-xs text-slate-600 dark:text-slate-400", tight && "truncate")}>
+            uploaded {when(s.uploaded_at ? Date.parse(s.uploaded_at) / 1000 : null)}{s.uploaded_by ? ` by ${s.uploaded_by}` : ""}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {s.kind ? (
+            <Button
+              tone="quiet"
+              disabled={!espFlash || !espTarget || pending}
+              title={!espFlash ? "Flashing an ESP32 is not available on this host" : espTargets.length === 0 ? "No ESP32 board is declared yet" : !espTarget ? "Choose a board first" : `Flash ${espTarget.name}`}
+              onClick={() => openEspFlash(s)}
+              aria-label={`Flash ${name} to an ESP32`}
+            >
+              Flash to ESP32…
+            </Button>
+          ) : (
+            <Button
+              tone="quiet"
+              disabled={!flashBoard || pending}
+              title={!boards || boards.length === 0 ? "No board is attached" : !flashBoard ? "Choose a board first" : `Flash ${flashBoard.serial}`}
+              onClick={() => onFlash(flashBoard, { project, id: s.sha256 })}
+              aria-label={`Flash ${name}`}
+            >
+              Flash…
+            </Button>
+          )}
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <Button tone="quiet" disabled={pending} aria-label={`More actions for ${name}`}>
+                More
+                <svg aria-hidden="true" viewBox="0 0 12 12" className="ml-1 inline h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 4l4 4 4-4" /></svg>
+              </Button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content align="end" sideOffset={4} className={menuClass}>
+                {move && (
+                  <>
+                    <DropdownMenu.Label className="px-3 py-1 text-xs font-medium text-slate-600 dark:text-slate-400">Move to</DropdownMenu.Label>
+                    {others.length === 0 ? (
+                      <div className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">No other project. Make one first.</div>
+                    ) : others.map((p) => (
+                      <DropdownMenu.Item key={p} className={itemClass} onSelect={() => write(writeJson(move.path, { id: s.sha256, project: p }))}>{p}</DropdownMenu.Item>
+                    ))}
+                    <DropdownMenu.Separator className="my-1 h-px bg-slate-200 dark:bg-slate-700" />
+                  </>
+                )}
+                {del && <DropdownMenu.Item className={dangerItemClass} onSelect={() => askDeletePackage(s)}>Delete…</DropdownMenu.Item>}
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
+        </div>
+      </>
+    );
+  };
+
   if (commands && !list) {
     return <div className="space-y-4"><PageHeader title="Firmware" topic="flashing" /><Card><p className="text-[13px] text-slate-600 dark:text-slate-400">The package store is off on this host.</p></Card></div>;
   }
 
+  // The last result on the wide page: one line at the foot, and the whole of it in a drawer (the whole result is always shown).
+  const resultLine = outcome && (
+    <div data-testid="result-line" role="status" className="flex shrink-0 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-900">
+      {outcome.pending ? <span>Working…</span> : (!outcome.body || typeof outcome.body !== "object" || !("class" in outcome.body)) ? (
+        <><ClassBadge cls="error" /><span className="min-w-0 flex-1 truncate">HTTP {outcome.status}{outcome.body && outcome.body.message ? `: ${outcome.body.message}` : ""}</span></>
+      ) : (
+        <><ClassBadge cls={outcome.body.class} />{outcome.body.code !== "ok" && <Chip>{outcome.body.code}</Chip>}<span className="min-w-0 flex-1 truncate">{outcome.body.message}</span></>
+      )}
+      {!outcome.pending && <Button tone="quiet" className="shrink-0" onClick={() => setDrawer("result")}>Details</Button>}
+    </div>
+  );
+
+  // The wide page (docs/specs/navigation.md, "Full-height pages", Firmware): Projects beside the chosen project, both lists paged to fit, the forms compact, the rest in drawers.
+  const wideBody = (
+    <>
+      <PageHeader title="Firmware" topic="flashing" aside={espList ? <Button tone="quiet" onClick={() => setDrawer("esp")}>ESP32 boards{esp.targets ? ` (${esp.targets.length})` : ""}</Button> : null} />
+      {storeError && (
+        <div className="flex shrink-0 items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100" role="alert">
+          <p className="min-w-0 flex-1 truncate">The package store could not be listed: <span className="font-mono">{storeError}</span>.</p>
+          <Button onClick={() => setAttempt((n) => n + 1)}>Try again</Button>
+        </div>
+      )}
+      <div className="grid min-h-0 flex-1 grid-cols-[18rem_minmax(0,1fr)] gap-3" style={{ gridTemplateRows: "minmax(0, 1fr)" }}>
+        <Card title="Projects" className="flex min-h-0 flex-col">
+          <FitList label="Projects" rowH={44} items={projects} keyOf={(p) => p} empty="No project yet."
+            render={(p) => (
+              <button type="button" aria-pressed={p === project} onClick={() => setProject(p)}
+                className={cx("flex h-9 w-full items-center justify-between gap-2 rounded-lg px-3 text-left text-sm", p === project
+                  ? "bg-blue-600 font-medium text-white dark:bg-blue-500 dark:text-slate-950"
+                  : "bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700")}>
+                <span className="truncate">{p}</span>
+                <span>{items.filter((s) => (s.project || DEFAULT_PROJECT) === p).length}</span>
+              </button>
+            )} />
+          {projNew && (
+            <form onSubmit={createProject} className="mt-2 shrink-0 space-y-2 border-t border-slate-200 pt-3 dark:border-slate-800">
+              <Field label="New project">
+                <input className={inputClass} type="text" value={newName} onChange={(e) => setNewName(e.target.value.toLowerCase())} aria-label="New project name" autoComplete="off" spellCheck="false" />
+              </Field>
+              <SlugNote value={newName} />
+              <Button type="submit" disabled={!newOk || pending}>Create project</Button>
+            </form>
+          )}
+        </Card>
+        <Card className="flex min-h-0 flex-col" title={known ? project : "Project"} aside={known && <Chip>{inProject.length} {inProject.length === 1 ? "package" : "packages"}</Chip>}>
+          {!known ? (
+            <p className="text-sm text-slate-600 dark:text-slate-400">Choose a project to see its packages.</p>
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col gap-3">
+              {put && (
+                <form onSubmit={upload} className="shrink-0 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+                  <p className="mb-2 text-sm font-medium">Upload into <span className="font-mono">{project}</span></p>
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-3">
+                    <Field label="Package file">
+                      <input key={fileKey} className={inputClass} type="file" accept=".zip,.bin,application/zip,application/octet-stream" aria-label="Package file" onChange={(e) => setFile(e.target.files[0] || null)} />
+                    </Field>
+                    <Field label="Name (optional)">
+                      <input className={inputClass} type="text" value={label} onChange={(e) => setLabel(e.target.value)} aria-label="Package name" autoComplete="off" />
+                    </Field>
+                    <Button type="submit" disabled={!file || pending}>Upload</Button>
+                  </div>
+                </form>
+              )}
+              {((boards && boards.length > 1) || (espFlash && espTargets.length > 1 && inProject.some((s) => s.kind))) && (
+                <div className="grid shrink-0 gap-3 sm:grid-cols-2">
+                  {boards && boards.length > 1 && (
+                    <Field label="Flash to board">
+                      <select className={inputClass} value={flashBoard ? boardSerial : NONE} onChange={(e) => setBoardSerial(e.target.value)} aria-label="Flash to board">
+                        <option value={NONE}>Choose a board…</option>
+                        {boards.map((b) => <option key={`${b.serial}-${b.mode}`} value={b.serial}>{b.name ? `${b.name}, ` : ""}{b.serial} ({b.mode})</option>)}
+                      </select>
+                    </Field>
+                  )}
+                  {espFlash && espTargets.length > 1 && inProject.some((s) => s.kind) && (
+                    <Field label="Flash to ESP32 board">
+                      <select className={inputClass} value={espTarget ? espName : NONE} onChange={(e) => setEspName(e.target.value)} aria-label="Flash to ESP32 board">
+                        <option value={NONE}>Choose a board…</option>
+                        {espTargets.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+                      </select>
+                    </Field>
+                  )}
+                </div>
+              )}
+              <FitList label={`Packages in ${project}`} rowH={84} items={inProject} keyOf={(s) => s.sha256} empty="This project is empty." render={(s) => packageContent(s, true)} />
+              {projDel && (
+                <div className="flex shrink-0 items-center gap-3 border-t border-slate-200 pt-3 dark:border-slate-800">
+                  <Button tone="quiet" disabled={inProject.length > 0 || pending} onClick={askDeleteProject}>Delete project</Button>
+                  {inProject.length > 0 && (
+                    <span className="text-xs text-slate-600 dark:text-slate-400">It holds {inProject.length} {inProject.length === 1 ? "package" : "packages"}. Delete or move {inProject.length === 1 ? "it" : "them"} first.</span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+      </div>
+      {resultLine}
+    </>
+  );
+
   return (
-    <div className="space-y-4">
+    <div className={wide ? "relative flex min-h-0 flex-1 flex-col gap-2" : "space-y-4"}>
+      {wide && store !== null ? wideBody : <>
       <PageHeader title="Firmware" topic="flashing" />
       {outcome && (
         <Card title="Last result">
@@ -239,70 +409,9 @@ export default function Firmware({ commands, boards, onFlash, onDone, refreshKey
                   <p className="text-sm text-slate-600 dark:text-slate-400">This project is empty.</p>
                 ) : (
                   <ul className="space-y-2" aria-label={`Packages in ${project}`}>
-                    {inProject.map((s) => {
-                      const name = s.name || "unnamed";
-                      const others = projects.filter((p) => p !== project);
-                      return (
-                        <li key={s.sha256} className="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
-                          <div className="min-w-0 flex-1">
-                            <p className="break-words font-medium">{name}</p>
-                            <p className="text-xs text-slate-600 dark:text-slate-400">
-                              <span className="font-mono" title={s.sha256}>{s.sha256.slice(0, 8)}</span> · {bytesText(s.image_bytes || s.bytes)} · {s.kind ? espWhat(s) : `${s.packets} packets · SoftDevice ${(s.softdevice_req || []).join(", ") || "none"}`}
-                            </p>
-                            <p className="text-xs text-slate-600 dark:text-slate-400">
-                              uploaded {when(s.uploaded_at ? Date.parse(s.uploaded_at) / 1000 : null)}{s.uploaded_by ? ` by ${s.uploaded_by}` : ""}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {s.kind ? (
-                              <Button
-                                tone="quiet"
-                                disabled={!espFlash || !espTarget || pending}
-                                title={!espFlash ? "Flashing an ESP32 is not available on this host" : espTargets.length === 0 ? "No ESP32 board is declared yet" : !espTarget ? "Choose a board first" : `Flash ${espTarget.name}`}
-                                onClick={() => openEspFlash(s)}
-                                aria-label={`Flash ${name} to an ESP32`}
-                              >
-                                Flash to ESP32…
-                              </Button>
-                            ) : (
-                            <Button
-                              tone="quiet"
-                              disabled={!flashBoard || pending}
-                              title={!boards || boards.length === 0 ? "No board is attached" : !flashBoard ? "Choose a board first" : `Flash ${flashBoard.serial}`}
-                              onClick={() => onFlash(flashBoard, { project, id: s.sha256 })}
-                              aria-label={`Flash ${name}`}
-                            >
-                              Flash…
-                            </Button>
-                            )}
-                            <DropdownMenu.Root>
-                              <DropdownMenu.Trigger asChild>
-                                <Button tone="quiet" disabled={pending} aria-label={`More actions for ${name}`}>
-                                  More
-                                  <svg aria-hidden="true" viewBox="0 0 12 12" className="ml-1 inline h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 4l4 4 4-4" /></svg>
-                                </Button>
-                              </DropdownMenu.Trigger>
-                              <DropdownMenu.Portal>
-                                <DropdownMenu.Content align="end" sideOffset={4} className={menuClass}>
-                                  {move && (
-                                    <>
-                                      <DropdownMenu.Label className="px-3 py-1 text-xs font-medium text-slate-600 dark:text-slate-400">Move to</DropdownMenu.Label>
-                                      {others.length === 0 ? (
-                                        <div className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">No other project. Make one first.</div>
-                                      ) : others.map((p) => (
-                                        <DropdownMenu.Item key={p} className={itemClass} onSelect={() => write(writeJson(move.path, { id: s.sha256, project: p }))}>{p}</DropdownMenu.Item>
-                                      ))}
-                                      <DropdownMenu.Separator className="my-1 h-px bg-slate-200 dark:bg-slate-700" />
-                                    </>
-                                  )}
-                                  {del && <DropdownMenu.Item className={dangerItemClass} onSelect={() => askDeletePackage(s)}>Delete…</DropdownMenu.Item>}
-                                </DropdownMenu.Content>
-                              </DropdownMenu.Portal>
-                            </DropdownMenu.Root>
-                          </div>
-                        </li>
-                      );
-                    })}
+                    {inProject.map((s) => (
+                      <li key={s.sha256} className="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-800">{packageContent(s)}</li>
+                    ))}
                   </ul>
                 )}
 
@@ -321,6 +430,7 @@ export default function Firmware({ commands, boards, onFlash, onDone, refreshKey
           </Card>
         </div>
       )}
+      </>}
 
       <AlertDialog.Root open={Boolean(espAsk && espTarget)} onOpenChange={(open) => { if (!open) setEspAsk(null); }}>
         <AlertDialog.Portal>
@@ -366,6 +476,17 @@ export default function Firmware({ commands, boards, onFlash, onDone, refreshKey
           )}
         </AlertDialog.Portal>
       </AlertDialog.Root>
+
+      {wide && drawer === "esp" && espList && (
+        <Drawer title="ESP32 boards" onClose={() => setDrawer(null)} wide>
+          <EspTargets commands={commands} targets={esp.targets} native={esp.native} error={esp.error} onChanged={() => setAttempt((n) => n + 1)} onDone={onDone} />
+        </Drawer>
+      )}
+      {wide && drawer === "result" && outcome && (
+        <Drawer title="Last result" onClose={() => setDrawer(null)} wide>
+          <ResultView outcome={outcome} pendingText="Working…" />
+        </Drawer>
+      )}
     </div>
   );
 }
