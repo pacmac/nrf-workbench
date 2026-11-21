@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { readJson, writeJson } from "./api.js";
 import { PROJECT_NAME, PROJECT_RULE_TEXT, clock } from "./format.js";
 import { cannotSend, conversation, historyOf, sendsOf, walk } from "./consoleLog.js";
-import { Button, Card, Chip, ClassBadge, Field, PageHeader, SlugNote, Spinner, inputClass } from "./ui.jsx";
+import { Button, Card, Chip, ClassBadge, Field, PageHeader, SlugNote, Spinner, cx, inputClass, useWide } from "./ui.jsx";
+import { Drawer } from "./meter/Monitor.jsx";
 
 // The serial console (docs/specs/dashboard.md, "The Console page"). Every action is a command the service listed,
 // sent to the path it listed, and the page adds no rule of its own: when the input is off the reason is the
@@ -192,7 +193,7 @@ function MacroResults({ outcome }) {
   );
 }
 
-function Macros({ commands, link, onDone }) {
+function Macros({ commands, link, onDone, bare }) {
   const find = (name) => (commands || []).find((c) => c.name === name) || null;
   const list = find("console.macro_list");
   const set = find("console.macro_set");
@@ -254,9 +255,10 @@ function Macros({ commands, link, onDone }) {
 
   if (commands && !list) return null;
   const nameOk = MACRO_NAME.test(name.trim());
+  const Wrap = bare ? "div" : Card;                 // in a drawer the drawer is the panel and says "Macros" itself
 
   return (
-    <Card title="Macros">
+    <Wrap {...(bare ? {} : { title: "Macros" })}>
       {error && <p role="note" className="mb-3 rounded-lg bg-amber-100 p-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">The macros could not be listed ({error}).</p>}
       {macros && macros.length === 0 && !error && <p className="mb-3 text-[13px] text-slate-600 dark:text-slate-400">No macros yet.</p>}
       {macros && macros.length > 0 && (
@@ -302,7 +304,7 @@ function Macros({ commands, link, onDone }) {
           <Answer outcome={outcome} />
         </div>
       </form>
-    </Card>
+    </Wrap>
   );
 }
 
@@ -310,28 +312,30 @@ function Macros({ commands, link, onDone }) {
 // until the person presses Decode; the text starts as the last lines of this link's log and is theirs to change.
 const DECODE_LINES = 60;           // a panic dump is about 30 lines (header, registers, backtrace); 60 holds it with what led up to it
 
-function Decode({ commands, link, recent, onDone }) {
+function Decode({ commands, link, recent, onDone, bare }) {
   const decode = (commands || []).find((c) => c.name === "esp32.decode") || null;
   const list = (commands || []).find((c) => c.name === "firmware.list") || null;
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(Boolean(bare));        // in a drawer the form is open from the start
   const [bundles, setBundles] = useState(null);
   const [firmware, setFirmware] = useState("");
   const [text, setText] = useState("");
   const [outcome, setOutcome] = useState(null);
 
-  function toggle() {
-    if (!open) {
-      setText(recent.slice(-DECODE_LINES).join("\n"));
-      setOutcome(null);
-      if (list) {
-        readJson(list.path).then((r) => {
-          const items = r.ok && r.body && r.body.data ? r.body.data.items || [] : [];
-          setBundles(items.filter((i) => i.kind === "esp-bundle" && i.elf));
-        }).catch(() => setBundles([]));
-      }
+  function load() {
+    setText(recent.slice(-DECODE_LINES).join("\n"));
+    setOutcome(null);
+    if (list) {
+      readJson(list.path).then((r) => {
+        const items = r.ok && r.body && r.body.data ? r.body.data.items || [] : [];
+        setBundles(items.filter((i) => i.kind === "esp-bundle" && i.elf));
+      }).catch(() => setBundles([]));
     }
+  }
+  function toggle() {
+    if (!open) load();
     setOpen(!open);
   }
+  useEffect(() => { if (bare) load(); }, []);            // eslint-disable-line react-hooks/exhaustive-deps
 
   async function run(event) {
     event.preventDefault();
@@ -348,8 +352,9 @@ function Decode({ commands, link, recent, onDone }) {
 
   if (!decode) return null;
   const data = outcome && outcome.body && outcome.body.data;
+  const Wrap = bare ? "div" : Card;
   return (
-    <Card title="Decode a crash" aside={<Button tone="quiet" onClick={toggle} aria-expanded={open}>{open ? "Close" : "Open"}</Button>}>
+    <Wrap {...(bare ? {} : { title: "Decode a crash", aside: <Button tone="quiet" onClick={toggle} aria-expanded={open}>{open ? "Close" : "Open"}</Button> })}>
       {!open ? (
         <p className="text-[13px] text-slate-600 dark:text-slate-400">Names the functions in a crash dump.</p>
       ) : (
@@ -392,12 +397,106 @@ function Decode({ commands, link, recent, onDone }) {
           )}
         </form>
       )}
-    </Card>
+    </Wrap>
+  );
+}
+
+// One line of the log as plain text: what the person would copy. A line sent from here has its outcome after it; a line the board cut short ends in an ellipsis.
+function lineText(x) {
+  if (x.kind === "tx") return `> ${x.text}${x.cls !== "ok" ? ` [${x.cls}: ${x.code}]` : ""}`;
+  return `${x.text}${x.partial ? "…" : ""}`;
+}
+
+const LOG_ROW_H = 20;            // one line of 12 px monospace text at 20 px leading, so the rows that fit are the height over this
+
+// The newest lines that fit the space the log has, one row each (docs/specs/navigation.md, "Full-height pages", Console). It FOLLOWS the newest line until the person pages back, and a
+// page back stays put when lines arrive: its place is the index just after its last line, counted from the start, so a new line does not move it. A row picked shows its whole text in
+// the strip below, since a line (a board's SLEEPNOW) can be longer than a row.
+function Tail({ items, empty }) {
+  const box = useRef(null);
+  const [fit, setFit] = useState(10);
+  const [endAt, setEndAt] = useState(null);                  // null follows the newest; else the index after the last line shown
+  const [picked, setPicked] = useState(null);                // the key of the line whose whole text is shown
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return undefined;
+    const measure = () => setFit(Math.max(1, Math.floor(el.clientHeight / LOG_ROW_H)));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const n = items.length;
+  const following = endAt === null || endAt >= n;
+  const end = following ? n : Math.max(endAt, Math.min(fit, n));
+  const start = Math.max(0, end - fit);
+  const part = items.slice(start, end);
+  const shown = items.find((x) => x.key === picked) || part[part.length - 1] || null;
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-1">
+      <ul ref={box} role="log" aria-label="Console log" className="min-h-0 flex-1 overflow-hidden rounded-lg border border-slate-300 bg-slate-50 font-mono text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100">
+        {n === 0 && <li className="p-2 text-slate-600 dark:text-slate-400">{empty}</li>}
+        {part.map((x) => (
+          <li key={x.key} data-kind={x.kind} style={{ height: LOG_ROW_H }} onClick={() => setPicked(x.key)}
+            className={cx("flex cursor-pointer items-center gap-2 px-2 hover:bg-slate-200 dark:hover:bg-slate-800", picked === x.key && "bg-blue-100 dark:bg-blue-950")}>
+            <span className="shrink-0 text-slate-500 dark:text-slate-400">{clock(x.wall)}</span>
+            <span className={cx("min-w-0 flex-1 truncate", x.kind === "tx" ? "text-blue-800 dark:text-blue-300" : x.reply ? "text-emerald-800 dark:text-emerald-300" : "")}>{lineText(x)}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="flex h-8 shrink-0 items-center gap-1 text-xs text-slate-600 dark:text-slate-400">
+        <span data-testid="follow" className={following ? "font-medium text-emerald-700 dark:text-emerald-400" : "font-medium text-amber-700 dark:text-amber-400"}>{following ? "Following" : "Paused"}</span>
+        {n > 0 && <span data-testid="pager" className="ml-2 mr-auto">{start + 1} to {end} of {n}</span>}
+        <Button tone="quiet" className="min-h-7! px-3! py-0.5!" disabled={start === 0} onClick={() => setEndAt(Math.max(Math.min(fit, n), end - fit))} aria-label="Older lines">‹</Button>
+        <Button tone="quiet" className="min-h-7! px-3! py-0.5!" disabled={following} onClick={() => setEndAt(end + fit >= n ? null : end + fit)} aria-label="Newer lines">›</Button>
+        <Button tone="quiet" className="min-h-7! px-3! py-0.5!" disabled={following} onClick={() => setEndAt(null)}>Latest</Button>
+      </div>
+      <div data-testid="line-detail" className="h-14 shrink-0 overflow-hidden whitespace-pre-wrap break-all rounded-md bg-slate-100 p-2 font-mono text-xs leading-4 text-slate-800 dark:bg-slate-900 dark:text-slate-200">{shown ? `${clock(shown.wall)}  ${lineText(shown)}` : ""}</div>
+    </div>
+  );
+}
+
+// The wide page: everything on one screen (the log, the link, the input) and the two forms in drawers. The page flows on a phone.
+function WideConsole({ commands, list, link, setChosen, feed, items, history, sendCommand, lines, onDone }) {
+  const [drawer, setDrawer] = useState(null);                // "macros" or "decode"
+  const close = () => setDrawer(null);
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col gap-2">
+      <PageHeader
+        title="Console"
+        topic="console"
+        aside={
+          <>
+            {commands && commands.some((c) => c.name === "console.macro_list") && <Button tone="quiet" onClick={() => setDrawer("macros")}>Macros</Button>}
+            {link.own_bridge && commands && commands.some((c) => c.name === "esp32.decode") && <Button tone="quiet" onClick={() => setDrawer("decode")}>Decode a crash</Button>}
+            <label className="flex items-center gap-2 text-sm">
+              Link
+              <select aria-label="Link" className={inputClass + " w-auto"} value={link.name} onChange={(e) => setChosen(e.target.value)}>
+                {list.map((l) => <option key={l.name} value={l.name}>{l.name}, {l.state}</option>)}
+              </select>
+            </label>
+          </>
+        }
+      />
+      <Card className="flex min-h-0 flex-1 flex-col gap-2">
+        <LinkInfo link={link} />
+        {feed && feed.state !== "live" && (
+          <p role="note" className="shrink-0 rounded-md bg-amber-100 p-2 text-[13px] text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+            The live log is not connected ({feed.state}). Lines appear when it reconnects.
+          </p>
+        )}
+        <Tail key={`log-${link.name}`} items={items} empty={link.state === "open" ? "Nothing received yet." : "Nothing received."} />
+        <Input key={`input-${link.name}`} link={link} sendCommand={sendCommand} history={history} onDone={onDone} />
+      </Card>
+      {drawer === "macros" && <Drawer title="Macros" onClose={close} wide><Macros bare commands={commands} link={link} onDone={onDone} /></Drawer>}
+      {drawer === "decode" && <Drawer title="Decode a crash" onClose={close} wide><Decode bare key={link.name} commands={commands} link={link} recent={(lines[link.name] || []).map((l) => l.text)} onDone={onDone} /></Drawer>}
+    </div>
   );
 }
 
 export default function Console({ commands, links, lines, activity, feed, onDone }) {
   const sendCommand = (commands || []).find((c) => c.name === "console.send") || null;
+  const wide = useWide();
   const [chosen, setChosen] = useState("");
   const list = links || [];
   const link = list.find((l) => l.name === chosen) || list[0] || null;
@@ -416,6 +515,10 @@ export default function Console({ commands, links, lines, activity, feed, onDone
     );
   }
 
+  if (wide) {
+    return <WideConsole commands={commands} list={list} link={link} setChosen={setChosen} feed={feed} items={items} history={history} sendCommand={sendCommand} lines={lines} onDone={onDone} />;
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader title="Console" topic="console" />
@@ -423,7 +526,7 @@ export default function Console({ commands, links, lines, activity, feed, onDone
         aside={
           <label className="flex items-center gap-2 text-sm">
             Link
-            <select className={inputClass + " w-auto"} value={link.name} onChange={(e) => setChosen(e.target.value)}>
+            <select aria-label="Link" className={inputClass + " w-auto"} value={link.name} onChange={(e) => setChosen(e.target.value)}>
               {list.map((l) => <option key={l.name} value={l.name}>{l.name}, {l.state}</option>)}
             </select>
           </label>
