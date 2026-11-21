@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { readJson, writeFile, writeJson } from "./api.js";
 import { PROJECT_NAME } from "./format.js";
-import { Button, Card, Chip, Field, Lamp, PageHeader, SlugNote, cx, inputClass } from "./ui.jsx";
+import { Button, Card, Chip, Field, FitList, Lamp, PageHeader, SlugNote, cx, inputClass, useWide } from "./ui.jsx";
 import { ResultView } from "./Commands.jsx";
 
 // Projects (docs/specs/projects.md). A project is a written-down bench setup. The page lists them, opens one to show its roles, what it
@@ -18,8 +18,8 @@ function ProjectRow({ p, open, onOpen }) {
         className={cx("flex w-full min-h-14 items-center gap-3 px-1 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60", open && "bg-slate-50 dark:bg-slate-800/60")}>
         <Lamp state={p.state} size={16} />
         <span className="min-w-0 flex-1">
-          <span className="block text-[15px] font-medium">{p.name}</span>
-          <span className="block text-[13px] text-slate-600 dark:text-slate-400">{p.purpose || (p.manifest ? "no purpose written" : "a firmware folder, no manifest yet")}</span>
+          <span className="block text-[15px] font-medium [overflow-wrap:anywhere]">{p.name}</span>
+          <span className="block text-[13px] text-slate-600 [overflow-wrap:anywhere] dark:text-slate-400">{p.purpose || (p.manifest ? "no purpose written" : "a firmware folder, no manifest yet")}</span>
         </span>
         <span className="shrink-0 text-[13px] text-slate-600 dark:text-slate-400">{p.word || "no manifest"}</span>
       </button>
@@ -78,7 +78,7 @@ function Role({ r, project, flash, onFlashRole, applied }) {
   );
 }
 
-function Detail({ name, cmd, onChanged, onDone, onGone }) {
+function Detail({ name, cmd, onChanged, onDone, onGone, bare }) {
   const [show, setShow] = useState(null);
   const [plan, setPlan] = useState(null);
   const [outcome, setOutcome] = useState(null);
@@ -136,7 +136,7 @@ function Detail({ name, cmd, onChanged, onDone, onGone }) {
   const applied = Boolean(show.applied);
   const busy = Boolean(outcome && outcome.pending);
   return (
-    <div className="space-y-4 border-t border-slate-200 px-4 py-4 dark:border-slate-800" aria-label={`Project ${name}`}>
+    <div className={cx("space-y-4", !bare && "border-t border-slate-200 px-4 py-4 dark:border-slate-800")} aria-label={`Project ${name}`}>
       {!show.manifest ? (
         <p className="text-[13px] text-slate-600 dark:text-slate-400">{show.note}</p>
       ) : (
@@ -197,6 +197,7 @@ function Detail({ name, cmd, onChanged, onDone, onGone }) {
 }
 
 export default function Projects({ commands, refreshKey, onChanged, onDone }) {
+  const wide = useWide();
   const cmd = {};
   (commands || []).forEach((c) => { if (c.name.startsWith("project.")) cmd[c.name] = c; });
   const list = cmd["project.list"] || null;
@@ -228,6 +229,57 @@ export default function Projects({ commands, refreshKey, onChanged, onDone }) {
     setOutcome(r.ok ? null : r);
     if (onDone) onDone(r);
     if (r.ok) { setName(""); setOpen(n); changed(); }
+  }
+
+  // The wide page (docs/specs/navigation.md, "Full-height pages", Projects): the projects as a paged list of fixed rows with the new-project form at its foot, the chosen project's whole detail in a panel beside it.
+  if (wide) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-2">
+        <PageHeader title="Projects" topic="projects" />
+        {error && <p role="alert" className="shrink-0 text-[13px] text-red-800 dark:text-red-300">Projects could not be read ({error}).</p>}
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] gap-3" style={{ gridTemplateRows: "minmax(0, 1fr)" }}>
+          <Card className="flex min-h-0 flex-col">
+            {projects === null ? (
+              <p className="text-[13px] text-slate-600 dark:text-slate-400">Reading the projects…</p>
+            ) : (
+              <FitList label="Projects" rowH={56} items={projects} keyOf={(p) => p.name} empty="No project yet."
+                render={(p) => (
+                  <button type="button" aria-pressed={open === p.name} onClick={() => setOpen(open === p.name ? null : p.name)}
+                    className={cx("flex h-full w-full min-w-0 items-center gap-3 rounded-md px-2 text-left", open === p.name ? "bg-slate-100 dark:bg-slate-800" : "hover:bg-slate-50 dark:hover:bg-slate-800/60")}>
+                    <Lamp state={p.state} size={16} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[15px] font-medium">{p.name}</span>
+                      <span className="block truncate text-[13px] text-slate-600 dark:text-slate-400">{p.purpose || (p.manifest ? "no purpose written" : "a firmware folder, no manifest yet")}</span>
+                    </span>
+                    <span className="max-w-[40%] shrink-0 truncate text-[13px] text-slate-600 dark:text-slate-400">{p.word || "no manifest"}</span>
+                  </button>
+                )} />
+            )}
+            {cmd["project.put"] && (
+              <form onSubmit={create} className="mt-2 flex shrink-0 items-end gap-3 border-t border-slate-200 pt-3 dark:border-slate-800">
+                <div className="min-w-0 flex-1">
+                  <Field label="New project">
+                    <input className={inputClass} type="text" value={name} onChange={(e) => setName(e.target.value.toLowerCase())} aria-label="New project name" autoComplete="off" spellCheck="false" />
+                  </Field>
+                  <SlugNote value={name} />
+                </div>
+                <Button type="submit" disabled={!PROJECT_NAME.test(name.trim())}>Create project</Button>
+              </form>
+            )}
+          </Card>
+          <Card className="flex min-h-0 flex-col" title={open || "Project"}>
+            <div data-testid="work" className="min-h-0 flex-1 overflow-y-auto">
+              {outcome && <div className="mb-3"><ResultView outcome={outcome} pendingText="Working…" /></div>}
+              {open ? (
+                <Detail key={open} bare name={open} cmd={cmd} onChanged={changed} onDone={onDone} onGone={() => { setOpen(null); changed(); }} />
+              ) : (
+                <p className="text-[15px] text-slate-600 dark:text-slate-400">Choose a project to see what it needs, where the bench differs and what can be done with it.</p>
+              )}
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
   }
 
   return (
