@@ -229,10 +229,17 @@ export default function MeterPage({ commands, onDone }) {
   const wanted = replayOf || (session && session.mode === "record" && session.name ? session.name : null);
   const scopeRecording = wanted && (recordings === null || recordings.some((r) => r.name === wanted)) ? wanted : null;
   const justRecorded = !running && session && session.session > 0 && session.mode === "record" && session.name && (recordings || []).some((r) => r.name === session.name);
+  // A session that waits for wakes says how many whole ones it has seen of how many it wants, and when it gives up (docs/specs/power-workbench.md, "Capture"); how a finished one ended comes from `ended_by`.
+  const wantWakes = session && session.stop_after_wakes ? session.stop_after_wakes : null;
+  const seenWakes = session && session.wakes ? session.wakes : 0;
+  const noun = (k) => (k === 1 ? "wake" : "wakes");
+  const giveUp = session && session.bound_s >= 43200 ? "12 h" : session ? clock(session.bound_s) : "";
   const sessionText = running
-    ? `${session.state}, ${clock(latest ? latest.t_s : 0)} ${session.bound_s >= 43200 ? "(stops at 12 h)" : `of ${clock(session.bound_s)}`}, ${count} samples${session.name ? `, to ${session.name}.csv` : ""}`
+    ? `${session.state}, ${clock(latest ? latest.t_s : 0)}${wantWakes ? `, ${seenWakes} of ${wantWakes} ${noun(wantWakes)}, gives up at ${giveUp}` : ` ${session.bound_s >= 43200 ? "(stops at 12 h)" : `of ${clock(session.bound_s)}`}`}, ${count} samples${session.name ? `, to ${session.name}.csv` : ""}`
     : session && session.session > 0
-      ? `${session.state === "error" ? "ended by a fault" : "ended"}: ${session.reason}. ${count} samples`
+      ? session.ended_by === "gave_up"
+        ? `ended: gave up after ${giveUp}, ${seenWakes} of ${wantWakes} ${noun(wantWakes)} seen. ${count} samples`
+        : `${session.state === "error" ? "ended by a fault" : "ended"}: ${session.reason}. ${count} samples`
       : "No session has run since the service started.";
 
   const notes = [];

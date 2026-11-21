@@ -6,6 +6,7 @@
 A real service over the fake PPK2 bench of verify_ppk2_live.py (no multimeter). In light and dark at 1280x720 and 1440x900:
   shell    the document does not scroll; nothing inside the page scrolls; the page uses the width beside the nav; the supply controls are on screen;
   capture  a length can be typed with its unit; Stop after offers Time and Never; there is no multimeter and no fixed list of durations.
+  wakes    Stop after Wakes: the running session says how many whole wakes it has seen of how many it wants, and a stop by hand is named as one.
   running  with a watch under way: a trace is drawn, the supply says it is held, the latest reading is shown, and still nothing scrolls.
 Exit 0 only if every selected check passed.
 """
@@ -121,6 +122,22 @@ def running(page, tag, shot):
     page.get_by_text(re.compile(r"^ended: stopped")).wait_for()
 
 
+def wakes(page, tag):
+    """Stop after Wakes: the card offers it, the running session says how many whole wakes it has seen of how many it wants (and that it gives up after 12 h), and a stop by hand is named as one."""
+    stop = page.get_by_role("group", name="Stop after")
+    check("%s Stop after offers Wakes, Time and Never" % tag, all(stop.get_by_role("button", name=n, exact=True).count() == 1 for n in ("Wakes", "Time", "Never")))
+    stop.get_by_role("button", name="Wakes", exact=True).click()
+    page.get_by_label("Number of wakes").fill("2")
+    page.get_by_role("button", name="Watch", exact=True).click()
+    text = re.compile(r"^watching, .* 0 of 2 wakes, gives up at 12 h")
+    page.get_by_label("Session").filter(has_text=text).wait_for()
+    check("%s a running session says 0 of 2 wakes and the give-up" % tag, True)
+    page.get_by_role("button", name="Stop").click()
+    page.get_by_text(re.compile(r"^ended: stopped\b")).wait_for()
+    check("%s a stop by hand is named as one" % tag, True)
+    stop.get_by_role("button", name="Time", exact=True).click()
+
+
 def run(page, bench, theme, width, height, only, shots):
     """One page for every theme and size: opening a page takes about 20 s on a loaded host, so it is opened once and only resized, re-themed and reloaded."""
     tag = "%s %dx%d" % (theme, width, height)
@@ -136,6 +153,8 @@ def run(page, bench, theme, width, height, only, shots):
             shell(page, tag)
         if only in (None, "capture"):
             capture(page, tag)
+        if only in (None, "wakes"):
+            wakes(page, tag)
         if only in (None, "running"):
             running(page, tag, os.path.join(shots, "%s-%dx%d-running.png" % (theme, width, height)))
     except Exception as exc:                                    # a missing control is a failed check, not a crash
@@ -144,7 +163,7 @@ def run(page, bench, theme, width, height, only, shots):
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", choices=("shell", "capture", "running"), default=None)
+    ap.add_argument("--only", choices=("shell", "capture", "wakes", "running"), default=None)
     ap.add_argument("--shots", default=None)
     ap.add_argument("--chrome", default="/usr/bin/google-chrome")
     args = ap.parse_args(argv)
