@@ -1,0 +1,6 @@
+$ python3 tests/instruments/test_wake_stretches.py
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 1.401s
+
+OK

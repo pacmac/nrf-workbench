@@ -527,3 +527,34 @@
     failures: 0
     at: '2026-11-22T00:08:29.464'
     commit: 57b4fe7-dirty
+- id: wake-table-has-no-stretches-above-a-level
+  type: new
+  what: 'meter.wake_table cannot say how long a wake''s bursts are: a wake with an extra closing transmit
+    (the bench RAK''s wake 8, closing 1.8 s against 0.6 to 0.8 s) looks like the others in every column
+    but its charge'
+  spec: docs/specs/power-workbench.md
+  files:
+  - nrf_workbench/instruments/waketable.py
+  - nrf_workbench/instruments/sampler.py
+  - nrf_workbench/instruments/meter.py
+  test:
+    command:
+    - python3
+    - tests/instruments/test_wake_stretches.py
+    criterion: meter.wake_table level_ma gives each wake its stretches over the level with start and length,
+      and above_s
+    runs: 1
+  trial:
+    file: .proofs/wake-table-has-no-stretches-above-a-level.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-22T00:24:23.747'
+    commit: 5eb51b6-dirty
+  fix:
+    file: .proofs/wake-table-has-no-stretches-above-a-level.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-22T00:27:05.070'
+    commit: 6a7749e-dirty

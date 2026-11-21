@@ -1,0 +1,133 @@
+$ python3 tests/instruments/test_wake_stretches.py
+EE.EEEEEE
+======================================================================
+ERROR: test_a_burst_shorter_than_a_block_counts_by_its_highest_sample (__main__.Stretches.test_a_burst_shorter_than_a_block_counts_by_its_highest_sample)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_wake_stretches.py", line 90, in test_a_burst_shorter_than_a_block_counts_by_its_highest_sample
+    (row,) = self.table("spike")
+             ~~~~~~~~~~^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_wake_stretches.py", line 47, in table
+    res = self.call("meter.wake_table", args)
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_capture.py", line 424, in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 222, in call
+    result = command.handler(ctx, **self.validate(command, args, from_text))
+                                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 199, in validate
+    raise UsageError("%s takes no argument %r (it takes: %s)"
+                     % (command.name, name, ", ".join(sorted(known)) or "none"), name)
+nrf_workbench.core.registry.UsageError: meter.wake_table takes no argument 'level_ma' (it takes: recording)
+
+======================================================================
+ERROR: test_a_burst_that_runs_on_from_another_is_one_longer_stretch_not_a_third (__main__.Stretches.test_a_burst_that_runs_on_from_another_is_one_longer_stretch_not_a_third)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_wake_stretches.py", line 71, in test_a_burst_that_runs_on_from_another_is_one_longer_stretch_not_a_third
+    self.make("run", dict(normal, **extra), blocks=50)
+                     ~~~~^^^^^^^^^^^^^^^^^
+TypeError: keywords must be strings
+
+======================================================================
+ERROR: test_a_quiet_block_between_two_bursts_makes_them_two_stretches (__main__.Stretches.test_a_quiet_block_between_two_bursts_makes_them_two_stretches)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_wake_stretches.py", line 79, in test_a_quiet_block_between_two_bursts_makes_them_two_stretches
+    (row,) = self.table("gap")
+             ~~~~~~~~~~^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_wake_stretches.py", line 47, in table
+    res = self.call("meter.wake_table", args)
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_capture.py", line 424, in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 222, in call
+    result = command.handler(ctx, **self.validate(command, args, from_text))
+                                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 199, in validate
+    raise UsageError("%s takes no argument %r (it takes: %s)"
+                     % (command.name, name, ", ".join(sorted(known)) or "none"), name)
+nrf_workbench.core.registry.UsageError: meter.wake_table takes no argument 'level_ma' (it takes: recording)
+
+======================================================================
+ERROR: test_a_wake_that_ends_in_a_burst_has_it_as_its_last_stretch (__main__.Stretches.test_a_wake_that_ends_in_a_burst_has_it_as_its_last_stretch)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_wake_stretches.py", line 84, in test_a_wake_that_ends_in_a_burst_has_it_as_its_last_stretch
+    (row,) = self.table("end")
+             ~~~~~~~~~~^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_wake_stretches.py", line 47, in table
+    res = self.call("meter.wake_table", args)
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_capture.py", line 424, in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 222, in call
+    result = command.handler(ctx, **self.validate(command, args, from_text))
+                                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 199, in validate
+    raise UsageError("%s takes no argument %r (it takes: %s)"
+                     % (command.name, name, ", ".join(sorted(known)) or "none"), name)
+nrf_workbench.core.registry.UsageError: meter.wake_table takes no argument 'level_ma' (it takes: recording)
+
+======================================================================
+ERROR: test_a_wake_wholly_under_the_level_has_no_stretches (__main__.Stretches.test_a_wake_wholly_under_the_level_has_no_stretches)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_wake_stretches.py", line 96, in test_a_wake_wholly_under_the_level_has_no_stretches
+    (row,) = self.table("quiet")
+             ~~~~~~~~~~^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_wake_stretches.py", line 47, in table
+    res = self.call("meter.wake_table", args)
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_capture.py", line 424, in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 222, in call
+    result = command.handler(ctx, **self.validate(command, args, from_text))
+                                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 199, in validate
+    raise UsageError("%s takes no argument %r (it takes: %s)"
+                     % (command.name, name, ", ".join(sorted(known)) or "none"), name)
+nrf_workbench.core.registry.UsageError: meter.wake_table takes no argument 'level_ma' (it takes: recording)
+
+======================================================================
+ERROR: test_an_opening_burst_a_receive_plateau_and_a_closing_burst_are_two_stretches (__main__.Stretches.test_an_opening_burst_a_receive_plateau_and_a_closing_burst_are_two_stretches)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_wake_stretches.py", line 62, in test_an_opening_burst_a_receive_plateau_and_a_closing_burst_are_two_stretches
+    (row,) = self.table("two")
+             ~~~~~~~~~~^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_wake_stretches.py", line 47, in table
+    res = self.call("meter.wake_table", args)
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_capture.py", line 424, in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 222, in call
+    result = command.handler(ctx, **self.validate(command, args, from_text))
+                                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 199, in validate
+    raise UsageError("%s takes no argument %r (it takes: %s)"
+                     % (command.name, name, ", ".join(sorted(known)) or "none"), name)
+nrf_workbench.core.registry.UsageError: meter.wake_table takes no argument 'level_ma' (it takes: recording)
+
+======================================================================
+ERROR: test_each_wake_of_a_recording_has_its_own_stretches_and_charge_is_still_the_awake_blocks (__main__.Stretches.test_each_wake_of_a_recording_has_its_own_stretches_and_charge_is_still_the_awake_blocks)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_wake_stretches.py", line 105, in test_each_wake_of_a_recording_has_its_own_stretches_and_charge_is_still_the_awake_blocks
+    self.make("two wakes", dict(self.span((10, 2, HIGH), (12, 2, LOW)), **self.span((30, 6, HIGH))), blocks=45)
+                           ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: keywords must be strings
+
+======================================================================
+ERROR: test_without_a_level_there_are_no_stretches_to_report (__main__.Stretches.test_without_a_level_there_are_no_stretches_to_report)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_wake_stretches.py", line 102, in test_without_a_level_there_are_no_stretches_to_report
+    self.assertEqual((row["stretches"], row["above_s"]), (None, None))
+                      ~~~^^^^^^^^^^^^^
+KeyError: 'stretches'
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.845s
+
+FAILED (errors=8)
