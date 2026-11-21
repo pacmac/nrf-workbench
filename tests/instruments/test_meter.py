@@ -298,7 +298,29 @@ class Transport(unittest.TestCase):
             self.assertEqual(conn.ask("*IDN?"), IDN)
 
     def test_callers_are_served_one_at_a_time(self):
+        """The service holds one connection to the meter at a time. That is counted where the connection is made and closed (the client), not on the fake's own server thread: that thread only
+        sees a close when its `recv` returns, so on a loaded host the next caller's connection can be accepted before the last one's close is noticed and the fake counts two that never
+        overlapped (the test failed 3 runs in 30 under load, and in about one full-suite run in three)."""
         self.fake.delay["READ?"] = 0.05
+        live, peak, guard = [0], [0], threading.Lock()
+        real_init, real_close = scpi.Connection.__init__, scpi.Connection.close
+
+        def init(conn, *a, **kw):
+            real_init(conn, *a, **kw)                      # raises Unreachable if it did not connect: then nothing is open
+            conn._counted = True
+            with guard:
+                live[0] += 1
+                peak[0] = max(peak[0], live[0])
+
+        def close(conn):
+            real_close(conn)                               # counted as closed only once the socket is
+            if getattr(conn, "_counted", False):
+                conn._counted = False
+                with guard:
+                    live[0] -= 1
+        scpi.Connection.__init__, scpi.Connection.close = init, close
+        self.addCleanup(setattr, scpi.Connection, "__init__", real_init)
+        self.addCleanup(setattr, scpi.Connection, "close", real_close)
         results = []
         threads = [threading.Thread(target=lambda: results.append(call(self, "meter.read"))) for _ in range(4)]
         for t in threads:
@@ -306,7 +328,8 @@ class Transport(unittest.TestCase):
         for t in threads:
             t.join()
         self.assertTrue(all(r.ok for r in results), results)
-        self.assertEqual(self.fake.max_open, 1)
+        self.assertEqual((peak[0], live[0]), (1, 0), "one connection at a time, and every one closed")
+        self.assertGreaterEqual(self.fake.connections, 4, "each of the four callers made its own")
 
 
 class Numbers(unittest.TestCase):
