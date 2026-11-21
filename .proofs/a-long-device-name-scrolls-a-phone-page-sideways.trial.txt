@@ -1,0 +1,133 @@
+$ python3 scripts/verify_devices_layout.py
+PASS  light 1280x720 the document does not scroll (720 of 720 px)
+PASS  light 1280x720 nothing outside the detail panel scrolls
+PASS  light 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 the page ends at the foot of the window
+PASS  light 1280x720 every panel lies inside the page
+PASS  light 1280x720 each panel's contents fill it down to its foot ([17, 17] px spare)
+PASS  light 1280x720 the list shows the rows that fit, fewer than all (9 of 19)
+PASS  light 1280x720 every row lies inside the list
+PASS  light 1280x720 the list is filled: less than one more row of room is left (13 of 56 px)
+PASS  light 1280x720 Next pages to the later devices ((10, 18, 19))
+PASS  light 1280x720 Previous returns to the first
+PASS  light 1280x720 no row on any page has its content cut off by its fixed height (0)
+PASS  light 1280x720 the Not attached tab shows its own list (1)
+PASS  light 1280x720 the All tab lists every device
+PASS  light 1280x720 choosing a device shows its serial in the panel
+PASS  light 1280x720 with a device chosen: the document does not scroll (720 of 720 px)
+PASS  light 1280x720 with a device chosen: nothing outside the detail panel scrolls
+PASS  light 1280x720 with a device chosen: the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 with a device chosen: the page ends at the foot of the window
+PASS  light 1280x720 with a device chosen: every panel lies inside the page
+PASS  light 1280x720 with a device chosen: each panel's contents fill it down to its foot ([17, 17] px spare)
+PASS  light 1280x720 an nRF board offers its name editor
+PASS  light 1280x720 with the name editor open: the document does not scroll (720 of 720 px)
+PASS  light 1280x720 with the name editor open: nothing outside the detail panel scrolls
+PASS  light 1280x720 with the name editor open: the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 with the name editor open: the page ends at the foot of the window
+PASS  light 1280x720 with the name editor open: every panel lies inside the page
+PASS  light 1280x720 with the name editor open: each panel's contents fill it down to its foot ([17, 17] px spare)
+PASS  light 1280x720 the power profiler's quick check opens in a drawer
+PASS  light 1280x720 Escape closes it
+PASS  light 1440x900 the document does not scroll (900 of 900 px)
+PASS  light 1440x900 nothing outside the detail panel scrolls
+PASS  light 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 the page ends at the foot of the window
+PASS  light 1440x900 every panel lies inside the page
+PASS  light 1440x900 each panel's contents fill it down to its foot ([17, 17] px spare)
+PASS  light 1440x900 the list shows the rows that fit, fewer than all (12 of 19)
+PASS  light 1440x900 every row lies inside the list
+PASS  light 1440x900 the list is filled: less than one more row of room is left (25 of 56 px)
+PASS  light 1440x900 Next pages to the later devices ((13, 19, 19))
+PASS  light 1440x900 Previous returns to the first
+PASS  light 1440x900 no row on any page has its content cut off by its fixed height (0)
+PASS  light 1440x900 the Not attached tab shows its own list (1)
+PASS  light 1440x900 the All tab lists every device
+PASS  light 1440x900 choosing a device shows its serial in the panel
+PASS  light 1440x900 with a device chosen: the document does not scroll (900 of 900 px)
+PASS  light 1440x900 with a device chosen: nothing outside the detail panel scrolls
+PASS  light 1440x900 with a device chosen: the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 with a device chosen: the page ends at the foot of the window
+PASS  light 1440x900 with a device chosen: every panel lies inside the page
+PASS  light 1440x900 with a device chosen: each panel's contents fill it down to its foot ([17, 17] px spare)
+PASS  light 1440x900 an nRF board offers its name editor
+PASS  light 1440x900 with the name editor open: the document does not scroll (900 of 900 px)
+PASS  light 1440x900 with the name editor open: nothing outside the detail panel scrolls
+PASS  light 1440x900 with the name editor open: the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 with the name editor open: the page ends at the foot of the window
+PASS  light 1440x900 with the name editor open: every panel lies inside the page
+PASS  light 1440x900 with the name editor open: each panel's contents fill it down to its foot ([17, 17] px spare)
+PASS  light 1440x900 the power profiler's quick check opens in a drawer
+PASS  light 1440x900 Escape closes it
+PASS  light 1024x440 the document does not scroll (440 of 440 px)
+PASS  light 1024x440 the detail is taller than its panel and scrolls inside it (268 of 236 px)
+PASS  light 1024x440 scrolled to its end, the editor's last button is in view
+FAIL  light 390x844 no horizontal scroll (1562 of 390 px)  -- [1562, 390]
+PASS  light 390x844 the list flows, with no pager
+PASS  dark 1280x720 the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 nothing outside the detail panel scrolls
+PASS  dark 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 the page ends at the foot of the window
+PASS  dark 1280x720 every panel lies inside the page
+PASS  dark 1280x720 each panel's contents fill it down to its foot ([17, 17] px spare)
+PASS  dark 1280x720 the list shows the rows that fit, fewer than all (9 of 19)
+PASS  dark 1280x720 every row lies inside the list
+PASS  dark 1280x720 the list is filled: less than one more row of room is left (13 of 56 px)
+PASS  dark 1280x720 Next pages to the later devices ((10, 18, 19))
+PASS  dark 1280x720 Previous returns to the first
+PASS  dark 1280x720 no row on any page has its content cut off by its fixed height (0)
+PASS  dark 1280x720 the Not attached tab shows its own list (1)
+PASS  dark 1280x720 the All tab lists every device
+PASS  dark 1280x720 choosing a device shows its serial in the panel
+PASS  dark 1280x720 with a device chosen: the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 with a device chosen: nothing outside the detail panel scrolls
+PASS  dark 1280x720 with a device chosen: the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 with a device chosen: the page ends at the foot of the window
+PASS  dark 1280x720 with a device chosen: every panel lies inside the page
+PASS  dark 1280x720 with a device chosen: each panel's contents fill it down to its foot ([17, 17] px spare)
+PASS  dark 1280x720 an nRF board offers its name editor
+PASS  dark 1280x720 with the name editor open: the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 with the name editor open: nothing outside the detail panel scrolls
+PASS  dark 1280x720 with the name editor open: the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 with the name editor open: the page ends at the foot of the window
+PASS  dark 1280x720 with the name editor open: every panel lies inside the page
+PASS  dark 1280x720 with the name editor open: each panel's contents fill it down to its foot ([17, 17] px spare)
+PASS  dark 1280x720 the power profiler's quick check opens in a drawer
+PASS  dark 1280x720 Escape closes it
+PASS  dark 1440x900 the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 nothing outside the detail panel scrolls
+PASS  dark 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 the page ends at the foot of the window
+PASS  dark 1440x900 every panel lies inside the page
+PASS  dark 1440x900 each panel's contents fill it down to its foot ([17, 17] px spare)
+PASS  dark 1440x900 the list shows the rows that fit, fewer than all (12 of 19)
+PASS  dark 1440x900 every row lies inside the list
+PASS  dark 1440x900 the list is filled: less than one more row of room is left (25 of 56 px)
+PASS  dark 1440x900 Next pages to the later devices ((13, 19, 19))
+PASS  dark 1440x900 Previous returns to the first
+PASS  dark 1440x900 no row on any page has its content cut off by its fixed height (0)
+PASS  dark 1440x900 the Not attached tab shows its own list (1)
+PASS  dark 1440x900 the All tab lists every device
+PASS  dark 1440x900 choosing a device shows its serial in the panel
+PASS  dark 1440x900 with a device chosen: the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 with a device chosen: nothing outside the detail panel scrolls
+PASS  dark 1440x900 with a device chosen: the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 with a device chosen: the page ends at the foot of the window
+PASS  dark 1440x900 with a device chosen: every panel lies inside the page
+PASS  dark 1440x900 with a device chosen: each panel's contents fill it down to its foot ([17, 17] px spare)
+PASS  dark 1440x900 an nRF board offers its name editor
+PASS  dark 1440x900 with the name editor open: the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 with the name editor open: nothing outside the detail panel scrolls
+PASS  dark 1440x900 with the name editor open: the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 with the name editor open: the page ends at the foot of the window
+PASS  dark 1440x900 with the name editor open: every panel lies inside the page
+PASS  dark 1440x900 with the name editor open: each panel's contents fill it down to its foot ([17, 17] px spare)
+PASS  dark 1440x900 the power profiler's quick check opens in a drawer
+PASS  dark 1440x900 Escape closes it
+PASS  dark 1024x440 the document does not scroll (440 of 440 px)
+PASS  dark 1024x440 the detail is taller than its panel and scrolls inside it (268 of 236 px)
+PASS  dark 1024x440 scrolled to its end, the editor's last button is in view
+FAIL  dark 390x844 no horizontal scroll (1562 of 390 px)  -- [1562, 390]
+PASS  dark 390x844 the list flows, with no pager
+
+130 checks, 2 failed. screenshots: /tmp/nrfwb-devices-layout-89x_1513
