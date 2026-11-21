@@ -144,11 +144,28 @@
   - nrf_workbench/instruments/capture.py
   - nrf_workbench/instruments/ppk2.py
   test:
-    command: null
-    criterion: meter.record with stop_after_wakes=1 ends after the first wake closes and not before
+    command:
+    - python3
+    - -m
+    - pytest
+    - tests/instruments/test_stop_after_wakes.py
+    - -q
+    criterion: the Capturer counts whole wakes; a session stops after N and says ended_by
     runs: 1
-  trial: null
-  fix: null
+  trial:
+    file: .proofs/the-capture-card-cannot-stop-on-wakes.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-21T19:06:45.262'
+    commit: c0a985b-dirty
+  fix:
+    file: .proofs/the-capture-card-cannot-stop-on-wakes.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-21T19:14:18.550'
+    commit: 49c77f0-dirty
 - id: a-wakes-length-includes-its-lead-in-and-tail
   type: bug
   what: a capture's duration_s is the lead-in block plus the awake blocks plus one tail block, so it is
@@ -289,12 +306,30 @@
   files:
   - nrf_workbench/instruments/sampler.py
   test:
-    command: null
-    criterion: 'the session summary and sidecar carry ended_by: wakes_done, time_reached, gave_up, stopped
-      or error'
+    command:
+    - python3
+    - -m
+    - pytest
+    - tests/instruments/test_stop_after_wakes.py
+    - -q
+    - -k
+    - HowASessionEnds
+    criterion: the session summary and sidecar carry ended_by
     runs: 1
-  trial: null
-  fix: null
+  trial:
+    file: .proofs/a-session-does-not-say-why-it-ended.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-21T19:06:47.133'
+    commit: c0a985b-dirty
+  fix:
+    file: .proofs/a-session-does-not-say-why-it-ended.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-21T19:14:20.416'
+    commit: 49c77f0-dirty
 - id: the-ppk2-browser-script-checks-the-old-meter-page
   type: bug
   what: scripts/verify_ppk2_live.py drives the removed Meter page (the instrument switch, the Watch select,

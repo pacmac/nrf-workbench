@@ -1,0 +1,286 @@
+$ python3 -m pytest tests/instruments/test_stop_after_wakes.py -q
+/usr/share/pac/py/lib/python3.13/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+FFF..FFF.FF.FFF                                                          [100%]
+=================================== FAILURES ===================================
+_ TheCapturerCountsWholeWakes.test_a_wake_counts_when_it_closes_and_not_when_it_opens _
+
+self = <test_stop_after_wakes.TheCapturerCountsWholeWakes testMethod=test_a_wake_counts_when_it_closes_and_not_when_it_opens>
+
+    def test_a_wake_counts_when_it_closes_and_not_when_it_opens(self):
+        c = capture.Capturer(given())
+        feed_blocks(c, quiet(2) + hot(2))
+>       self.assertEqual((c.count, c.whole), (1, 0), "open: not counted yet")
+                                   ^^^^^^^
+E       AttributeError: 'Capturer' object has no attribute 'whole'
+
+tests/instruments/test_stop_after_wakes.py:31: AttributeError
+_ TheCapturerCountsWholeWakes.test_a_wake_cut_at_the_longest_is_not_counted_and_nor_is_its_continuation _
+
+self = <test_stop_after_wakes.TheCapturerCountsWholeWakes testMethod=test_a_wake_cut_at_the_longest_is_not_counted_and_nor_is_its_continuation>
+
+    def test_a_wake_cut_at_the_longest_is_not_counted_and_nor_is_its_continuation(self):
+        c = capture.Capturer(given(max_s=1.0))                          # 5 blocks
+        feed_blocks(c, quiet(2) + hot(8) + quiet(3))
+>       self.assertEqual(c.whole, 0)
+                         ^^^^^^^
+E       AttributeError: 'Capturer' object has no attribute 'whole'
+
+tests/instruments/test_stop_after_wakes.py:44: AttributeError
+_ TheCapturerCountsWholeWakes.test_a_wake_in_progress_when_the_recording_began_is_kept_and_not_counted _
+
+self = <test_stop_after_wakes.TheCapturerCountsWholeWakes testMethod=test_a_wake_in_progress_when_the_recording_began_is_kept_and_not_counted>
+
+    def test_a_wake_in_progress_when_the_recording_began_is_kept_and_not_counted(self):
+        c = capture.Capturer(given())
+        feed_blocks(c, hot(2) + quiet(3) + hot(2) + quiet(3))
+>       self.assertEqual((c.count, c.whole), (2, 1))
+                                   ^^^^^^^
+E       AttributeError: 'Capturer' object has no attribute 'whole'
+
+tests/instruments/test_stop_after_wakes.py:38: AttributeError
+_ OnTheSession.test_a_recording_ends_when_the_second_wake_has_closed_and_keeps_both_whole _
+
+self = <test_stop_after_wakes.OnTheSession testMethod=test_a_recording_ends_when_the_second_wake_has_closed_and_keeps_both_whole>
+
+    def test_a_recording_ends_when_the_second_wake_has_closed_and_keeps_both_whole(self):
+>       self.start(stop_after_wakes=2)
+
+tests/instruments/test_stop_after_wakes.py:62: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/instruments/test_stop_after_wakes.py:53: in start
+    res = self.call(command, a)
+          ^^^^^^^^^^^^^^^^^^^^^
+tests/instruments/test_capture.py:424: in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nrf_workbench/core/registry.py:222: in call
+    result = command.handler(ctx, **self.validate(command, args, from_text))
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <nrf_workbench.core.registry.Registry object at 0x71b47244e710>
+command = <nrf_workbench.core.registry.Command object at 0x71b4723df1b0>
+raw = {'source': 'ppk2', 'wake_sleep_a': 4.3236906296380246e-05, 'stop_after_wakes': 2, 'name': 'swk'}
+from_text = False
+
+    def validate(self, command, raw, from_text=False):
+        """Typed keyword arguments from `raw`. `from_text` is for a query string or a command line,
+        where everything arrives as text and is parsed; a JSON body is NOT parsed, it is checked."""
+        raw = dict(raw or {})
+        known = dict((a.name, a) for a in command.args)
+        for name in raw:
+            if name not in known:
+>               raise UsageError("%s takes no argument %r (it takes: %s)"
+                                 % (command.name, name, ", ".join(sorted(known)) or "none"), name)
+E               nrf_workbench.core.registry.UsageError: meter.record takes no argument 'stop_after_wakes' (it takes: bound_s, name, source, wake_awake_a, wake_hold_s, wake_lead_s, wake_max_s, wake_sleep_a)
+
+nrf_workbench/core/registry.py:199: UsageError
+_______ OnTheSession.test_a_wake_in_progress_at_the_start_does_not_count _______
+
+self = <test_stop_after_wakes.OnTheSession testMethod=test_a_wake_in_progress_at_the_start_does_not_count>
+
+    def test_a_wake_in_progress_at_the_start_does_not_count(self):
+        self.unit.profile = lambda i: (WAKE_ADC if (i // 20000) % 10 == 0 else 1000, 0)
+>       self.start(stop_after_wakes=1)
+
+tests/instruments/test_stop_after_wakes.py:71: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/instruments/test_stop_after_wakes.py:53: in start
+    res = self.call(command, a)
+          ^^^^^^^^^^^^^^^^^^^^^
+tests/instruments/test_capture.py:424: in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nrf_workbench/core/registry.py:222: in call
+    result = command.handler(ctx, **self.validate(command, args, from_text))
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <nrf_workbench.core.registry.Registry object at 0x71b47253fe10>
+command = <nrf_workbench.core.registry.Command object at 0x71b472477110>
+raw = {'source': 'ppk2', 'wake_sleep_a': 4.3236906296380246e-05, 'stop_after_wakes': 1, 'name': 'swk'}
+from_text = False
+
+    def validate(self, command, raw, from_text=False):
+        """Typed keyword arguments from `raw`. `from_text` is for a query string or a command line,
+        where everything arrives as text and is parsed; a JSON body is NOT parsed, it is checked."""
+        raw = dict(raw or {})
+        known = dict((a.name, a) for a in command.args)
+        for name in raw:
+            if name not in known:
+>               raise UsageError("%s takes no argument %r (it takes: %s)"
+                                 % (command.name, name, ", ".join(sorted(known)) or "none"), name)
+E               nrf_workbench.core.registry.UsageError: meter.record takes no argument 'stop_after_wakes' (it takes: bound_s, name, source, wake_awake_a, wake_hold_s, wake_lead_s, wake_max_s, wake_sleep_a)
+
+nrf_workbench/core/registry.py:199: UsageError
+_ OnTheSession.test_a_wake_period_is_never_assumed_so_with_no_bound_the_give_up_is_the_twelve_hour_maximum _
+
+self = <test_stop_after_wakes.OnTheSession testMethod=test_a_wake_period_is_never_assumed_so_with_no_bound_the_give_up_is_the_twelve_hour_maximum>
+
+    def test_a_wake_period_is_never_assumed_so_with_no_bound_the_give_up_is_the_twelve_hour_maximum(self):
+        """Wakes need not be periodic (a button, a motion sensor, a radio frame), so no bound is derived from how often a board wakes."""
+        self.unit.profile = FLAT
+>       res = self.start(stop_after_wakes=1)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/instruments/test_stop_after_wakes.py:87: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/instruments/test_stop_after_wakes.py:53: in start
+    res = self.call(command, a)
+          ^^^^^^^^^^^^^^^^^^^^^
+tests/instruments/test_capture.py:424: in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nrf_workbench/core/registry.py:222: in call
+    result = command.handler(ctx, **self.validate(command, args, from_text))
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <nrf_workbench.core.registry.Registry object at 0x71b47240c640>
+command = <nrf_workbench.core.registry.Command object at 0x71b4723de490>
+raw = {'source': 'ppk2', 'wake_sleep_a': 4.3236906296380246e-05, 'stop_after_wakes': 1, 'name': 'swk'}
+from_text = False
+
+    def validate(self, command, raw, from_text=False):
+        """Typed keyword arguments from `raw`. `from_text` is for a query string or a command line,
+        where everything arrives as text and is parsed; a JSON body is NOT parsed, it is checked."""
+        raw = dict(raw or {})
+        known = dict((a.name, a) for a in command.args)
+        for name in raw:
+            if name not in known:
+>               raise UsageError("%s takes no argument %r (it takes: %s)"
+                                 % (command.name, name, ", ".join(sorted(known)) or "none"), name)
+E               nrf_workbench.core.registry.UsageError: meter.record takes no argument 'stop_after_wakes' (it takes: bound_s, name, source, wake_awake_a, wake_hold_s, wake_lead_s, wake_max_s, wake_sleep_a)
+
+nrf_workbench/core/registry.py:199: UsageError
+_ OnTheSession.test_no_wake_ever_is_a_give_up_at_the_bound_given_and_says_how_many_were_seen _
+
+self = <test_stop_after_wakes.OnTheSession testMethod=test_no_wake_ever_is_a_give_up_at_the_bound_given_and_says_how_many_were_seen>
+
+    def test_no_wake_ever_is_a_give_up_at_the_bound_given_and_says_how_many_were_seen(self):
+        self.unit.profile = FLAT
+>       res = self.start(stop_after_wakes=1, bound_s=2.0)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/instruments/test_stop_after_wakes.py:79: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/instruments/test_stop_after_wakes.py:53: in start
+    res = self.call(command, a)
+          ^^^^^^^^^^^^^^^^^^^^^
+tests/instruments/test_capture.py:424: in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nrf_workbench/core/registry.py:222: in call
+    result = command.handler(ctx, **self.validate(command, args, from_text))
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <nrf_workbench.core.registry.Registry object at 0x71b4725d2470>
+command = <nrf_workbench.core.registry.Command object at 0x71b4724380f0>
+raw = {'source': 'ppk2', 'wake_sleep_a': 4.3236906296380246e-05, 'stop_after_wakes': 1, 'bound_s': 2.0, ...}
+from_text = False
+
+    def validate(self, command, raw, from_text=False):
+        """Typed keyword arguments from `raw`. `from_text` is for a query string or a command line,
+        where everything arrives as text and is parsed; a JSON body is NOT parsed, it is checked."""
+        raw = dict(raw or {})
+        known = dict((a.name, a) for a in command.args)
+        for name in raw:
+            if name not in known:
+>               raise UsageError("%s takes no argument %r (it takes: %s)"
+                                 % (command.name, name, ", ".join(sorted(known)) or "none"), name)
+E               nrf_workbench.core.registry.UsageError: meter.record takes no argument 'stop_after_wakes' (it takes: bound_s, name, source, wake_awake_a, wake_hold_s, wake_lead_s, wake_max_s, wake_sleep_a)
+
+nrf_workbench/core/registry.py:199: UsageError
+_____ OnTheSession.test_wakes_at_irregular_times_are_counted_all_the_same ______
+
+self = <test_stop_after_wakes.OnTheSession testMethod=test_wakes_at_irregular_times_are_counted_all_the_same>
+
+    def test_wakes_at_irregular_times_are_counted_all_the_same(self):
+        self.unit.profile = lambda i: (WAKE_ADC if (i // 20000) in (3, 4, 9, 31, 32) else 1000, 0)          # three wakes, 1.2 s then 4.4 s apart
+>       self.start(stop_after_wakes=3)
+
+tests/instruments/test_stop_after_wakes.py:95: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/instruments/test_stop_after_wakes.py:53: in start
+    res = self.call(command, a)
+          ^^^^^^^^^^^^^^^^^^^^^
+tests/instruments/test_capture.py:424: in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nrf_workbench/core/registry.py:222: in call
+    result = command.handler(ctx, **self.validate(command, args, from_text))
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <nrf_workbench.core.registry.Registry object at 0x71b47242d260>
+command = <nrf_workbench.core.registry.Command object at 0x71b472439d10>
+raw = {'source': 'ppk2', 'wake_sleep_a': 4.3236906296380246e-05, 'stop_after_wakes': 3, 'name': 'swk'}
+from_text = False
+
+    def validate(self, command, raw, from_text=False):
+        """Typed keyword arguments from `raw`. `from_text` is for a query string or a command line,
+        where everything arrives as text and is parsed; a JSON body is NOT parsed, it is checked."""
+        raw = dict(raw or {})
+        known = dict((a.name, a) for a in command.args)
+        for name in raw:
+            if name not in known:
+>               raise UsageError("%s takes no argument %r (it takes: %s)"
+                                 % (command.name, name, ", ".join(sorted(known)) or "none"), name)
+E               nrf_workbench.core.registry.UsageError: meter.record takes no argument 'stop_after_wakes' (it takes: bound_s, name, source, wake_awake_a, wake_hold_s, wake_lead_s, wake_max_s, wake_sleep_a)
+
+nrf_workbench/core/registry.py:199: UsageError
+_ HowASessionEnds.test_a_stop_by_hand_is_stopped_and_a_running_session_has_no_cause_yet _
+
+self = <test_stop_after_wakes.HowASessionEnds testMethod=test_a_stop_by_hand_is_stopped_and_a_running_session_has_no_cause_yet>
+
+    def test_a_stop_by_hand_is_stopped_and_a_running_session_has_no_cause_yet(self):
+        self.unit.profile = FLAT
+        self.assertTrue(self.call("meter.watch", {"bound_s": 60, "source": "ppk2"}).ok)
+>       self.assertIsNone(self.sampler.session()["ended_by"])
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'ended_by'
+
+tests/instruments/test_stop_after_wakes.py:139: KeyError
+____ HowASessionEnds.test_a_unit_that_goes_silent_is_error_with_the_reason _____
+
+self = <test_stop_after_wakes.HowASessionEnds testMethod=test_a_unit_that_goes_silent_is_error_with_the_reason>
+
+    def test_a_unit_that_goes_silent_is_error_with_the_reason(self):
+        self.assertTrue(self.call("meter.watch", {"bound_s": 60, "source": "ppk2"}).ok)
+        self.assertTrue(until(lambda: self.sampler.session()["stats"]["readings"] > 0, 10))
+        self.unit.silent = True
+        s = self.done()
+>       self.assertEqual(s["ended_by"], "error")
+                         ^^^^^^^^^^^^^
+E       KeyError: 'ended_by'
+
+tests/instruments/test_stop_after_wakes.py:148: KeyError
+_____________ HowASessionEnds.test_the_time_bound_is_time_reached ______________
+
+self = <test_stop_after_wakes.HowASessionEnds testMethod=test_the_time_bound_is_time_reached>
+
+    def test_the_time_bound_is_time_reached(self):
+        self.unit.profile = FLAT
+        self.assertTrue(self.call("meter.record", {"bound_s": 1, "source": "ppk2", "name": "tb"}).ok)
+>       self.assertEqual(self.done()["ended_by"], "time_reached")
+                         ^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'ended_by'
+
+tests/instruments/test_stop_after_wakes.py:132: KeyError
+=========================== short test summary info ============================
+FAILED tests/instruments/test_stop_after_wakes.py::TheCapturerCountsWholeWakes::test_a_wake_counts_when_it_closes_and_not_when_it_opens
+FAILED tests/instruments/test_stop_after_wakes.py::TheCapturerCountsWholeWakes::test_a_wake_cut_at_the_longest_is_not_counted_and_nor_is_its_continuation
+FAILED tests/instruments/test_stop_after_wakes.py::TheCapturerCountsWholeWakes::test_a_wake_in_progress_when_the_recording_began_is_kept_and_not_counted
+FAILED tests/instruments/test_stop_after_wakes.py::OnTheSession::test_a_recording_ends_when_the_second_wake_has_closed_and_keeps_both_whole
+FAILED tests/instruments/test_stop_after_wakes.py::OnTheSession::test_a_wake_in_progress_at_the_start_does_not_count
+FAILED tests/instruments/test_stop_after_wakes.py::OnTheSession::test_a_wake_period_is_never_assumed_so_with_no_bound_the_give_up_is_the_twelve_hour_maximum
+FAILED tests/instruments/test_stop_after_wakes.py::OnTheSession::test_no_wake_ever_is_a_give_up_at_the_bound_given_and_says_how_many_were_seen
+FAILED tests/instruments/test_stop_after_wakes.py::OnTheSession::test_wakes_at_irregular_times_are_counted_all_the_same
+FAILED tests/instruments/test_stop_after_wakes.py::HowASessionEnds::test_a_stop_by_hand_is_stopped_and_a_running_session_has_no_cause_yet
+FAILED tests/instruments/test_stop_after_wakes.py::HowASessionEnds::test_a_unit_that_goes_silent_is_error_with_the_reason
+FAILED tests/instruments/test_stop_after_wakes.py::HowASessionEnds::test_the_time_bound_is_time_reached
+11 failed, 4 passed in 1.77s
