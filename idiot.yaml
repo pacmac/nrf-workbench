@@ -204,4 +204,10 @@
     failures: 1
     at: '2026-11-21T15:23:43.256'
     commit: c4eb859-dirty
-  fix: null
+  fix:
+    file: .proofs/a-profile-is-never-in-force-while-the-bench-rak-is-measured.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-21T15:25:37.815'
+    commit: feb1bbb-dirty
