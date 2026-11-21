@@ -287,7 +287,7 @@ export default function MeterPage({ commands, onDone }) {
                   </>
                 )}
                 {stop && <Button tone="danger" disabled={!running || pending} onClick={() => run(stop)}>Stop</Button>}
-                {justRecorded && replayCmd && <Button tone="quiet" onClick={() => setReplayOf(session.name)} aria-label={`Replay ${session.name}, just recorded`}>Replay {session.name}</Button>}
+                {justRecorded && replayCmd && <Button tone="quiet" onClick={() => { setReplayOf(session.name); setChosen(session.source); }} aria-label={`Replay ${session.name}, just recorded`}>Replay {session.name}</Button>}
               </div>
               {outcome && !outcome.pending && <ResultView outcome={outcome} />}
               {source === "ppk2" && wakeSet && (
@@ -378,7 +378,8 @@ export default function MeterPage({ commands, onDone }) {
                       </span>
                     ) : (
                       <span className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-                        {replayCmd && <Button tone={replayOf === r.name ? "primary" : "quiet"} onClick={() => setReplayOf(r.name)} aria-label={`Replay ${r.name}`}>Replay</Button>}
+                        {replayCmd && <Button tone={replayOf === r.name ? "primary" : "quiet"} aria-label={`Replay ${r.name}`}
+                          onClick={() => { setReplayOf(r.name); if (!running && available.includes(r.source)) setChosen(r.source); }}>Replay</Button>}
                         <Button tone="quiet" onClick={() => saveCsv(r.name)} aria-label={`Save ${r.name} as a CSV file`}>Save CSV</Button>
                         {deleteCmd && <Button tone="quiet" disabled={r.recording || pending} onClick={() => setAsk(r.name)} aria-label={`Delete ${r.name}`}>Delete</Button>}
                       </span>
