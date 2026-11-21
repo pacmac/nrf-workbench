@@ -1,0 +1,78 @@
+$ python3 tests/console/test_history.py
+./usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmpasb4n9a9/dbg/20261121-222640.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmpy588t9ur/dbg/20261121-222645.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmp69z7055d/dbg/20261121-222640.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.../usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmp3m71082d/dbg/20261121-222732.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmp_rp1i_07/a/20261121-223135.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmp_rp1i_07/b/20261121-222640.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmpdw807xpf/dbg/20261121-223312.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmphlyyloh_/dbg/20261121-235052.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmphlyyloh_/dbg/20261121-222640.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmpgbcmq0q_/dbg/20261121-223311.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+......./usr/share/pac/py/lib/python3.13/site-packages/yaml/scanner.py:286: ResourceWarning: unclosed file <_io.FileIO name='/tmp/tmpc7u975rv/console-data/log/dbg/20261121-122926.jsonl' mode='ab' closefd=True>
+  for level in list(self.possible_simple_keys):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmpv3pog0ox/dbg/20261121-222640.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmpipp39lco/dbg/20261121-222640.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+../usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmp039v6z6w/dbg/20261121-222640.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmpp1u3rydt/dbg/20261121-222640.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmpp1u3rydt/other/20261121-222640.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/share/pac/dev/projects/rakbench/tests/console/test_history.py:62: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmp1yzs39sh/dbg/20261121-222640.jsonl'>
+  fill(self.log(), n=2)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmpkbfx73ce/dbg/20261121-222640.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/share/pac/dev/projects/rakbench/tests/console/test_history.py:126: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmp46elcaxg/dbg/20261121-222640.jsonl'>
+  fill(self.log(), n=3)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmp7kt8q0ad/dbg/20261121-222656.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/share/pac/dev/projects/rakbench/tests/console/test_history.py:134: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmp32kn46fh/dbg/20261121-222640.jsonl'>
+  fill(self.log(), n=2)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmp32kn46fh/dbg/20261121-222640.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmpm9ne8d2b/dbg/20261121-222640.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/tmp42w5ak1l/dbg/20261121-222640.jsonl'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.
+----------------------------------------------------------------------
+Ran 30 tests in 0.034s
+
+OK

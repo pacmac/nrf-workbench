@@ -1,0 +1,6 @@
+$ python3 tests/console/test_history.py
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/console/test_history.py", line 21, in <module>
+    from nrf_workbench.console.history import LineLog  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'nrf_workbench.console.history'

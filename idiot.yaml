@@ -125,14 +125,30 @@
     be matched to the lines the firmware printed
   spec: docs/specs/power-workbench.md
   files:
-  - nrf_workbench/console/broker.py
   - nrf_workbench/console/history.py
+  - nrf_workbench/core/config.py
+  - nrf_workbench/service.py
+  - nrf_workbench/console/commands.py
   test:
-    command: null
+    command:
+    - python3
+    - tests/console/test_history.py
     criterion: lines received before a restart are returned by console.history after it
     runs: 1
-  trial: null
-  fix: null
+  trial:
+    file: .proofs/console-lines-are-not-kept-past-a-restart.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-21T20:22:41.510'
+    commit: 4e3598c-dirty
+  fix:
+    file: .proofs/console-lines-are-not-kept-past-a-restart.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-21T20:29:26.596'
+    commit: bf01f59-dirty
 - id: the-capture-card-cannot-stop-on-wakes
   type: new
   what: a recording can only stop after a fixed length; it cannot stop when N wakes have started and ended,
