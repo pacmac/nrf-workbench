@@ -1,0 +1,81 @@
+$ python3 scripts/verify_help_layout.py
+PASS  light 1280x720 the document does not scroll (720 of 720 px)
+PASS  light 1280x720 nothing outside the reader scrolls
+PASS  light 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 the page ends at the foot of the window
+PASS  light 1280x720 the reader lies inside the page
+PASS  light 1280x720 the list holds the topics (11)
+PASS  light 1280x720 every topic button lies inside the list
+PASS  light 1280x720 every topic opens with the reader at its top and the window still
+PASS  light 1280x720 some topics are taller than the reader, so it scrolls inside itself (11 of 11)
+PASS  light 1280x720 scrolled to its end, the reader's last button is in view
+PASS  light 1280x720 search narrows the list (6 of 11)
+PASS  light 1280x720 clearing the search brings every topic back
+PASS  light 1280x720 after reading every topic: the document does not scroll (720 of 720 px)
+PASS  light 1280x720 after reading every topic: nothing outside the reader scrolls
+PASS  light 1280x720 after reading every topic: the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 after reading every topic: the page ends at the foot of the window
+PASS  light 1280x720 after reading every topic: the reader lies inside the page
+PASS  light 1440x900 the document does not scroll (900 of 900 px)
+PASS  light 1440x900 nothing outside the reader scrolls
+PASS  light 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 the page ends at the foot of the window
+PASS  light 1440x900 the reader lies inside the page
+PASS  light 1440x900 the list holds the topics (11)
+PASS  light 1440x900 every topic button lies inside the list
+PASS  light 1440x900 every topic opens with the reader at its top and the window still
+PASS  light 1440x900 some topics are taller than the reader, so it scrolls inside itself (6 of 11)
+PASS  light 1440x900 scrolled to its end, the reader's last button is in view
+PASS  light 1440x900 search narrows the list (6 of 11)
+PASS  light 1440x900 clearing the search brings every topic back
+PASS  light 1440x900 after reading every topic: the document does not scroll (900 of 900 px)
+PASS  light 1440x900 after reading every topic: nothing outside the reader scrolls
+PASS  light 1440x900 after reading every topic: the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 after reading every topic: the page ends at the foot of the window
+PASS  light 1440x900 after reading every topic: the reader lies inside the page
+PASS  light 1024x500 the document does not scroll (500 of 500 px)
+PASS  light 1024x500 the topic list scrolls inside itself (466 of 376 px)
+PASS  light 1024x500 scrolled to the end, the last topic is in view
+PASS  light 390x844 no horizontal scroll (390 of 390 px)
+PASS  light 390x844 the topic list is the screen, with no reader beside it
+PASS  dark 1280x720 the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 nothing outside the reader scrolls
+PASS  dark 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 the page ends at the foot of the window
+PASS  dark 1280x720 the reader lies inside the page
+PASS  dark 1280x720 the list holds the topics (11)
+PASS  dark 1280x720 every topic button lies inside the list
+PASS  dark 1280x720 every topic opens with the reader at its top and the window still
+PASS  dark 1280x720 some topics are taller than the reader, so it scrolls inside itself (11 of 11)
+PASS  dark 1280x720 scrolled to its end, the reader's last button is in view
+PASS  dark 1280x720 search narrows the list (6 of 11)
+PASS  dark 1280x720 clearing the search brings every topic back
+PASS  dark 1280x720 after reading every topic: the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 after reading every topic: nothing outside the reader scrolls
+PASS  dark 1280x720 after reading every topic: the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 after reading every topic: the page ends at the foot of the window
+PASS  dark 1280x720 after reading every topic: the reader lies inside the page
+PASS  dark 1440x900 the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 nothing outside the reader scrolls
+PASS  dark 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 the page ends at the foot of the window
+PASS  dark 1440x900 the reader lies inside the page
+PASS  dark 1440x900 the list holds the topics (11)
+PASS  dark 1440x900 every topic button lies inside the list
+PASS  dark 1440x900 every topic opens with the reader at its top and the window still
+PASS  dark 1440x900 some topics are taller than the reader, so it scrolls inside itself (6 of 11)
+PASS  dark 1440x900 scrolled to its end, the reader's last button is in view
+PASS  dark 1440x900 search narrows the list (6 of 11)
+PASS  dark 1440x900 clearing the search brings every topic back
+PASS  dark 1440x900 after reading every topic: the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 after reading every topic: nothing outside the reader scrolls
+PASS  dark 1440x900 after reading every topic: the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 after reading every topic: the page ends at the foot of the window
+PASS  dark 1440x900 after reading every topic: the reader lies inside the page
+PASS  dark 1024x500 the document does not scroll (500 of 500 px)
+PASS  dark 1024x500 the topic list scrolls inside itself (466 of 376 px)
+PASS  dark 1024x500 scrolled to the end, the last topic is in view
+PASS  dark 390x844 no horizontal scroll (390 of 390 px)
+PASS  dark 390x844 the topic list is the screen, with no reader beside it
+
+78 checks, 0 failed. screenshots: /tmp/nrfwb-help-layout-zpa7aqkl

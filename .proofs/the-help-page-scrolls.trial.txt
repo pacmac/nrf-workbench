@@ -1,0 +1,27 @@
+$ python3 scripts/verify_help_layout.py
+FAIL  light 1280x720 the document does not scroll (834 of 720 px)  -- [834, 720]
+PASS  light 1280x720 nothing outside the reader scrolls
+FAIL  light 1280x720 the page uses the width beside the nav (888 of 1280 px)  -- [312, 1200, 0, 833.5, 1280, 720]
+FAIL  light 1280x720 the page ends at the foot of the window  -- [312, 1200, 0, 833.5, 1280, 720]
+FAIL  light 1280x720 the page could be driven  -- Page.evaluate: TypeError: Cannot read properties of null (reading 'getBoundingClientRect')
+PASS  light 1440x900 the document does not scroll (900 of 900 px)
+PASS  light 1440x900 nothing outside the reader scrolls
+FAIL  light 1440x900 the page uses the width beside the nav (888 of 1440 px)  -- [392, 1280, 0, 900, 1440, 900]
+PASS  light 1440x900 the page ends at the foot of the window
+FAIL  light 1440x900 the page could be driven  -- Page.evaluate: TypeError: Cannot read properties of null (reading 'getBoundingClientRect')
+PASS  light 390x844 no horizontal scroll (390 of 390 px)
+PASS  light 390x844 the topic list is the screen, with no reader beside it
+FAIL  dark 1280x720 the document does not scroll (834 of 720 px)  -- [834, 720]
+PASS  dark 1280x720 nothing outside the reader scrolls
+FAIL  dark 1280x720 the page uses the width beside the nav (888 of 1280 px)  -- [312, 1200, 0, 833.5, 1280, 720]
+FAIL  dark 1280x720 the page ends at the foot of the window  -- [312, 1200, 0, 833.5, 1280, 720]
+FAIL  dark 1280x720 the page could be driven  -- Page.evaluate: TypeError: Cannot read properties of null (reading 'getBoundingClientRect')
+PASS  dark 1440x900 the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 nothing outside the reader scrolls
+FAIL  dark 1440x900 the page uses the width beside the nav (888 of 1440 px)  -- [392, 1280, 0, 900, 1440, 900]
+PASS  dark 1440x900 the page ends at the foot of the window
+FAIL  dark 1440x900 the page could be driven  -- Page.evaluate: TypeError: Cannot read properties of null (reading 'getBoundingClientRect')
+PASS  dark 390x844 no horizontal scroll (390 of 390 px)
+PASS  dark 390x844 the topic list is the screen, with no reader beside it
+
+24 checks, 12 failed. screenshots: /tmp/nrfwb-help-layout-_i9dgk93

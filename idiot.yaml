@@ -643,3 +643,32 @@
     failures: 0
     at: '2026-11-22T02:40:19.431'
     commit: f8b4533-dirty
+- id: the-help-page-scrolls
+  type: bug
+  what: 'the Help page flows: the topic list and the chosen topic sit in the page, 834 px at 1280x720
+    on the real bench, so it scrolls; a dashboard page must fit the window'
+  spec: docs/specs/navigation.md
+  files:
+  - ui/src/Help.jsx
+  - ui/src/App.jsx
+  test:
+    command:
+    - python3
+    - scripts/verify_help_layout.py
+    criterion: the document does not scroll, every topic is in the list, the chosen topic is in a reader
+      that scrolls only inside itself, in both themes at 1280x720 and 1440x900
+    runs: 1
+  trial:
+    file: .proofs/the-help-page-scrolls.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-22T03:29:12.573'
+    commit: e8774f6-dirty
+  fix:
+    file: .proofs/the-help-page-scrolls.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-22T03:34:22.376'
+    commit: 33e5f51-dirty
