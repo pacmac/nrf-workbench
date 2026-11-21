@@ -17,6 +17,30 @@ from . import manifest as mf
 UNDER_TEST = "under-test.json"
 
 
+def link_of(m, role):
+    """The console link a role is read on: an ESP32 role's own target link, or the manifest's connection for an nRF role. None if it has none."""
+    spec = m["devices"][role]
+    if spec["kind"] == "esp32":
+        return spec["key"]
+    for w in m["wiring"]:
+        if w["device"] == role:
+            return w["name"]
+    return None
+
+
+def role_attached(host, m, row):
+    """(attached, why) of a plan role FOR THE PROFILE: its board is on USB, or the console link the project wires for it is configured and open. The bench RAK is powered by the
+    profiler and has no USB cable while it is measured, so USB alone would leave nothing in force for ever; and the unit is silent for most of its beat, so the link counts when
+    it is open, not when a line was seen lately. The plan's own `attached` (what flashing needs) is not changed."""
+    if row["attached"]:
+        return True, ""
+    link = link_of(m, row["role"])
+    state = host.console.state(link) if host.console is not None and link else None
+    if state and state.get("state") == "open":
+        return True, "console link %s is open" % link
+    return False, row["why"] or "not attached"
+
+
 def _path(host):
     folder = host.config["paths"].get("meter")
     return os.path.join(folder, UNDER_TEST) if folder else None
@@ -77,8 +101,8 @@ def candidates(host, store, roles_of):
         roles = dict((r["role"], r) for r in roles_of(m))
         for role in sorted(m["power"]):
             r = roles[role]
-            out.append({"project": name, "role": role, "kind": r["kind"], "key": r["key"], "attached": bool(r["attached"]),
-                        "why": "" if r["attached"] else (r["why"] or "not attached"), "profile": m["power"][role]})
+            here, why = role_attached(host, m, r)
+            out.append({"project": name, "role": role, "kind": r["kind"], "key": r["key"], "attached": here, "why": why, "profile": m["power"][role]})
     return out
 
 
@@ -112,7 +136,8 @@ def refusal_reason(host, store, roles_of, project, role):
     if role not in m["power"]:
         return "role %s of project %s has no profile: its manifest's power section does not give it one" % (role, project), None
     row = next(r for r in roles_of(m) if r["role"] == role)
-    if not row["attached"]:
-        why = row["why"] if row["why"] and row["why"] != "not attached" else ""
+    here, how = role_attached(host, m, row)
+    if not here:
+        why = how if how != "not attached" else ""
         return "role %s of project %s is not attached%s" % (role, project, ": %s" % why if why else ""), None
     return None, row["key"]

@@ -23,6 +23,7 @@ from ..programmer import commands as programmer_commands
 from ..wiring import commands as wiring_commands
 from ..wiring import detect, piuart
 from . import manifest as mf
+from . import power as powermod
 
 SECTION_ORDER = ("requires", "esp32", "wiring", "pins", "macros", "power", "firmware")
 # the key of `owns` in state.json for each manifest section
@@ -243,9 +244,9 @@ def make_plan(host, call, m, owners, own_state):
     # it is in force while this project is applied and the role's board is attached, and the role list above already says whether it is.
     by_role = dict((r["role"], r) for r in roles)
     for role in sorted(m["power"]):
-        here = by_role[role]["attached"]
+        here, how = powermod.role_attached(host, m, by_role[role])
         items.append(item("power", role, "have" if here else "unresolved",
-                          "in force while the project is applied" if here else "no board attached, so this profile is not in force", False))
+                          "in force while the project is applied" + (" (%s)" % how if how else "") if here else "no board attached, so this profile is not in force", False))
 
     # ---- firmware: informational, never blocks an apply
     store = programmer_commands._store(host) if host.config["paths"].get("firmware") else None

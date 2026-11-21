@@ -55,6 +55,12 @@ class PowerBase(Base):
         res = self.apply(project)
         self.assertTrue(res.ok, res.message)
 
+    def unplug(self, slot, link):
+        """Take the board off USB, and with it the link that was open to it (the shared FakeConsole says every link is open, which a real broker's is not once its adapter is gone)."""
+        self.t.unplug(slot)
+        was = self.host.console.state
+        self.host.console.state = lambda name: None if name == link else was(name)
+
     def under_test_file(self):
         return os.path.join(self.meter_dir, "under-test.json")
 
@@ -86,7 +92,7 @@ class InForce(PowerBase):
     def test_unplugging_the_board_takes_the_profile_out_of_force_and_plugging_it_back_restores_it(self):
         self.applied(manifest(roles={"camera": "timercam"}, power={"camera": "beat_s: 60"}))
         self.assertEqual(self.profile()["in_force"]["role"], "camera")
-        self.t.unplug("1-2")
+        self.unplug("1-2", "timercam")
         d = self.profile()
         self.assertEqual((d["in_force"], d["candidates"][0]["attached"]), (None, False))
 
@@ -132,7 +138,7 @@ class UnderTest(PowerBase):
     def test_the_choice_is_ignored_while_its_board_is_unplugged_and_the_one_left_is_in_force_on_its_own(self):
         self.two_boards()
         self.use("demo", "camera")
-        self.t.unplug("1-2")
+        self.unplug("1-2", "timercam")
         d = self.profile()
         self.assertEqual((d["in_force"]["role"], d["under_test"]), ("alarm", None), "never carried: the one attached board is in force by the one-candidate rule")
 
@@ -174,6 +180,53 @@ class UnderTest(PowerBase):
         self.assertFalse(os.path.exists(self.under_test_file()), "a refusal writes nothing")
         self.put(manifest("loose"), "loose")
         self.assertIn("not applied", self.use("loose", "alarm").message)
+
+
+class OnTheConsoleLink(PowerBase):
+    """The bench RAK is powered by the profiler and has no USB cable while it is measured: its role is attached when the console link the project wires for it is open
+    (docs/specs/project-power-profile.md, decision 1), as well as when it is on USB. The role's own `attached` (what flashing needs) is not changed."""
+    LINKED = ('name: demo\nrequires: [pi-uart]\ndevices:\n  alarm: {nrf: NOTPLUGGED}\n'
+              'wiring:\n  - {name: alarm-log, device: alarm, adapter: "uart:ttyAMA0", baud: 115200, send: false}\n'
+              'power:\n  alarm:\n    beat_s: 900\n    %s\n' % TRIGGER)
+
+    def link(self, state):
+        self.host.console.state = lambda name: None if state is None else {"state": state, "reason": "", "rx_only": True, "baud": 115200, "lines": 0, "bytes": 0,
+                                                                            "last_byte_at": None, "node": None}
+
+    def test_a_board_off_usb_whose_console_link_is_open_has_its_profile_in_force(self):
+        self.applied(self.LINKED)
+        self.link("open")
+        d = self.profile()
+        self.assertEqual((d["in_force"] or {}).get("role"), "alarm")
+        self.assertEqual([(c["attached"], "alarm-log" in c["why"]) for c in d["candidates"]], [(True, True)], "it says it is the link, not USB, that makes it attached")
+
+    def test_a_link_that_is_not_open_does_not_attach_it(self):
+        self.applied(self.LINKED)
+        for state in ("closed", "absent", None):
+            self.link(state)
+            d = self.profile()
+            self.assertEqual((d["in_force"], d["candidates"][0]["attached"]), (None, False), state)
+
+    def test_a_role_with_no_connection_and_no_usb_is_not_attached_whatever_the_console_says(self):
+        self.applied(manifest(roles={"alarm": "NOTPLUGGED"}, power={"alarm": TRIGGER}))
+        self.link("open")
+        self.assertIsNone(self.profile()["in_force"])
+
+    def test_the_roles_own_attached_and_the_check_still_say_the_board_is_not_on_usb(self):
+        self.applied(self.LINKED)
+        self.link("open")
+        d = self.call("project.check", {"project": "demo"}).data
+        by = dict(((f["section"], f["name"]), f) for f in d["findings"])
+        self.assertEqual((by[("roles", "alarm")]["status"], by[("power", "alarm")]["status"]), ("absent", "ok"))
+        plan = self.call("project.plan", {"project": "demo"}).data
+        self.assertEqual(next(r for r in plan["roles"] if r["role"] == "alarm")["attached"], False)
+
+    def test_naming_a_board_that_is_attached_by_its_link_is_accepted(self):
+        self.applied(self.LINKED)
+        self.link("open")
+        res = self.use("demo", "alarm")
+        self.assertTrue(res.ok, res.message)
+        self.assertEqual(self.profile()["under_test"], {"project": "demo", "role": "alarm"})
 
 
 class Surfaces(PowerBase):

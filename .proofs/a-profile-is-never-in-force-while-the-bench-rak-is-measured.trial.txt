@@ -1,0 +1,40 @@
+$ python3 tests/project/test_power.py
+.......F..FF.............
+======================================================================
+FAIL: test_a_board_off_usb_whose_console_link_is_open_has_its_profile_in_force (__main__.OnTheConsoleLink.test_a_board_off_usb_whose_console_link_is_open_has_its_profile_in_force)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/project/test_power.py", line 194, in test_a_board_off_usb_whose_console_link_is_open_has_its_profile_in_force
+    self.assertEqual((d["in_force"] or {}).get("role"), "alarm")
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: None != 'alarm'
+
+======================================================================
+FAIL: test_naming_a_board_that_is_attached_by_its_link_is_accepted (__main__.OnTheConsoleLink.test_naming_a_board_that_is_attached_by_its_link_is_accepted)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/project/test_power.py", line 222, in test_naming_a_board_that_is_attached_by_its_link_is_accepted
+    self.assertTrue(res.ok, res.message)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true : role alarm of project demo is not attached
+
+======================================================================
+FAIL: test_the_roles_own_attached_and_the_check_still_say_the_board_is_not_on_usb (__main__.OnTheConsoleLink.test_the_roles_own_attached_and_the_check_still_say_the_board_is_not_on_usb)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/project/test_power.py", line 214, in test_the_roles_own_attached_and_the_check_still_say_the_board_is_not_on_usb
+    self.assertEqual((by[("roles", "alarm")]["status"], by[("power", "alarm")]["status"]), ("absent", "ok"))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Tuples differ: ('absent', 'not_applied') != ('absent', 'ok')
+
+First differing element 1:
+'not_applied'
+'ok'
+
+- ('absent', 'not_applied')
++ ('absent', 'ok')
+
+----------------------------------------------------------------------
+Ran 25 tests in 0.115s
+
+FAILED (failures=3)

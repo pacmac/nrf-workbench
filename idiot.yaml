@@ -181,3 +181,27 @@
     runs: 1
   trial: null
   fix: null
+- id: a-profile-is-never-in-force-while-the-bench-rak-is-measured
+  type: bug
+  what: a role counts as attached only when its board is on USB, but the bench RAK is powered by the PPK2
+    with no USB cable (lsusb on the Pi lists only the PPK2), so the profile is never in force while a
+    recording is made
+  spec: docs/specs/project-power-profile.md
+  files:
+  - nrf_workbench/project/power.py
+  - nrf_workbench/project/plan.py
+  test:
+    command:
+    - python3
+    - tests/project/test_power.py
+    criterion: a role whose board is off USB but whose console link is open counts as attached for the
+      profile, while the role's own attached is unchanged
+    runs: 1
+  trial:
+    file: .proofs/a-profile-is-never-in-force-while-the-bench-rak-is-measured.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-21T15:23:43.256'
+    commit: c4eb859-dirty
+  fix: null

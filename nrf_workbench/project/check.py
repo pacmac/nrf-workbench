@@ -5,19 +5,12 @@ call here that touches the bus: a one-byte read at the address the manifest expe
 """
 from ..core.result import Result
 from . import plan as planmod
+from . import power as powermod
 
 OK_STATES = ("ok", "seen", "not_applied")
 
 
-def _link_for(m, role):
-    """The console link name a role is read on: an ESP32 role's own target link, or the manifest's connection for an nRF role."""
-    spec = m["devices"][role]
-    if spec["kind"] == "esp32":
-        return spec["key"]
-    for w in m["wiring"]:
-        if w["device"] == role:
-            return w["name"]
-    return None
+_link_for = powermod.link_of          # one rule for which link a role is read on: the profile needs it too
 
 
 def _expect_console(host, link, text):
