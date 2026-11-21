@@ -460,11 +460,36 @@
   files:
   - tests/instruments/test_meter.py
   test:
-    command: null
-    criterion: the test passes in 20 of 20 full-suite runs, or the cause is found and named
-    runs: 1
-  trial: null
-  fix: null
+    command:
+    - python3
+    - scripts/under_load.py
+    - --
+    - python3
+    - -m
+    - pytest
+    - -q
+    - -p
+    - no:cacheprovider
+    - tests/instruments/test_meter.py
+    - -k
+    - callers_are_served
+    criterion: 'under CPU load the test passes in 30 of 30 runs: the connections it counts are the client''s
+      own'
+    runs: 30
+  trial:
+    file: .proofs/the-serial-callers-test-fails-intermittently-in-the-full-suite.trial.txt
+    exit: 0
+    runs: 30
+    failures: 3
+    at: '2026-11-22T01:46:48.517'
+    commit: ab3dd44-dirty
+  fix:
+    file: .proofs/the-serial-callers-test-fails-intermittently-in-the-full-suite.fix.txt
+    exit: 0
+    runs: 30
+    failures: 0
+    at: '2026-11-22T01:47:53.969'
+    commit: 82ce5ef-dirty
 - id: the-console-page-scrolls
   type: bug
   what: the Console page is a flowing page (1,204 px at 1280x720 on the real bench) whose log is a 384
@@ -558,3 +583,33 @@
     failures: 0
     at: '2026-11-22T00:27:05.070'
     commit: 6a7749e-dirty
+- id: the-commands-page-scrolls
+  type: bug
+  what: the Commands page keeps its command list in a 60 vh scrolling box (3,654 px of content in a 432
+    px box on the real bench at 1280x720) beside a form that grows the page, so both scroll; a dashboard
+    page must fit the window
+  spec: docs/specs/navigation.md
+  files:
+  - ui/src/Commands.jsx
+  - ui/src/App.jsx
+  test:
+    command:
+    - python3
+    - scripts/verify_commands_layout.py
+    criterion: the document does not scroll, nothing outside the form panel scrolls, the commands page
+      through a list that fits, search and the area choice narrow it, in both themes at 1280x720 and 1440x900
+    runs: 1
+  trial:
+    file: .proofs/the-commands-page-scrolls.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-22T01:29:07.026'
+    commit: 1926deb-dirty
+  fix:
+    file: .proofs/the-commands-page-scrolls.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-22T01:40:34.387'
+    commit: ab3dd44-dirty

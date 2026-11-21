@@ -1,0 +1,115 @@
+$ python3 scripts/verify_commands_layout.py
+PASS  light 1280x720 the document does not scroll (720 of 720 px)
+PASS  light 1280x720 nothing outside the form panel scrolls
+PASS  light 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 the page ends at the foot of the window
+PASS  light 1280x720 both panels lie inside the page
+PASS  light 1280x720 rows are shown, fewer than all (12 of 58)
+PASS  light 1280x720 every row lies inside the list
+PASS  light 1280x720 the list is filled: less than one more row of room is left (7 of 36 px)
+PASS  light 1280x720 no row's content is cut off by its fixed height
+PASS  light 1280x720 Next pages to the later commands ((13, 24, 58))
+PASS  light 1280x720 Previous returns to the first
+PASS  light 1280x720 search narrows the list (['meter.wake_table'] of 58)
+PASS  light 1280x720 the area choice limits the list to that area (3 shown, None)
+PASS  light 1280x720 All areas brings the whole list back
+PASS  light 1280x720 choosing a command shows its form in the panel
+PASS  light 1280x720 with a result shown: the document does not scroll (720 of 720 px)
+PASS  light 1280x720 with a result shown: nothing outside the form panel scrolls
+PASS  light 1280x720 with a result shown: the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 with a result shown: the page ends at the foot of the window
+PASS  light 1280x720 with a result shown: both panels lie inside the page
+PASS  light 1280x720 the result stays inside the panel's width
+PASS  light 1280x720 with a long form shown: the document does not scroll (720 of 720 px)
+PASS  light 1280x720 with a long form shown: nothing outside the form panel scrolls
+PASS  light 1280x720 with a long form shown: the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 with a long form shown: the page ends at the foot of the window
+PASS  light 1280x720 with a long form shown: both panels lie inside the page
+PASS  light 1280x720 a form taller than the panel can be scrolled inside it (1034 of 577 px)
+PASS  light 1440x900 the document does not scroll (900 of 900 px)
+PASS  light 1440x900 nothing outside the form panel scrolls
+PASS  light 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 the page ends at the foot of the window
+PASS  light 1440x900 both panels lie inside the page
+PASS  light 1440x900 rows are shown, fewer than all (17 of 58)
+PASS  light 1440x900 every row lies inside the list
+PASS  light 1440x900 the list is filled: less than one more row of room is left (7 of 36 px)
+PASS  light 1440x900 no row's content is cut off by its fixed height
+PASS  light 1440x900 Next pages to the later commands ((18, 34, 58))
+PASS  light 1440x900 Previous returns to the first
+PASS  light 1440x900 search narrows the list (['meter.wake_table'] of 58)
+PASS  light 1440x900 the area choice limits the list to that area (3 shown, None)
+PASS  light 1440x900 All areas brings the whole list back
+PASS  light 1440x900 choosing a command shows its form in the panel
+PASS  light 1440x900 with a result shown: the document does not scroll (900 of 900 px)
+PASS  light 1440x900 with a result shown: nothing outside the form panel scrolls
+PASS  light 1440x900 with a result shown: the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 with a result shown: the page ends at the foot of the window
+PASS  light 1440x900 with a result shown: both panels lie inside the page
+PASS  light 1440x900 the result stays inside the panel's width
+PASS  light 1440x900 with a long form shown: the document does not scroll (900 of 900 px)
+PASS  light 1440x900 with a long form shown: nothing outside the form panel scrolls
+PASS  light 1440x900 with a long form shown: the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 with a long form shown: the page ends at the foot of the window
+PASS  light 1440x900 with a long form shown: both panels lie inside the page
+PASS  light 1440x900 a form taller than the panel can be scrolled inside it (970 of 757 px)
+PASS  light 390x844 no horizontal scroll (390 of 390 px)
+PASS  light 390x844 the search and the list are there
+PASS  dark 1280x720 the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 nothing outside the form panel scrolls
+PASS  dark 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 the page ends at the foot of the window
+PASS  dark 1280x720 both panels lie inside the page
+PASS  dark 1280x720 rows are shown, fewer than all (12 of 58)
+PASS  dark 1280x720 every row lies inside the list
+PASS  dark 1280x720 the list is filled: less than one more row of room is left (7 of 36 px)
+PASS  dark 1280x720 no row's content is cut off by its fixed height
+PASS  dark 1280x720 Next pages to the later commands ((13, 24, 58))
+PASS  dark 1280x720 Previous returns to the first
+PASS  dark 1280x720 search narrows the list (['meter.wake_table'] of 58)
+PASS  dark 1280x720 the area choice limits the list to that area (3 shown, None)
+PASS  dark 1280x720 All areas brings the whole list back
+PASS  dark 1280x720 choosing a command shows its form in the panel
+PASS  dark 1280x720 with a result shown: the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 with a result shown: nothing outside the form panel scrolls
+PASS  dark 1280x720 with a result shown: the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 with a result shown: the page ends at the foot of the window
+PASS  dark 1280x720 with a result shown: both panels lie inside the page
+PASS  dark 1280x720 the result stays inside the panel's width
+PASS  dark 1280x720 with a long form shown: the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 with a long form shown: nothing outside the form panel scrolls
+PASS  dark 1280x720 with a long form shown: the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 with a long form shown: the page ends at the foot of the window
+PASS  dark 1280x720 with a long form shown: both panels lie inside the page
+PASS  dark 1280x720 a form taller than the panel can be scrolled inside it (1034 of 577 px)
+PASS  dark 1440x900 the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 nothing outside the form panel scrolls
+PASS  dark 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 the page ends at the foot of the window
+PASS  dark 1440x900 both panels lie inside the page
+PASS  dark 1440x900 rows are shown, fewer than all (17 of 58)
+PASS  dark 1440x900 every row lies inside the list
+PASS  dark 1440x900 the list is filled: less than one more row of room is left (7 of 36 px)
+PASS  dark 1440x900 no row's content is cut off by its fixed height
+PASS  dark 1440x900 Next pages to the later commands ((18, 34, 58))
+PASS  dark 1440x900 Previous returns to the first
+PASS  dark 1440x900 search narrows the list (['meter.wake_table'] of 58)
+PASS  dark 1440x900 the area choice limits the list to that area (3 shown, None)
+PASS  dark 1440x900 All areas brings the whole list back
+PASS  dark 1440x900 choosing a command shows its form in the panel
+PASS  dark 1440x900 with a result shown: the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 with a result shown: nothing outside the form panel scrolls
+PASS  dark 1440x900 with a result shown: the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 with a result shown: the page ends at the foot of the window
+PASS  dark 1440x900 with a result shown: both panels lie inside the page
+PASS  dark 1440x900 the result stays inside the panel's width
+PASS  dark 1440x900 with a long form shown: the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 with a long form shown: nothing outside the form panel scrolls
+PASS  dark 1440x900 with a long form shown: the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 with a long form shown: the page ends at the foot of the window
+PASS  dark 1440x900 with a long form shown: both panels lie inside the page
+PASS  dark 1440x900 a form taller than the panel can be scrolled inside it (970 of 757 px)
+PASS  dark 390x844 no horizontal scroll (390 of 390 px)
+PASS  dark 390x844 the search and the list are there
+
+112 checks, 0 failed. screenshots: /tmp/nrfwb-commands-layout-r3zpmoev
