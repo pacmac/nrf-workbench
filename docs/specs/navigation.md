@@ -24,6 +24,14 @@ are wasting a lot of vertical space". Amends `dashboard-redesign.md` (which requ
 - A touch target is at least 44 px tall in both layouts. The bar sits on the safe-area inset (notches, home indicators).
 - No new dependency; the list is a plain disclosure (Radix stays in Firmware.jsx only).
 
+## Full-height pages (2026-11-21)
+
+Peter, 2026-11-21: "firstly it's a dashboard and dashboards dont scroll", and the whole dashboard "needs to be redesigned to match that format which is full width and full height". `App.jsx` holds a list, `FULL_PAGES`; a page on it, from 768 px up:
+- is not held to `max-w-6xl`: it fills the width beside the sidebar (the sidebar 208 px, 16 px of padding either side, a 16 px gap);
+- owns the window's height (`h-dvh`) and `overflow-hidden`, so the document cannot scroll; the page lays itself out in that height (a flex column, `min-h-0`), and a list shows the rows that fit and pages;
+- on a phone keeps the page flow (it scrolls) until it has its own narrow layout.
+A page joins the list when it has been laid out to fit, one page at a time. **Meter is the first** (`meter-page.md`, "Bench layout"). The others (Home, Devices, Projects, Console, Firmware, Wiring, GPIO, Activity, Commands, Help) are not yet, and still scroll.
+
 ## Checks
 
 Browser, both themes, at 390 px and 1280 px: no horizontal scroll; the nav does not scroll (`scrollWidth <= clientWidth` and height fits);

@@ -25,6 +25,9 @@ import { addLines } from "./consoleLog.js";
 // rest are under More; on a desktop all of them are a list down the left. Nothing scrolls sideways.
 const PAGES = [["home", "Home"], ["devices", "Devices"], ["projects", "Projects"], ["console", "Console"], ["firmware", "Firmware"], ["wiring", "Wiring"], ["gpio", "GPIO"], ["meter", "Meter"], ["activity", "Activity"], ["commands", "Commands"], ["help", "Help"]];
 const DAILY = 4;      // the bar holds four pages and More: five equal cells at 390 px are 78 px each, past the 44 px touch target
+// Pages that own the window: from 768 px up they fill the width beside the nav and the whole height, and nothing on them scrolls (docs/specs/navigation.md, "Full-height pages").
+// A phone keeps the page flow until a page has its own narrow layout. A page joins this list when it has been laid out to fit.
+const FULL_PAGES = ["meter"];
 
 // How many activity rows the browser keeps in memory. Same derivation as the draw limit: the server's retention
 // is the real bound, this only stops a tab that stays open for weeks from growing without limit. 5 x the
@@ -171,7 +174,7 @@ export default function App() {
   const linksPath = linksRow ? linksRow.path : null;
   const gpioOn = Boolean(authenticated && (info.commands || []).some((c) => c.name === "gpio.header"));   // only on a Pi with a pin-map folder
   const projectsOn = Boolean(authenticated && (info.commands || []).some((c) => c.name === "project.list"));   // needs the wiring folder
-  const meterOn = Boolean(authenticated && (info.commands || []).some((c) => c.name === "meter.show" || c.name === "ppk2.show"));        // needs the meter's address or the PPK2 in the configuration
+  const meterOn = Boolean(authenticated && (info.commands || []).some((c) => c.name === "ppk2.show"));        // needs the PPK2 in the configuration: the page is the power profiler's (the multimeter is no longer on it)
 
   useEffect(() => {
     if (!consoleOn) return undefined;
@@ -215,6 +218,7 @@ export default function App() {
 
   const host = overview.data ? overview.data.host : null;
   const live = feed.state === "live";
+  const full = FULL_PAGES.includes(page);
   const pages = PAGES.filter(([id]) => (id !== "console" || consoleOn) && (id !== "gpio" || gpioOn) && (id !== "projects" || projectsOn) && (id !== "meter" || meterOn));
   const daily = pages.slice(0, DAILY);
   const others = pages.slice(DAILY);
@@ -230,7 +234,7 @@ export default function App() {
   const doLogout = async () => { await logout(); setExpired(false); setBoards(null); setActivity({ rows: [], lost: 0, reset: false }); setRunning([]); setLinks(null); setConsoleLines({}); refreshSession(); };
   return (
     <NavContext.Provider value={nav}>
-      <div className="mx-auto max-w-6xl px-4 md:flex md:gap-6">
+      <div className={cx("px-4 md:flex md:gap-4", full ? "w-full" : "mx-auto max-w-6xl md:gap-6")}>
         {/* The sidebar on a desktop: the bench and its pages, always in view, so the page gets the whole height. On a phone this is a slim strip. */}
         <div className="md:sticky md:top-0 md:flex md:h-screen md:w-52 md:shrink-0 md:flex-col md:py-4">
           <header className="py-2 md:pb-4 md:pt-0">
@@ -267,7 +271,7 @@ export default function App() {
           </nav>
         </div>
 
-        <main className="mt-1 min-w-0 flex-1 space-y-4 pb-24 md:mt-0 md:pb-12 md:pt-4">
+        <main className={cx("mt-1 min-w-0 flex-1 pb-24 md:mt-0", full ? "md:flex md:h-dvh md:flex-col md:gap-2 md:overflow-hidden md:py-3" : "space-y-4 md:pb-12 md:pt-4")}>
           <Working running={running} feedLive={live} />
           {page === "home" && <Home overview={overview} session={session} feed={feed} activity={activity} info={info} />}
           {page === "devices" && <Devices overview={overview} commands={info.commands} onFlash={openFlash} onChanged={refresh} onDone={onCommandDone} />}

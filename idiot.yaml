@@ -59,13 +59,32 @@
   spec: docs/specs/meter-page.md
   files:
   - ui/src/MeterPage.jsx
+  - ui/src/meter/Trigger.jsx
+  - ui/src/meter/Profiler.jsx
+  - ui/src/meter/ReplayScope.jsx
   test:
-    command: null
-    criterion: a length can be typed in seconds, minutes or hours and a one-shot / continuous switch is
-      on the card
+    command:
+    - python3
+    - scripts/verify_meter_layout.py
+    - --only
+    - capture
+    criterion: a length can be typed with a unit, Stop after offers Time and Never, no multimeter and
+      no fixed list
     runs: 1
-  trial: null
-  fix: null
+  trial:
+    file: .proofs/the-capture-card-offers-only-fixed-periods.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-21T17:56:13.912'
+    commit: c0046f1-dirty
+  fix:
+    file: .proofs/the-capture-card-offers-only-fixed-periods.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-21T18:04:34.299'
+    commit: c0046f1-dirty
 - id: the-dashboard-shell-scrolls-and-is-capped-at-six-xl
   type: new
   what: 'App.jsx wraps every page in max-w-6xl with pb-12 and no page owns a height, so pages scroll and
@@ -73,13 +92,33 @@
   spec: docs/specs/navigation.md
   files:
   - ui/src/App.jsx
+  - ui/src/MeterPage.jsx
+  - ui/src/meter/TraceChart.jsx
+  - ui/src/meter/LiveScope.jsx
+  - ui/src/index.css
   test:
-    command: null
-    criterion: at 1280x720 and 390x800 no page has a scrollbar and the page fills the space beside the
-      nav
+    command:
+    - python3
+    - scripts/verify_meter_layout.py
+    - --only
+    - shell
+    criterion: at 1280x720 and 1440x900 in both themes the document does not scroll and the page fills
+      the space beside the nav
     runs: 1
-  trial: null
-  fix: null
+  trial:
+    file: .proofs/the-dashboard-shell-scrolls-and-is-capped-at-six-xl.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-21T17:56:02.444'
+    commit: c0046f1-dirty
+  fix:
+    file: .proofs/the-dashboard-shell-scrolls-and-is-capped-at-six-xl.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-21T18:04:30.819'
+    commit: c0046f1-dirty
 - id: console-lines-are-not-kept-past-a-restart
   type: new
   what: the console log is held in memory only, so a service restart empties it and a past wake cannot
@@ -253,6 +292,19 @@
     command: null
     criterion: 'the session summary and sidecar carry ended_by: wakes_done, time_reached, gave_up, stopped
       or error'
+    runs: 1
+  trial: null
+  fix: null
+- id: the-ppk2-browser-script-checks-the-old-meter-page
+  type: bug
+  what: scripts/verify_ppk2_live.py drives the removed Meter page (the instrument switch, the Watch select,
+    the profiler card with its tick) so it fails against the new layout
+  spec: docs/specs/meter-page.md
+  files:
+  - scripts/verify_ppk2_live.py
+  test:
+    command: null
+    criterion: the script's Meter page sections pass against the bench-layout page
     runs: 1
   trial: null
   fix: null

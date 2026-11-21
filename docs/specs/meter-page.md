@@ -74,6 +74,22 @@ recording, and **Replay <name>** once a recording has ended; then **the trace** 
 Below: **Stages across the wakes** (a collapsed section: each saved wake at full rate, and stages across wakes), **Recordings** (each with **Replay**, **Save CSV** and **Delete**, which asks first), and **the
 instrument's settings** (the meter's setting in words, or the profiler's mode and supply), collapsed. A failure is shown as the whole result with its code. The note about averaging (decision 3) is on the page.
 
+## Bench layout (2026-11-21): two instruments, the window, no scrolling
+
+Peter, 2026-11-21: "dashboards dont scroll", "the power profiler is 2 bench devices: 1) a power supply and 2 a current monitor", "the old multimeter connection should be removed", and, of the Capture card, "ONLY allows fixed periods to be selected, not very practical". Layout A of the mockup (`https://claude.ai/artifact/YCj46YmdfVRabAPysba9TW`), built; supersedes "The page (Meter)" where they differ.
+
+- **The page owns the window** from 768 px up (`navigation.md`, "Full-height pages"): the Supply strip, then the Current monitor filling the rest. Nothing scrolls, and nothing is cut off: every control lies inside the page. A phone keeps the old stacked flow until it has its own layout (not built; it scrolls).
+- **Supply** (always on screen, one slim row): the unit's state in words with a lamp, the voltage large, a typed voltage with steps of 100 mV, Output Off/On, and Source/Ampere. The unit does not say whether its output is on, so On, and leaving source mode with the output on or unknown, are asked twice: the button, then a sentence saying what it will do (Switch on / Leave source mode, or Cancel); that answer is the `accept_supply` the server insists on. While a session holds the unit every control is disabled and the strip says it is held.
+- **Current monitor**: a row of readouts (Now, Lowest, Average, Highest, Charge used, Battery life), the scope filling its box, the overview (a replay), one row of scope controls, the notes (lost samples, a slow stream, a negative current); in a 19 rem column beside it the **Capture** card, the **Trigger** line and the **Recordings**.
+- **Capture**: Stop after is **Time** (a length typed in seconds, minutes or hours, 1 s to 12 h) or **Never** (until Stop, or the 12 h limit every capture has), and **Wakes** (N whole wakes) only when `meter.record` takes `stop_after_wakes` (`power-workbench.md`). The five fixed periods are gone. A capture has no wake period: how often a board wakes is never asked or assumed.
+- **Trigger**: the line says where it comes from, "From project mt-alarm: asleep 34 µA, awake over 100 µA" (`meter.project_profile`) or "Found from the data"; Change opens the fields, which override the project's field by field.
+- **Recordings** show the rows that fit the height and page (a measured list, `ResizeObserver`, no timer). Replay, Save CSV, Delete with a confirm in the row.
+- **Drawers** hold what is wanted now and then and open over the monitor, closed by Escape: the trigger, battery life (capacity, whole recording or cycle, the cycle table), the stages across the wakes, the session's whole record, and a replay's events. A drawer holds a form or a table longer than the window may be and so may scroll inside itself: it is the one place a page scrolls, and it is closed unless asked for.
+- **The multimeter is not on this page.** The page needs the profiler (`ppk2.show`); a bench with only a multimeter has no Meter page.
+- **Not built here**: the console lane and the cursor that follows it, the wake table, `Wakes` on the card (these need `power-workbench.md` steps 1 to 5).
+
+Checks: `scripts/verify_meter_layout.py` (a real browser over the fake PPK2 bench, both themes, 1280x720 and 1440x900, idle and with a watch running): the document and the page do not scroll, every control lies inside the page, the supply strip is one slim row, the scope keeps at least 200 px, the page uses the width beside the nav, a length can be typed, Stop after is Time and Never, no multimeter.
+
 ## Live and replay: one scope (2026-11-20)
 
 Peter, 2026-11-20: "there is no way to delete a recording. and shouldn't Download be 'Replay'. this entire page layout is not good. the scope view should be either the live data, or should be a replay.

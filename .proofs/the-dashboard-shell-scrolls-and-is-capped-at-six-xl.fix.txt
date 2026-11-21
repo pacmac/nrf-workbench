@@ -1,0 +1,35 @@
+$ python3 scripts/verify_meter_layout.py --only shell
+PASS  light 1280x720 the document does not scroll (720 of 720 px)
+PASS  light 1280x720 nothing inside the page scrolls
+PASS  light 1280x720 idle: every control lies inside the page
+PASS  light 1280x720 idle: the supply strip stays one slim row (52 px)
+PASS  light 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  light 1280x720 the page ends at the foot of the window, neither short of it nor past it
+PASS  light 1280x720 the supply instrument is on screen
+PASS  light 1280x720 the output switch and the mode are in the supply instrument
+PASS  light 1440x900 the document does not scroll (900 of 900 px)
+PASS  light 1440x900 nothing inside the page scrolls
+PASS  light 1440x900 idle: every control lies inside the page
+PASS  light 1440x900 idle: the supply strip stays one slim row (52 px)
+PASS  light 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  light 1440x900 the page ends at the foot of the window, neither short of it nor past it
+PASS  light 1440x900 the supply instrument is on screen
+PASS  light 1440x900 the output switch and the mode are in the supply instrument
+PASS  dark 1280x720 the document does not scroll (720 of 720 px)
+PASS  dark 1280x720 nothing inside the page scrolls
+PASS  dark 1280x720 idle: every control lies inside the page
+PASS  dark 1280x720 idle: the supply strip stays one slim row (52 px)
+PASS  dark 1280x720 the page uses the width beside the nav (1024 of 1280 px)
+PASS  dark 1280x720 the page ends at the foot of the window, neither short of it nor past it
+PASS  dark 1280x720 the supply instrument is on screen
+PASS  dark 1280x720 the output switch and the mode are in the supply instrument
+PASS  dark 1440x900 the document does not scroll (900 of 900 px)
+PASS  dark 1440x900 nothing inside the page scrolls
+PASS  dark 1440x900 idle: every control lies inside the page
+PASS  dark 1440x900 idle: the supply strip stays one slim row (52 px)
+PASS  dark 1440x900 the page uses the width beside the nav (1184 of 1440 px)
+PASS  dark 1440x900 the page ends at the foot of the window, neither short of it nor past it
+PASS  dark 1440x900 the supply instrument is on screen
+PASS  dark 1440x900 the output switch and the mode are in the supply instrument
+
+32 checks, 0 failed. screenshots: /tmp/nrfwb-meter-layout-4yv8oknp

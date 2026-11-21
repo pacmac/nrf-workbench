@@ -3,6 +3,8 @@ import { readJson, writeJson } from "../api.js";
 import { clampWindow, isWhole, panWindow, zoomWindow } from "./axes.js";
 import { EventPanel, timeText } from "./EventPanel.jsx";
 import { chargeText, si } from "./format.js";
+import { Drawer, Monitor, Readouts } from "./Monitor.jsx";
+import { Button } from "../ui.jsx";
 import { Overview } from "./Overview.jsx";
 import { ScopeBar } from "./ScopeBar.jsx";
 import { TraceChart } from "./TraceChart.jsx";
@@ -17,16 +19,9 @@ const MIN_EVENT_S = 1e-5;                  // one sample: the least the Pi keeps
 const find = (commands, name) => (commands || []).find((c) => c.name === name) || null;
 const round6 = (t) => Number(t.toFixed(6));
 
-function Figure({ label, value }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-xs text-slate-600 dark:text-slate-400">{label}</dt>
-      <dd className="truncate text-[17px] font-semibold">{value}</dd>
-    </div>
-  );
-}
-
-export function ReplayScope({ commands, recording, volts, onDeleted }) {
+// `lead` and `tail` are readouts the page adds before and after the figures, `notes` what it has to say under the scope and `side` the controls in the right column (the Meter page's
+// layout, docs/specs/meter-page.md, "Bench layout"). The events are in a drawer: a table with a form and five actions a row does not fit a column.
+export function ReplayScope({ commands, recording, volts, onDeleted, lead = [], tail = [], notes, side }) {
   const replay = find(commands, "meter.replay");
   const listEvents = find(commands, "meter.events");
   const setEvent = find(commands, "meter.event_set");
@@ -43,6 +38,7 @@ export function ReplayScope({ commands, recording, volts, onDeleted }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
   const [error, setError] = useState("");
+  const [showEvents, setShowEvents] = useState(false);
   const box = useRef(null);
 
   const bounds = useMemo(() => (whole ? { t0: whole.start_s, t1: whole.duration_s } : null), [whole]);
@@ -104,8 +100,13 @@ export function ReplayScope({ commands, recording, volts, onDeleted }) {
   }, [win, whole]);
 
   if (!replay) return null;
-  if (error && !whole) return <p role="note" className="text-[13px] text-amber-800 dark:text-amber-300">{error}</p>;
-  if (!whole || !data || !view) return <p className="text-[13px] text-slate-600 dark:text-slate-400" role="status">Reading the recording…</p>;
+  if (!whole || !data || !view) {
+    return (
+      <Monitor readouts={<Readouts cells={[...lead, ...tail]} />} side={side}
+        scope={error ? <p role="note" className="text-[13px] text-amber-800 dark:text-amber-300">{error}</p>
+          : <p className="flex h-full items-center justify-center rounded-md bg-slate-100 text-[13px] text-slate-600 dark:bg-slate-950 dark:text-slate-400" role="status">Reading the recording…</p>} />
+    );
+  }
 
   const unit = whole.unit || "A";
   const isAll = isWhole(view, bounds);
@@ -184,31 +185,46 @@ export function ReplayScope({ commands, recording, volts, onDeleted }) {
   const where = data.source === "wake" ? `Drawn from the samples of wake ${data.wake}, ${si(data.width_s, "s")} a point.`
     : isAll || data.resolution_s > 0 ? `Drawn from the recording's readings, ${si(data.width_s, "s")} a point${data.width_s <= data.resolution_s + 1e-9 ? " (the finest it holds here)" : ""}.` : "";
 
+  const cells = [...lead, { label: "Lowest", value: si(st.lowest, unit) }, { label: "Average", value: si(st.mean, unit) }, { label: "Highest", value: si(st.highest, unit) },
+    { label: "Charge used", value: chargeText(st.charge) }, ...tail];
+  const eventsOpen = showEvents || Boolean(draft) || Boolean(armed);          // naming an event, or moving an edge, needs its form
   return (
-    <div className="space-y-3" ref={box} tabIndex={-1} onKeyDown={key} aria-label="Replay of the recording">
-      <ScopeBar view={view} bounds={bounds} whole={isAll} tool={tool} onTool={(t) => { setTool(t); setPending(null); }} canMark={Boolean(setEvent)} log={log} onLog={setLog}
-        onZoom={zoom} onPan={pan} onWhole={() => setWin(null)} atFloor={atFloor} clock={(t) => timeText(t)} />
-      {error && <p role="note" className="text-[13px] text-amber-800 dark:text-amber-300">{error}</p>}
-      <div tabIndex={0} className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-blue-500" aria-label="Scope trace, focus it to use the keys">
-        <TraceChart buckets={data.buckets} view={view} unit={unit} log={log} tool={armed ? "mark" : tool} spans={spans} pending={pending}
-          onZoom={(a, b) => set(fit({ t0: a, t1: b }))} onPick={pick} onWheel={zoom}
-          label={`Current of ${recording}, from ${timeText(view.t0)} to ${timeText(view.t1)}`} />
-      </div>
-      <Overview buckets={whole.buckets} bounds={bounds} view={view} unit={unit} wakes={wakes} spans={spans}
-        onMove={(centre) => { if (isAll) return; const len = view.t1 - view.t0; set(fit({ t0: centre - len / 2, t1: centre + len / 2 })); }} />
-      <p className="text-xs text-slate-600 dark:text-slate-400">{where}{wakes.length > 0 ? ` The amber ticks are the ${wakes.length} wakes kept at full rate: zoom into one to see every sample.` : ""}</p>
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4" aria-label="Figures for this view">
-        <Figure label="Lowest" value={si(st.lowest, unit)} />
-        <Figure label="Highest" value={si(st.highest, unit)} />
-        <Figure label="Average" value={si(st.mean, unit)} />
-        <Figure label="Charge used" value={chargeText(st.charge)} />
-      </dl>
-      <div className="space-y-2 border-t border-slate-200 pt-3 dark:border-slate-800">
-        <h3 className="text-[15px] font-semibold">Events</h3>
-        <EventPanel events={events} draft={draft} armed={armed} busy={busy} problem={problem} unit={unit} volts={volts}
-          onSave={save} onCancel={clear} onDelete={remove} onArm={(e, edge) => { setTool("mark"); setPending(null); setDraft(null); setArmed({ event: e, edge }); }}
-          onShow={(e) => { const pad = Math.max((e.end_s - e.start_s) * 0.1, FLOOR_WAKE_S); set(fit({ t0: e.start_s - pad, t1: e.end_s + pad })); }} />
-      </div>
-    </div>
+    <>
+      <Monitor
+        readouts={<Readouts cells={cells} />}
+        scope={(
+          <div className="h-full rounded-md outline-none" ref={box} tabIndex={-1} onKeyDown={key} aria-label="Replay of the recording">
+            <div tabIndex={0} className="h-full rounded-md outline-none focus-visible:ring-2 focus-visible:ring-blue-500" aria-label="Scope trace, focus it to use the keys">
+              <TraceChart fill buckets={data.buckets} view={view} unit={unit} log={log} tool={armed ? "mark" : tool} spans={spans} pending={pending}
+                onZoom={(a, b) => set(fit({ t0: a, t1: b }))} onPick={pick} onWheel={zoom}
+                label={`Current of ${recording}, from ${timeText(view.t0)} to ${timeText(view.t1)}`} />
+            </div>
+          </div>
+        )}
+        overview={(
+          <Overview buckets={whole.buckets} bounds={bounds} view={view} unit={unit} wakes={wakes} spans={spans}
+            onMove={(centre) => { if (isAll) return; const len = view.t1 - view.t0; set(fit({ t0: centre - len / 2, t1: centre + len / 2 })); }} />
+        )}
+        bar={(
+          <ScopeBar view={view} bounds={bounds} whole={isAll} tool={tool} onTool={(t) => { setTool(t); setPending(null); }} canMark={Boolean(setEvent)} log={log} onLog={setLog}
+            onZoom={zoom} onPan={pan} onWhole={() => setWin(null)} atFloor={atFloor} clock={(t) => timeText(t)}
+            after={<Button tone="quiet" className="min-h-8! px-3! py-1!" aria-expanded={eventsOpen} onClick={() => setShowEvents(!showEvents)}>Events ({events.length})</Button>} />
+        )}
+        notes={(
+          <>
+            {error && <p role="note" className="text-[13px] text-amber-800 dark:text-amber-300">{error}</p>}
+            <p className="truncate text-xs text-slate-600 dark:text-slate-400" title={where}>{where}{wakes.length > 0 ? ` The amber ticks are the ${wakes.length} wakes kept at full rate: zoom into one to see every sample.` : ""}</p>
+            {notes}
+          </>
+        )}
+        side={side} />
+      {eventsOpen && (
+        <Drawer title="Events" wide onClose={() => { setShowEvents(false); clear(); }}>
+          <EventPanel events={events} draft={draft} armed={armed} busy={busy} problem={problem} unit={unit} volts={volts}
+            onSave={save} onCancel={clear} onDelete={remove} onArm={(e, edge) => { setTool("mark"); setPending(null); setDraft(null); setArmed({ event: e, edge }); }}
+            onShow={(e) => { const pad = Math.max((e.end_s - e.start_s) * 0.1, FLOOR_WAKE_S); set(fit({ t0: e.start_s - pad, t1: e.end_s + pad })); }} />
+        </Drawer>
+      )}
+    </>
   );
 }

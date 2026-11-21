@@ -1,0 +1,7 @@
+$ python3 scripts/verify_meter_layout.py --only capture
+FAIL  light 1280x720 the page could be driven  -- Locator.wait_for: Timeout 2000ms exceeded.
+FAIL  light 1440x900 the page could be driven  -- Locator.wait_for: Timeout 2000ms exceeded.
+FAIL  dark 1280x720 the page could be driven  -- Locator.wait_for: Timeout 2000ms exceeded.
+FAIL  dark 1440x900 the page could be driven  -- Locator.wait_for: Timeout 2000ms exceeded.
+
+4 checks, 4 failed. screenshots: /tmp/nrfwb-meter-layout-1xdgaifi

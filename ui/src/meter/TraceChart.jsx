@@ -12,7 +12,7 @@ import { TINTS } from "./tints.js";
 
 const PLOT_H = "h-64";
 
-export function TraceChart({ buckets, view, unit, log, tool, spans = [], shades = [], marks = [], pending = null, onZoom, onPick, onWheel, label, readoutId }) {
+export function TraceChart({ buckets, view, unit, log, tool, spans = [], shades = [], marks = [], pending = null, onZoom, onPick, onWheel, label, readoutId, fill = false }) {
   const p = useMemo(() => plot(buckets, view, { log, unit }), [buckets, view.t0, view.t1, log, unit]);          // eslint-disable-line react-hooks/exhaustive-deps
   const svg = useRef(null);
   const box = useRef(null);
@@ -66,9 +66,10 @@ export function TraceChart({ buckets, view, unit, log, tool, spans = [], shades 
   const pct = (x) => `${(x / W) * 100}%`;
   const ypct = (y) => `${(y / H) * 100}%`;
 
+  // `fill`: the chart takes the height its parent gives it (the Meter page's scope never scrolls), and the labels along its edges stay at their own size.
   return (
-    <figure className="space-y-1">
-      <p id={readoutId} aria-label="Under the pointer" className="min-h-5 text-[13px] text-slate-700 dark:text-slate-300">
+    <figure className={fill ? "flex h-full min-h-0 flex-col gap-1" : "space-y-1"}>
+      <p id={readoutId} aria-label="Under the pointer" className="min-h-5 truncate text-[13px] text-slate-700 dark:text-slate-300">
         {r ? (
           <>
             <span className="font-medium">{r.t}</span>
@@ -79,13 +80,14 @@ export function TraceChart({ buckets, view, unit, log, tool, spans = [], shades 
           </>
         ) : <span className="text-slate-600 dark:text-slate-400">{tool === "mark" ? "Click the trace where the event starts, then where it ends." : "Move over the trace to read it. Drag across it to zoom in."}</span>}
       </p>
-      <div className="flex gap-1">
-        <div className={`relative ${PLOT_H} w-14 shrink-0 text-right text-[11px] text-slate-600 dark:text-slate-400`} aria-hidden="true" data-testid="y-axis">
+      <div className={fill ? "flex min-h-0 flex-1 gap-1" : "flex gap-1"}>
+        <div className={`relative ${fill ? "mb-5" : PLOT_H} w-14 shrink-0 text-right text-[11px] text-slate-600 dark:text-slate-400`} aria-hidden="true" data-testid="y-axis">
           {p.yTicks.map((t) => <span key={t.value} className="absolute right-0 -translate-y-1/2 whitespace-nowrap leading-none" style={{ top: ypct(t.y) }}>{t.label}</span>)}
         </div>
-        <div ref={box} className="relative min-w-0 flex-1">
+        <div ref={box} className={fill ? "relative flex min-h-0 min-w-0 flex-1 flex-col" : "relative min-w-0 flex-1"}>
+          <div className={fill ? "relative min-h-0 flex-1" : `relative ${PLOT_H}`}>
           <svg ref={svg} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={label}
-            className={`${PLOT_H} w-full touch-none rounded-md bg-slate-100 dark:bg-slate-950`} style={{ cursor: tool === "mark" ? "crosshair" : "col-resize" }}
+            className="absolute inset-0 h-full w-full touch-none rounded-md bg-slate-100 dark:bg-slate-950" style={{ cursor: tool === "mark" ? "crosshair" : "col-resize" }}
             onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => setDrag(null)} onPointerLeave={() => { if (!drag) setHover(null); }}>
             {p.yTicks.map((t) => <line key={t.value} x1="0" x2={W} y1={t.y} y2={t.y} strokeWidth="1" vectorEffect="non-scaling-stroke" className="stroke-slate-300 dark:stroke-slate-800" />)}
             {p.xTicks.map((t) => <line key={t.t} x1={t.x} x2={t.x} y1="0" y2={H} strokeWidth="1" vectorEffect="non-scaling-stroke" className="stroke-slate-200 dark:stroke-slate-900" />)}
@@ -115,6 +117,7 @@ export function TraceChart({ buckets, view, unit, log, tool, spans = [], shades 
             {drag && <rect x={Math.min(drag.a, drag.b)} y="0" width={Math.abs(drag.b - drag.a)} height={H} data-testid="zoom-selection" className="fill-amber-300/40 dark:fill-amber-400/20" />}
             {hover && <line x1={hover.x} x2={hover.x} y1="0" y2={H} strokeWidth="1" vectorEffect="non-scaling-stroke" data-testid="cursor" className="stroke-slate-700 dark:stroke-slate-300" />}
           </svg>
+          </div>
           <div className="pointer-events-none absolute inset-x-0 top-0 h-0" aria-hidden="true">
             {spans.filter((s) => s.t1 > view.t0 && s.t0 < view.t1).map((s) => (
               <span key={s.key} data-testid="event-name" className="absolute top-1 max-w-[40%] truncate rounded bg-white/80 px-1 text-[11px] font-medium text-slate-900 dark:bg-slate-900/80 dark:text-slate-100"
@@ -130,7 +133,7 @@ export function TraceChart({ buckets, view, unit, log, tool, spans = [], shades 
           </div>
         </div>
       </div>
-      <figcaption className="text-xs text-slate-600 dark:text-slate-400">
+      <figcaption className={fill ? "sr-only" : "text-xs text-slate-600 dark:text-slate-400"}>
         {p.log ? `Log scale, from ${p.bottomText} up.` : "The scale starts at " + p.bottomText + "."} The band runs from the lowest to the highest reading in each point, the line is the average.
       </figcaption>
     </figure>
