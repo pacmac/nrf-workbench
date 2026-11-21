@@ -107,7 +107,7 @@ def candidates(host, store, roles_of):
 
 
 def resolve(host, store, roles_of):
-    """{in_force, candidates, under_test}. `in_force` is {project, role, kind, key, beat_s, trigger, events} or None."""
+    """{in_force, candidates, under_test}. `in_force` is {project, role, kind, key, trigger, events} or None."""
     cands = candidates(host, store, roles_of)
     attached = [c for c in cands if c["attached"]]
     choice = read_choice(host)
@@ -117,7 +117,7 @@ def resolve(host, store, roles_of):
     if picked is not None:
         p = picked["profile"]
         in_force = {"project": picked["project"], "role": picked["role"], "kind": picked["kind"], "key": picked["key"],
-                    "beat_s": p["beat_s"], "trigger": p["trigger"], "events": p["events"]}
+                    "trigger": p["trigger"], "events": p["events"]}
     return {"in_force": in_force,
             "candidates": [dict((k, v) for k, v in c.items() if k != "profile") for c in cands],
             "under_test": {"project": chosen["project"], "role": chosen["role"]} if chosen else None}

@@ -24,8 +24,7 @@ ROLE_RESERVED = ("i2c", "meter")   # an `expect` key that is not a role
 PI_PREFIX = "uart:"
 BAUDS = (9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600)
 SECTIONS = ("name", "purpose", "requires", "devices", "esp32", "wiring", "pins", "macros", "firmware", "expect", "power", "notes")
-POWER_KEYS = ("beat_s", "trigger", "events")
-BEAT_MAX_S = 43200                # the longest recording a session may make (core.md, bound_s): a board that wakes less often than that cannot be seen waking
+POWER_KEYS = ("trigger", "events")          # no wake period: a wake is found from the current, and a board may wake at irregular times or never sleep
 POWER_EVENTS_MAX = capturelib.MAX_STAGES      # a table a person reads, as for stages: one limit for both kinds of event in a profile
 # the manifest's trigger fields (microamps, as a person reads a profile) and the wake profile's own (amps); a field not here is not a trigger field
 TRIGGER_FIELDS = {"sleep_ua": "sleep_a", "awake_ua": "awake_a", "hold_s": "hold_s", "lead_s": "lead_s", "max_s": "max_s"}
@@ -325,10 +324,10 @@ def _power_events(raw, where, errors):
 
 
 def _power(raw, roles, errors):
-    """{role: {beat_s, trigger, events}} (docs/specs/project-power-profile.md): how a board's power is read, for the role whose board it is."""
+    """{role: {trigger, events}} (docs/specs/project-power-profile.md): how a board's power is read, for the role whose board it is."""
     out = {}
     if not isinstance(raw, dict):
-        errors.append("power: a mapping of role to {beat_s, trigger, events}")
+        errors.append("power: a mapping of role to {trigger, events}")
         return out
     for role, spec in raw.items():
         where = "power.%s" % role
@@ -342,20 +341,14 @@ def _power(raw, roles, errors):
         if set(spec) - set(POWER_KEYS):
             continue
         before = len(errors)
-        profile = {"beat_s": None, "trigger": {}, "events": []}
-        if "beat_s" in spec:
-            beat = spec["beat_s"]
-            if not _number(beat) or not 0 < beat <= BEAT_MAX_S:
-                errors.append("%s.beat_s: a number of seconds above 0, at most %d" % (where, BEAT_MAX_S))
-            else:
-                profile["beat_s"] = beat
+        profile = {"trigger": {}, "events": []}
         if "trigger" in spec:
             profile["trigger"] = _trigger(spec["trigger"], "%s.trigger" % where, errors)
         if "events" in spec:
             profile["events"] = _power_events(spec["events"], "%s.events" % where, errors)
         if len(errors) == before:
-            if profile["beat_s"] is None and not profile["trigger"] and not profile["events"]:
-                errors.append("%s: states nothing: give beat_s, a trigger field or an event" % where)
+            if not profile["trigger"] and not profile["events"]:
+                errors.append("%s: states nothing: give a trigger field or an event" % where)
             else:
                 out[role] = profile
     return out

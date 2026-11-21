@@ -102,7 +102,8 @@
   files:
   - nrf_workbench/instruments/sampler.py
   - nrf_workbench/instruments/meter.py
-  - ui/src/MeterPage.jsx
+  - nrf_workbench/instruments/capture.py
+  - nrf_workbench/instruments/ppk2.py
   test:
     command: null
     criterion: meter.record with stop_after_wakes=1 ends after the first wake closes and not before
@@ -211,3 +212,41 @@
     failures: 0
     at: '2026-11-21T15:25:37.815'
     commit: feb1bbb-dirty
+- id: a-profile-assumes-wakes-come-on-a-fixed-period
+  type: bug
+  what: the manifest's power section carries beat_s, a fixed wake period, and the resolver hands it on;
+    a wake is found from the current (trigger), never from a period, and a device may wake at irregular
+    times or never sleep
+  spec: docs/specs/project-power-profile.md
+  files:
+  - nrf_workbench/project/manifest.py
+  - nrf_workbench/project/power.py
+  test:
+    command:
+    - sh
+    - -c
+    - python3 tests/project/test_manifest.py Power && python3 tests/project/test_power.py
+    criterion: a manifest with beat_s is refused as not a field and the profile in force carries no beat_s
+    runs: 1
+  trial:
+    file: .proofs/a-profile-assumes-wakes-come-on-a-fixed-period.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-21T16:32:19.954'
+    commit: 8ad05c4-dirty
+  fix: null
+- id: a-session-does-not-say-why-it-ended
+  type: bug
+  what: a session ends with a free-text reason; a finished recording, a time bound, a stop by hand and
+    a fault cannot be told apart by a program
+  spec: docs/specs/power-workbench.md
+  files:
+  - nrf_workbench/instruments/sampler.py
+  test:
+    command: null
+    criterion: 'the session summary and sidecar carry ended_by: wakes_done, time_reached, gave_up, stopped
+      or error'
+    runs: 1
+  trial: null
+  fix: null

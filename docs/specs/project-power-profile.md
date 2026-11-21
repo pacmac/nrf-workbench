@@ -23,14 +23,13 @@ Extends `projects.md` (the manifest, apply, check) and `ppk2-stages.md` (the wak
 6. **Applying a project changes nothing in a store for this section.** The manifest is the store: the profile is read from it when it is needed. So `apply` has nothing to create, `release` nothing to remove, and **no ownership tag**. (The pins section needs ownership because two projects can claim one pin; here the conflict is two profiles for one instrument, which decision 3 resolves by naming one, not by refusing apply.)
 7. **Saving a changed profile from the page back into the manifest is not built.** The manifest is hand-edited YAML with comments; rewriting it from a form loses them. *Constraint: a rewrite that destroys a person's comments is worse than a page that says "edit the project's manifest to keep this".* Parked as `park-save-profile-to-manifest` (needs a splice of just the `power:` block).
 8. **Continuous (Never, on the capture card) is out of this task and is NOT unbounded.** Revised 2026-11-21 (the firmware session, #68: continuous must stay available): it runs until Stop or the 12 h file limit that `bound_s` already has (`core.md`), so no new rule is needed; see `power-workbench.md`, "Capture". A rolling window that keeps only the newest length is a later improvement.
-9. **The profile may carry the beat.** `power.<role>.beat_s` (optional, a number of seconds above 0) is how often the board wakes, so "stop after N wakes" can derive its give-up, (N + 1) x beat, without a typed value (`power-workbench.md`, "Capture"). It is a property of the firmware, so it belongs with the role; blank is learned from the first two wakes.
+9. **The profile carries NO wake period** (reversed 2026-11-21; Peter: "you have assumed that 15 minutes is a fixed window size. that is NOT how a wake window is detected"). Decision 9 had added `power.<role>.beat_s`, how often the board wakes, so a give-up could be derived from it. A wake is found from the current, and a board may wake at irregular times or never sleep, so a period is not a property the profile can state; the field was never used by detection, and it is removed (register: `a-profile-assumes-wakes-come-on-a-fixed-period`). A give-up is a ceiling the person gives, or 12 h (`power-workbench.md`, "Capture").
 
 ## The manifest section
 
 ```yaml
 power:                               # optional; a mapping of role -> profile
   alarm:                             # must be a role in devices (an nRF or an ESP32 role)
-    beat_s: 900                      # optional; how often the board wakes, so "stop after N wakes" can derive its give-up (decision 9)
     trigger:                         # optional; every field optional (blank = found from the data)
       awake_ua: 50                   # a 0.2 s block is awake when its mean is over this, in microamps
       sleep_ua: 25                   # the current it sleeps at, in microamps
@@ -46,10 +45,10 @@ power:                               # optional; a mapping of role -> profile
 ```
 
 Validation (`manifest.py`, same style as `pins`: every error names its field, an unknown key is an error):
-- the role must be in `devices` (so the reserved names `i2c` and `meter` are refused for free; a YAML mapping cannot hold a role twice, so no rule is needed for that); a profile states at least one of `beat_s`, `trigger`, `events` (an empty one would make a role a candidate that supplies nothing);
+- the role must be in `devices` (so the reserved names `i2c` and `meter` are refused for free; a YAML mapping cannot hold a role twice, so no rule is needed for that); a profile states at least one of `trigger`, `events` (an empty one would make a role a candidate that supplies nothing);
 - `trigger` fields are numbers, the **same ranges `capture.WakeProfile` enforces** (sleep and awake above 0, awake above sleep, `max_s` 1 to 120, `hold_s` 0.2 up to `max_s`, `lead_s` 0 up to `max_s`), converted from µA to amps when handed on; the manifest does not restate the rules, it calls `WakeProfile` and reports its message under the field;
 - an event: `name` 1 to 40 characters, unique ignoring case within the role; `from` is `wake` or `start`; `start_s` below `end_s`; `every` (1 to 8) and `offset` (0 to `every` - 1) only with `from: wake` (default 1 and 0), the same selector rule as stages; the two kinds are judged by the code that judges them on a recording (`capture.set_stage` for `from: wake`, `events.set_event` for `from: start`), so the stage rule holds (stages in wakes they share may not overlap; a stage may start before the wake, negative) and the event rule holds (a recording event starts at 0 or later and **may overlap or nest**, as events do); a name is unique ignoring case across both kinds in a role; the 12 limit counts both kinds;
-- `beat_s`, when given, is a number above 0 and at most 43,200 (the longest recording); at most 12 events per role; `power` itself is at most the manifest's own 64 KiB.
+- `beat_s` (or any period) is an unknown key and refused; at most 12 events per role; `power` itself is at most the manifest's own 64 KiB.
 
 ## Commands
 

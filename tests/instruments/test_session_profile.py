@@ -22,8 +22,8 @@ from test_capture import PathBase  # noqa: E402
 from test_ppk2 import until  # noqa: E402
 
 
-def in_force(trigger=None, events=None, beat_s=None, project="demo", role="alarm"):
-    return {"project": project, "role": role, "kind": "nrf", "key": "SER1", "beat_s": beat_s, "trigger": trigger or {}, "events": events or []}
+def in_force(trigger=None, events=None, project="demo", role="alarm"):
+    return {"project": project, "role": role, "kind": "nrf", "key": "SER1", "trigger": trigger or {}, "events": events or []}
 
 
 BOOT = {"name": "boot", "from": "wake", "start_s": 0.0, "end_s": 1.2, "every": 1, "offset": 0}

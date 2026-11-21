@@ -212,7 +212,6 @@ class Power(unittest.TestCase):
     """The `power` section (docs/specs/project-power-profile.md): a role's trigger and named events, judged by the code that judges them on a recording."""
     ROLES = "name: demo\ndevices:\n  alarm: {nrf: SER1}\n  sensor: {nrf: SER2}\npower:\n%s"
     FULL = """  alarm:
-    beat_s: 900
     trigger: {awake_ua: 50, sleep_ua: 25, hold_s: 0.4, lead_s: 0.2, max_s: 40}
     events:
       - {name: boot, from: wake, start_s: 0.0, end_s: 1.2}
@@ -227,7 +226,7 @@ class Power(unittest.TestCase):
         m, errors = check(self.ROLES % self.FULL)
         self.assertEqual(errors, [])
         p = m["power"]["alarm"]
-        self.assertEqual(p["beat_s"], 900)
+        self.assertNotIn("beat_s", p, "a wake is found from the current: no period is carried")
         for key, ua in (("awake_a", 50), ("sleep_a", 25)):
             self.assertAlmostEqual(p["trigger"][key], ua / 1e6, places=12, msg="microamps are handed on as amps")
         self.assertEqual((p["trigger"]["hold_s"], p["trigger"]["lead_s"], p["trigger"]["max_s"]), (0.4, 0.2, 40))
@@ -242,13 +241,11 @@ class Power(unittest.TestCase):
         self.assertEqual(only_events[0]["power"]["alarm"]["trigger"], {})
         only_trigger = check(self.power("trigger: {max_s: 30}"))
         self.assertEqual((only_trigger[1], only_trigger[0]["power"]["alarm"]["trigger"], only_trigger[0]["power"]["alarm"]["events"]), ([], {"max_s": 30}, []))
-        beat_only = check(self.power("beat_s: 60"))
-        self.assertEqual((beat_only[1], beat_only[0]["power"]["alarm"]["beat_s"]), ([], 60), "the beat alone is a profile")
 
     def test_a_profile_that_says_nothing_and_a_role_that_is_not_there_are_refused(self):
         self.assertTrue(bad(self.power("{}"), "power.alarm"))
-        self.assertTrue(bad("name: demo\ndevices:\n  alarm: {nrf: SER1}\npower:\n  nobody:\n    beat_s: 60\n", "power.nobody: 'nobody' is not a role"))
-        self.assertTrue(bad("name: demo\npower:\n  meter:\n    beat_s: 60\n", "power.meter"))
+        self.assertTrue(bad("name: demo\ndevices:\n  alarm: {nrf: SER1}\npower:\n  nobody:\n    trigger: {max_s: 30}\n", "power.nobody: 'nobody' is not a role"))
+        self.assertTrue(bad("name: demo\npower:\n  meter:\n    trigger: {max_s: 30}\n", "power.meter"))
         self.assertTrue(bad("name: demo\npower: [a]\n", "power:"))
 
     def test_an_unknown_key_is_refused_at_each_level(self):
@@ -270,10 +267,10 @@ class Power(unittest.TestCase):
                             ("trigger: 50", "power.alarm.trigger")):
             self.assertTrue(bad(self.power(body), field), body)
 
-    def test_the_beat_is_above_zero_and_within_the_longest_recording(self):
-        for value in ("0", "-5", "43201", "soon", "true"):
-            self.assertTrue(bad(self.power("beat_s: %s" % value), "power.alarm.beat_s"), value)
-        self.assertEqual(check(self.power("beat_s: 43200"))[1], [])
+    def test_a_wake_period_is_not_a_field(self):
+        """A wake is found from the current. Wakes need not be periodic (a button, a sensor, a radio frame) and a board may never sleep, so no period is carried or assumed."""
+        for body in ("beat_s: 900", "beat_s: 900\ntrigger: {max_s: 30}", "period_s: 900", "every_s: 900"):
+            self.assertTrue(bad(self.power(body), "is not a field"), body)
 
     def test_an_event_states_its_name_its_kind_and_its_times(self):
         for item, field in (("{from: start, start_s: 1, end_s: 2}", "events[0].name"),

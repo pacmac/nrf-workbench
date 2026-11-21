@@ -27,7 +27,7 @@ def manifest(name="demo", roles=None, power=None):
         text += "  %s: {%s: %s}\n" % (role, "esp32" if key == "timercam" else "nrf", key)
     if "timercam" in roles.values():
         text += 'esp32:\n  - {name: timercam, adapter: "%s", baud: 115200}\n' % CAM
-    profiles = power if power is not None else {"alarm": "beat_s: 900\n%s\n%s" % (TRIGGER, EVENTS)}
+    profiles = power if power is not None else {"alarm": "%s\n%s" % (TRIGGER, EVENTS)}
     if profiles:
         text += "power:\n"
         for role, body in sorted(profiles.items()):
@@ -75,7 +75,8 @@ class InForce(PowerBase):
         self.applied()
         d = self.profile()
         f = d["in_force"]
-        self.assertEqual((f["project"], f["role"], f["kind"], f["beat_s"]), ("demo", "alarm", "nrf", 900))
+        self.assertEqual((f["project"], f["role"], f["kind"]), ("demo", "alarm", "nrf"))
+        self.assertNotIn("beat_s", f, "no wake period is carried: a wake is found from the current")
         self.assertAlmostEqual(f["trigger"]["awake_a"], 50e-6, places=12)
         self.assertAlmostEqual(f["trigger"]["sleep_a"], 25e-6, places=12)
         self.assertEqual(f["trigger"]["max_s"], 40)
@@ -90,7 +91,7 @@ class InForce(PowerBase):
         self.assertEqual([(c["role"], c["attached"], c["why"]) for c in d["candidates"]], [("alarm", False, "not attached")])
 
     def test_unplugging_the_board_takes_the_profile_out_of_force_and_plugging_it_back_restores_it(self):
-        self.applied(manifest(roles={"camera": "timercam"}, power={"camera": "beat_s: 60"}))
+        self.applied(manifest(roles={"camera": "timercam"}, power={"camera": "trigger: {max_s: 30}"}))
         self.assertEqual(self.profile()["in_force"]["role"], "camera")
         self.unplug("1-2", "timercam")
         d = self.profile()
@@ -103,7 +104,7 @@ class InForce(PowerBase):
     def test_a_device_that_never_sleeps_has_a_profile_of_events_alone(self):
         self.applied(manifest(power={"alarm": "events:\n  - {name: radio on, from: start, start_s: 2, end_s: 14}"}))
         f = self.profile()["in_force"]
-        self.assertEqual((f["trigger"], f["beat_s"], [e["name"] for e in f["events"]]), ({}, None, ["radio on"]))
+        self.assertEqual((f["trigger"], [e["name"] for e in f["events"]]), ({}, ["radio on"]))
 
     def test_a_release_takes_it_out_of_force(self):
         self.applied()
@@ -113,7 +114,7 @@ class InForce(PowerBase):
 
 class UnderTest(PowerBase):
     def two_boards(self):
-        self.applied(manifest(roles={"alarm": SERIAL, "camera": "timercam"}, power={"alarm": TRIGGER, "camera": "beat_s: 60"}))
+        self.applied(manifest(roles={"alarm": SERIAL, "camera": "timercam"}, power={"alarm": TRIGGER, "camera": "trigger: {max_s: 30}"}))
 
     def test_two_attached_boards_with_profiles_put_none_in_force_until_one_is_named(self):
         self.two_boards()
@@ -165,7 +166,7 @@ class UnderTest(PowerBase):
         self.applied(manifest("one", {"alarm": SERIAL}, {"alarm": TRIGGER}), "one")
         self.t.app_board("1-4", "ttyACM3", "166:3", "SECOND")          # a second nRF board: an attached nrf role is a board a profile recognises
         self.t.node("ttyACM3", 166, 3)
-        self.applied(manifest("two", {"alarm": "SECOND"}, {"alarm": "beat_s: 30"}), "two")
+        self.applied(manifest("two", {"alarm": "SECOND"}, {"alarm": "trigger: {max_s: 30}"}), "two")
         self.assertIsNone(self.profile()["in_force"])
         self.assertTrue(self.use("two", "alarm").ok)
         self.assertEqual(self.profile()["in_force"]["project"], "two")
@@ -187,7 +188,7 @@ class OnTheConsoleLink(PowerBase):
     (docs/specs/project-power-profile.md, decision 1), as well as when it is on USB. The role's own `attached` (what flashing needs) is not changed."""
     LINKED = ('name: demo\nrequires: [pi-uart]\ndevices:\n  alarm: {nrf: NOTPLUGGED}\n'
               'wiring:\n  - {name: alarm-log, device: alarm, adapter: "uart:ttyAMA0", baud: 115200, send: false}\n'
-              'power:\n  alarm:\n    beat_s: 900\n    %s\n' % TRIGGER)
+              'power:\n  alarm:\n    %s\n' % TRIGGER)
 
     def link(self, state):
         self.host.console.state = lambda name: None if state is None else {"state": state, "reason": "", "rx_only": True, "baud": 115200, "lines": 0, "bytes": 0,
@@ -233,7 +234,7 @@ class Surfaces(PowerBase):
     def test_show_carries_the_section_and_says_which_role_is_in_force(self):
         self.applied()
         d = self.call("project.show", {"project": "demo"}).data
-        self.assertEqual(d["power"]["alarm"]["beat_s"], 900)
+        self.assertNotIn("beat_s", d["power"]["alarm"])
         self.assertEqual([(r["role"], r["power"]) for r in d["roles"]], [("alarm", {"profile": True, "in_force": True})])
 
     def test_show_for_a_role_without_a_profile_says_so(self):
@@ -243,7 +244,7 @@ class Surfaces(PowerBase):
                          {"alarm": {"profile": True, "in_force": True}, "camera": {"profile": False, "in_force": False}})
 
     def test_plan_has_one_non_blocking_item_per_profiled_role_have_when_attached_unresolved_when_not(self):
-        self.put(manifest(roles={"alarm": SERIAL, "spare": "NOTPLUGGED"}, power={"alarm": TRIGGER, "spare": "beat_s: 60"}))
+        self.put(manifest(roles={"alarm": SERIAL, "spare": "NOTPLUGGED"}, power={"alarm": TRIGGER, "spare": "trigger: {max_s: 30}"}))
         plan = self.call("project.plan", {"project": "demo"}).data
         items = dict((i["name"], i) for i in plan["items"] if i["section"] == "power")
         self.assertEqual((items["alarm"]["action"], items["spare"]["action"]), ("have", "unresolved"))
