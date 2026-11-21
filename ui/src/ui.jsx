@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { slugProblem } from "./format.js";
 
 export const cx = (...parts) => parts.filter(Boolean).join(" ");
@@ -113,6 +113,56 @@ export function Button({ tone = "primary", type = "button", className, ...props 
       className={cx("min-h-10 rounded-md px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50", styles[tone], className)}
       {...props}
     />
+  );
+}
+
+// Is the window wide enough for the full-height layout (docs/specs/navigation.md, "Full-height pages"): the same 768 px the shell's `md:` classes switch at. A media query's own change
+// event, not a timer, so a window that is resized or rotated re-lays the page.
+export function useWide() {
+  const query = "(min-width: 768px)";
+  const [wide, setWide] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    const on = () => setWide(m.matches);
+    on();
+    m.addEventListener("change", on);
+    return () => m.removeEventListener("change", on);
+  }, []);
+  return wide;
+}
+
+// The rows that fit the space the list has, then pages. The space is measured (a ResizeObserver, no timer), so a taller window shows more rows and a shorter one pages sooner.
+// `rowH` is the height of one row in px; `render(item)` is the content of a row and `keyOf(item)` its key. The list must be given a height by its parent (a flex column with `min-h-0`).
+export function FitList({ items, rowH, render, keyOf, label, empty }) {
+  const box = useRef(null);
+  const [fit, setFit] = useState(3);
+  const [page, setPage] = useState(0);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return undefined;
+    const measure = () => setFit(Math.max(1, Math.floor(el.clientHeight / rowH)));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [rowH]);
+  const pages = Math.max(1, Math.ceil(items.length / fit));
+  const at = Math.min(page, pages - 1);
+  const part = items.slice(at * fit, at * fit + fit);
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <ul ref={box} aria-label={label} className="min-h-0 flex-1 divide-y divide-slate-200 overflow-hidden dark:divide-slate-800">
+        {items.length === 0 && <li className="py-2 text-[13px] text-slate-600 dark:text-slate-400">{empty}</li>}
+        {part.map((it) => <li key={keyOf(it)} style={{ height: rowH }} className="flex items-center gap-2">{render(it)}</li>)}
+      </ul>
+      {items.length > fit && (
+        <div className="flex h-9 shrink-0 items-center gap-1 text-xs text-slate-600 dark:text-slate-400">
+          <span data-testid="pager" className="mr-auto">{at * fit + 1} to {at * fit + part.length} of {items.length}</span>
+          <Button tone="quiet" className="min-h-7! px-3! py-0.5!" disabled={at === 0} onClick={() => setPage(at - 1)} aria-label={`Previous ${label}`}>‹</Button>
+          <Button tone="quiet" className="min-h-7! px-3! py-0.5!" disabled={at >= pages - 1} onClick={() => setPage(at + 1)} aria-label={`Next ${label}`}>›</Button>
+        </div>
+      )}
+    </div>
   );
 }
 

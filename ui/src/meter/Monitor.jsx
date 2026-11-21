@@ -1,8 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 import { Button, cx } from "../ui.jsx";
 
-// The pieces the Meter page is laid out from (docs/specs/meter-page.md, "Bench layout"): a body of two columns that fills the instrument, a row of readouts, a list that shows the rows
-// that fit and pages, and a drawer for what does not need to be on screen all the time. Nothing here scrolls; the one exception is a drawer, which holds an editable table and may be
+export { FitList } from "../ui.jsx";                 // moved to ui.jsx so the other full-height pages share it; the Meter page still imports it from here
+
+// The pieces the Meter page is laid out from (docs/specs/meter-page.md, "Bench layout"): a body of two columns that fills the instrument, a row of readouts, and a drawer for what does
+// not need to be on screen all the time. (The list that shows the rows that fit and pages is `FitList` in ui.jsx, shared with the other full-height pages.) Nothing here scrolls; the one exception is a drawer, which holds an editable table and may be
 // longer than the window.
 
 // The monitor's body: the scope and what goes with it on the left, the controls in a column on the right. A phone gets one column and the page flows (a narrow layout is its own piece of work).
@@ -36,41 +38,6 @@ export function Readouts({ cells }) {
           ? <button key={c.label} type="button" onClick={c.onClick} className="min-w-0 px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-900" aria-label={`${c.label}: ${c.value}. Open`}>{inner}</button>
           : <div key={c.label} className="min-w-0 px-3 py-1.5">{inner}</div>;
       })}
-    </div>
-  );
-}
-
-// The rows that fit the space the list has, then pages. The space is measured (a ResizeObserver, no timer), so a taller window shows more rows and a shorter one pages sooner.
-// `rowH` is the height of one row in px; `render(item)` is the content of a row and `keyOf(item)` its key.
-export function FitList({ items, rowH, render, keyOf, label, empty }) {
-  const box = useRef(null);
-  const [fit, setFit] = useState(3);
-  const [page, setPage] = useState(0);
-  useLayoutEffect(() => {
-    const el = box.current;
-    if (!el) return undefined;
-    const measure = () => setFit(Math.max(1, Math.floor(el.clientHeight / rowH)));
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [rowH]);
-  const pages = Math.max(1, Math.ceil(items.length / fit));
-  const at = Math.min(page, pages - 1);
-  const part = items.slice(at * fit, at * fit + fit);
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <ul ref={box} aria-label={label} className="min-h-0 flex-1 divide-y divide-slate-200 overflow-hidden dark:divide-slate-800">
-        {items.length === 0 && <li className="py-2 text-[13px] text-slate-600 dark:text-slate-400">{empty}</li>}
-        {part.map((it) => <li key={keyOf(it)} style={{ height: rowH }} className="flex items-center gap-2">{render(it)}</li>)}
-      </ul>
-      {items.length > fit && (
-        <div className="flex h-9 shrink-0 items-center gap-1 text-xs text-slate-600 dark:text-slate-400">
-          <span className="mr-auto">{at * fit + 1} to {at * fit + part.length} of {items.length}</span>
-          <Button tone="quiet" className="min-h-7! px-3! py-0.5!" disabled={at === 0} onClick={() => setPage(at - 1)} aria-label={`Previous ${label}`}>‹</Button>
-          <Button tone="quiet" className="min-h-7! px-3! py-0.5!" disabled={at >= pages - 1} onClick={() => setPage(at + 1)} aria-label={`Next ${label}`}>›</Button>
-        </div>
-      )}
     </div>
   );
 }

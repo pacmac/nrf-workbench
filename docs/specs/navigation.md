@@ -30,7 +30,9 @@ Peter, 2026-11-21: "firstly it's a dashboard and dashboards dont scroll", and th
 - is not held to `max-w-6xl`: it fills the width beside the sidebar (the sidebar 208 px, 16 px of padding either side, a 16 px gap);
 - owns the window's height (`h-dvh`) and `overflow-hidden`, so the document cannot scroll; the page lays itself out in that height (a flex column, `min-h-0`), and a list shows the rows that fit and pages;
 - on a phone keeps the page flow (it scrolls) until it has its own narrow layout.
-A page joins the list when it has been laid out to fit, one page at a time. **Meter is the first** (`meter-page.md`, "Bench layout"). The others (Home, Devices, Projects, Console, Firmware, Wiring, GPIO, Activity, Commands, Help) are not yet, and still scroll.
+A page joins the list when it has been laid out to fit, one page at a time. **Meter is the first** (`meter-page.md`, "Bench layout"). The others (Home, Devices, Projects, Console, Firmware, Wiring, GPIO, Commands, Help) are not yet, and still scroll. Measured on the real bench at 1280x720 on 2026-11-21 (page height against the 720 px window): Activity 11,205, Home 1,293, Console 1,204, GPIO 1,158, Firmware 964, Help 834, Commands a 432 px scroller holding 3,654 px; Devices, Projects and Wiring fit as they stand.
+
+**Activity (built 2026-11-21, task `gap-activity-page-fits`)** is the second. From 768 px up it is a full-height page: the header, the class filter, and a list of the entries that **fit** the height, newest first, with a pager (`N to M of T`, Previous and Next entries). A row is fixed at two lines: the class, the code (when it differs), the command, its arguments in one short line (the whole of them in the row's tooltip) and the time; then the message and who ran it and how long it took. The count that fits is measured from the list's own height (`FitList`, a ResizeObserver, no timer), so a taller window shows more. On a phone the list flows as before, with Show more. Browser check: `scripts/verify_activity_layout.py`.
 
 ## Checks
 
