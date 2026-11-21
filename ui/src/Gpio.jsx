@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { readJson, writeJson } from "./api.js";
 import { PROJECT_NAME, PROJECT_RULE_TEXT } from "./format.js";
-import { Button, Card, Chip, Field, PageHeader, SlugNote, inputClass } from "./ui.jsx";
+import { Button, Card, Chip, Field, PageHeader, SlugNote, cx, inputClass, useWide } from "./ui.jsx";
 import { ResultView } from "./Commands.jsx";
 
 // The GPIO pin map (docs/specs/dashboard.md, "The GPIO page"). It records which header pin is assigned to which
@@ -64,10 +64,12 @@ function Choose({ label, hint, value, onChange, options }) {
 
 const CLASS_TONE = { free: "slate", bus: "blue", reserved: "red" };
 
-function PinCell({ row, selected, onPick }) {
+const MIN_ROW = "min-h-[22px]";            // the least a pin row is on the wide page, where the twenty rows share the panel's height
+
+function PinCell({ row, selected, onPick, wide }) {
   if (row.kind !== "gpio") {
     return (
-      <div className="flex min-h-10 items-center gap-2 rounded-lg px-2 py-1 text-xs text-slate-500 dark:text-slate-400">
+      <div className={cx("flex items-center gap-2 rounded-lg px-2 text-xs text-slate-500 dark:text-slate-400", wide ? `h-full ${MIN_ROW}` : "min-h-10 py-1")}>
         <span className="w-5 text-right font-mono">{row.pin}</span>
         <span>{row.label}</span>
       </div>
@@ -82,13 +84,13 @@ function PinCell({ row, selected, onPick }) {
       aria-pressed={selected}
       aria-label={`Pin ${row.pin}, GPIO ${row.gpio}, ${row.assigned ? `assigned to ${row.assigned}` : row.class}`}
       title={reserved ? "The HAT ID EEPROM's bus: never offered" : row.alt || undefined}
-      className={`flex min-h-10 w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg border px-2 py-1 text-left text-xs disabled:cursor-not-allowed disabled:opacity-50 ${
+      className={cx("flex w-full min-w-0 items-center gap-x-2 rounded-lg border px-2 text-left text-xs disabled:cursor-not-allowed disabled:opacity-50",
+        wide ? `h-full ${MIN_ROW}` : "min-h-10 flex-wrap gap-y-0.5 py-1",
         selected
           ? "border-blue-600 bg-blue-100 dark:border-blue-400 dark:bg-blue-950"
           : row.assigned
             ? "border-emerald-400 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-950"
-            : "border-slate-300 bg-white hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
-      }`}
+            : "border-slate-300 bg-white hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800")}
     >
       <span className="w-5 text-right font-mono">{row.pin}</span>
       <span className="font-mono font-medium">{row.label}</span>
@@ -98,6 +100,7 @@ function PinCell({ row, selected, onPick }) {
 }
 
 export default function Gpio({ commands, overview, onDone }) {
+  const wide = useWide();
   const find = (name) => (commands || []).find((c) => c.name === name) || null;
   const headerCmd = find("gpio.header");
   const pinsCmd = find("gpio.pins");
@@ -179,22 +182,21 @@ export default function Gpio({ commands, overview, onDone }) {
   const left = table.filter((r) => r.pin % 2 === 1);
   const right = table.filter((r) => r.pin % 2 === 0);
 
-  return (
-    <div className="space-y-4">
-      <PageHeader title="GPIO" topic="pins" />
-      <Card>
-        {error && <p role="note" className="mb-3 rounded-md bg-amber-100 p-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">The pin map could not be read ({error}).</p>}
-        <div className="grid grid-cols-2 gap-x-3 gap-y-1" role="group" aria-label="40-pin header">
-          {left.map((l, i) => (
-            <div key={l.pin} className="contents">
-              <PinCell row={l} selected={selected === l.gpio && l.gpio !== null} onPick={pick} />
-              <PinCell row={right[i]} selected={selected === right[i].gpio && right[i].gpio !== null} onPick={pick} />
-            </div>
-          ))}
+  const title = selected === null ? "Assignment" : `Assignment for GPIO ${selected}${current ? ` (${current.name})` : ""}`;
+  const note = error && <p role="note" className="mb-3 shrink-0 rounded-md bg-amber-100 p-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">The pin map could not be read ({error}).</p>;
+  // The header as the board has it. On the wide page its twenty rows share the height of the panel (none under MIN_ROW), so all forty pins are on screen.
+  const grid = (
+    <div className={cx("grid grid-cols-2 gap-x-3", wide ? "min-h-0 flex-1 gap-y-0.5" : "gap-y-1")} style={wide ? { gridTemplateRows: "repeat(20, minmax(22px, 1fr))" } : undefined} role="group" aria-label="40-pin header">
+      {left.map((l, i) => (
+        <div key={l.pin} className="contents">
+          <PinCell wide={wide} row={l} selected={selected === l.gpio && l.gpio !== null} onPick={pick} />
+          <PinCell wide={wide} row={right[i]} selected={selected === right[i].gpio && right[i].gpio !== null} onPick={pick} />
         </div>
-      </Card>
-
-      <Card title={selected === null ? "Assignment" : `Assignment for GPIO ${selected}${current ? ` (${current.name})` : ""}`}>
+      ))}
+    </div>
+  );
+  const assignment = (
+    <>
         {selected === null ? (
           <p className="text-sm text-slate-600 dark:text-slate-400">Choose a GPIO above to assign it, or an assigned one to edit it.</p>
         ) : (
@@ -254,7 +256,35 @@ export default function Gpio({ commands, overview, onDone }) {
           </form>
         )}
         <div className="mt-3"><ResultView outcome={outcome} pendingText="Saving…" /></div>
+    </>
+  );
+
+  // The wide page (docs/specs/navigation.md, "Full-height pages", GPIO): the map beside the form; the form's panel may scroll inside itself.
+  if (wide) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-2">
+        <PageHeader title="GPIO" topic="pins" />
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-3" style={{ gridTemplateRows: "minmax(0, 1fr)" }}>
+          <Card className="flex min-h-0 flex-col overflow-y-auto">      {/* in a window too short for twenty rows of MIN_ROW (about 580 px) the map scrolls inside its panel rather than losing pins */}
+            {note}
+            {grid}
+          </Card>
+          <Card className="flex min-h-0 flex-col" title={title}>
+            <div data-testid="work" className="min-h-0 flex-1 overflow-y-auto">{assignment}</div>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <PageHeader title="GPIO" topic="pins" />
+      <Card>
+        {note}
+        {grid}
       </Card>
+      <Card title={title}>{assignment}</Card>
     </div>
   );
 }
