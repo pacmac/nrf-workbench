@@ -1,0 +1,43 @@
+$ python3 scripts/verify_meter_life.py
+PASS  light 1280x900 without a capacity the Battery life readout has no figure and opens the drawer
+PASS  light 1280x900 the drawer opens from the readout
+PASS  light 1280x900 the choice starts on the whole recording and a capacity gives how long it lasts
+PASS  light 1280x900 twice the capacity lasts twice as long (10392 h, then 20775 h)
+PASS  light 1280x900 the readout carries the figure too, once there is a capacity
+PASS  light 1280x900 choosing the cycle presses that button and not the other
+PASS  light 1280x900 the cycle line gives the period, the cycles, the average over them and the life
+PASS  light 1280x900 and the life is the capacity over that stated average (1000 mAh / 0.09885 mA = 10116 h; the page says 10128 h)
+PASS  light 1280x900 the chart marks each wake it found
+PASS  light 1280x900 and shades the four wakes
+PASS  light 1280x900 the table has Wake, Sleep and Cycle rows under its headings
+PASS  light 1280x900 a wake of one 0.2 s block says its length is under two points, and gives its exact peak
+PASS  light 1280x900 the sleep row says over, where the wake row says under, so the shares never exceed the whole
+PASS  light 1280x900 the cycle row says three cycles counted and the period
+PASS  light 1280x900 the table says why there is no energy, and the note about one-point wakes is there
+PASS  light 1280x900 no sideways scroll with the cycle line and the table
+PASS  light 1280x900 going back to the whole recording drops the marks, the shading and the table, and says so
+PASS  light 1280x900 Escape closes the drawer
+PASS  light 1280x900 no failing response
+PASS  light 1280x900 no page or console errors
+PASS  dark 1280x900 without a capacity the Battery life readout has no figure and opens the drawer
+PASS  dark 1280x900 the drawer opens from the readout
+PASS  dark 1280x900 the choice starts on the whole recording and a capacity gives how long it lasts
+PASS  dark 1280x900 twice the capacity lasts twice as long (10392 h, then 20775 h)
+PASS  dark 1280x900 the readout carries the figure too, once there is a capacity
+PASS  dark 1280x900 choosing the cycle presses that button and not the other
+PASS  dark 1280x900 the cycle line gives the period, the cycles, the average over them and the life
+PASS  dark 1280x900 and the life is the capacity over that stated average (1000 mAh / 0.09885 mA = 10116 h; the page says 10128 h)
+PASS  dark 1280x900 the chart marks each wake it found
+PASS  dark 1280x900 and shades the four wakes
+PASS  dark 1280x900 the table has Wake, Sleep and Cycle rows under its headings
+PASS  dark 1280x900 a wake of one 0.2 s block says its length is under two points, and gives its exact peak
+PASS  dark 1280x900 the sleep row says over, where the wake row says under, so the shares never exceed the whole
+PASS  dark 1280x900 the cycle row says three cycles counted and the period
+PASS  dark 1280x900 the table says why there is no energy, and the note about one-point wakes is there
+PASS  dark 1280x900 no sideways scroll with the cycle line and the table
+PASS  dark 1280x900 going back to the whole recording drops the marks, the shading and the table, and says so
+PASS  dark 1280x900 Escape closes the drawer
+PASS  dark 1280x900 no failing response
+PASS  dark 1280x900 no page or console errors
+
+40 checks, 0 failed. screenshots: /tmp/nrfwb-meter-life-brbfgij7

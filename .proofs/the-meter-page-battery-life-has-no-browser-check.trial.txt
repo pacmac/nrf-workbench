@@ -1,0 +1,2 @@
+$ python3 scripts/verify_meter_life.py
+verify_meter_life: not written yet
