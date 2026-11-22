@@ -1,0 +1,61 @@
+$ python3 scripts/verify_meter_capture.py
+PASS  light 1280x900 before anything has run the recordings list says there is nothing
+PASS  light 1280x900 Watch shows the profiler's block mean with an SI prefix
+PASS  light 1280x900 the session line counts samples
+PASS  light 1280x900 the chart is drawn, with a labelled axis from zero and times along the bottom
+PASS  light 1280x900 while it runs the Supply strip is held
+PASS  light 1280x900 and there is a Stop and no Watch or Record
+PASS  light 1280x900 after Stop the readouts say lowest, average, highest and the charge used
+PASS  light 1280x900 and each of those four has a figure
+PASS  light 1280x900 the Supply strip is free again
+PASS  light 1280x900 a clean run says nothing about lost samples
+PASS  light 1280x900 Watch kept nothing: the recordings list still says there is nothing
+PASS  light 1280x900 lost samples are counted and the page says so
+PASS  light 1280x900 the session line names the file and the list says which one is recording now
+PASS  light 1280x900 a recording cannot be deleted while it is being recorded
+PASS  light 1280x900 both finished recordings are listed with their name, size and average
+PASS  light 1280x900 each has Replay, Save CSV and Delete
+PASS  light 1280x900 no sideways scroll
+PASS  light 1280x900 Save CSV gives a file named profile-1.csv
+PASS  light 1280x900 with min, max and n after the old columns, the average between them, and the 20,000 samples of a block
+PASS  light 1280x900 Delete asks first, and says what goes with the recording
+PASS  light 1280x900 Keep it changes nothing
+PASS  light 1280x900 Yes, delete takes that one off the list and leaves the other
+PASS  light 1280x900 and the file is gone from the Pi
+PASS  light 1280x900 Replay puts the recording on the scope
+PASS  light 1280x900 deleting the recording that is on the scope puts the scope back on the live session
+PASS  light 1280x900 and the list is empty again
+PASS  light 1280x900 no failing response
+PASS  light 1280x900 no page or console errors
+PASS  light 1280x900 the shell port was never opened
+PASS  dark 1280x900 before anything has run the recordings list says there is nothing
+PASS  dark 1280x900 Watch shows the profiler's block mean with an SI prefix
+PASS  dark 1280x900 the session line counts samples
+PASS  dark 1280x900 the chart is drawn, with a labelled axis from zero and times along the bottom
+PASS  dark 1280x900 while it runs the Supply strip is held
+PASS  dark 1280x900 and there is a Stop and no Watch or Record
+PASS  dark 1280x900 after Stop the readouts say lowest, average, highest and the charge used
+PASS  dark 1280x900 and each of those four has a figure
+PASS  dark 1280x900 the Supply strip is free again
+PASS  dark 1280x900 a clean run says nothing about lost samples
+PASS  dark 1280x900 Watch kept nothing: the recordings list still says there is nothing
+PASS  dark 1280x900 lost samples are counted and the page says so
+PASS  dark 1280x900 the session line names the file and the list says which one is recording now
+PASS  dark 1280x900 a recording cannot be deleted while it is being recorded
+PASS  dark 1280x900 both finished recordings are listed with their name, size and average
+PASS  dark 1280x900 each has Replay, Save CSV and Delete
+PASS  dark 1280x900 no sideways scroll
+PASS  dark 1280x900 Save CSV gives a file named profile-1.csv
+PASS  dark 1280x900 with min, max and n after the old columns, the average between them, and the 20,000 samples of a block
+PASS  dark 1280x900 Delete asks first, and says what goes with the recording
+PASS  dark 1280x900 Keep it changes nothing
+PASS  dark 1280x900 Yes, delete takes that one off the list and leaves the other
+PASS  dark 1280x900 and the file is gone from the Pi
+PASS  dark 1280x900 Replay puts the recording on the scope
+PASS  dark 1280x900 deleting the recording that is on the scope puts the scope back on the live session
+PASS  dark 1280x900 and the list is empty again
+PASS  dark 1280x900 no failing response
+PASS  dark 1280x900 no page or console errors
+PASS  dark 1280x900 the shell port was never opened
+
+58 checks, 0 failed. screenshots: /tmp/nrfwb-meter-capture-79ywklh8

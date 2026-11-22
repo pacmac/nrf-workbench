@@ -853,3 +853,32 @@
     failures: 0
     at: '2026-11-22T09:44:48.631'
     commit: 2589b46-dirty
+- id: the-meter-page-capture-and-recordings-have-no-browser-check
+  type: new
+  what: 'Watch, Record, Stop, the readouts, the lost-sample note, Save CSV and Delete of the new Meter
+    page are checked in no browser script: the old script that checked them drives a page that no longer
+    exists'
+  spec: docs/specs/meter-page.md
+  files:
+  - scripts/verify_meter_capture.py
+  test:
+    command:
+    - python3
+    - scripts/verify_meter_capture.py
+    criterion: Watch, Record, Stop, the readouts, the lost-sample note, Save CSV and the recordings list
+      of the Meter page are driven over the fake unit and every figure and guard holds
+    runs: 1
+  trial:
+    file: .proofs/the-meter-page-capture-and-recordings-have-no-browser-check.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-22T11:39:23.200'
+    commit: ec808ab-dirty
+  fix:
+    file: .proofs/the-meter-page-capture-and-recordings-have-no-browser-check.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-22T11:49:12.534'
+    commit: 20ad061-dirty
