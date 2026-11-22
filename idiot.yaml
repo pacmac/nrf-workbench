@@ -823,3 +823,33 @@
     failures: 0
     at: '2026-11-22T07:19:04.248'
     commit: fd99d5d-dirty
+- id: the-meter-page-supply-controls-have-no-browser-check
+  type: new
+  what: 'the Meter page''s Supply strip (the confirm steps for Switch on and for leaving source mode,
+    the writes the unit is sent, the lock while a session holds the unit) is checked in no browser script:
+    the old script that checked the controls drives a page that no longer exists'
+  spec: docs/specs/meter-page.md
+  files:
+  - scripts/verify_supply_controls.py
+  test:
+    command:
+    - python3
+    - scripts/verify_supply_controls.py
+    criterion: 'the real Supply strip is driven over the fake unit and every guard holds: unconfirmed
+      does nothing, confirmed writes the voltage then the output, the server refuses an unconfirmed mode
+      change itself'
+    runs: 1
+  trial:
+    file: .proofs/the-meter-page-supply-controls-have-no-browser-check.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-22T09:39:45.466'
+    commit: 50aadfe-dirty
+  fix:
+    file: .proofs/the-meter-page-supply-controls-have-no-browser-check.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-22T09:44:48.631'
+    commit: 2589b46-dirty

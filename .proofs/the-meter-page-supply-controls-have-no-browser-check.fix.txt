@@ -1,0 +1,55 @@
+$ python3 scripts/verify_supply_controls.py
+PASS  light 1280x720 the unit is in source mode with its output not known
+PASS  light 1280x720 pressing the mode it is already in sends the unit nothing
+PASS  light 1280x720 Switch on asks in a sentence that names the voltage (Apply 4.000 V to the board?)
+PASS  light 1280x720 and has sent the unit nothing yet
+PASS  light 1280x720 Cancel sends the unit nothing and the output is still not known
+PASS  light 1280x720 leaving source mode with the output unknown asks, and says it can cut the supply
+PASS  light 1280x720 and has sent the unit nothing yet
+PASS  light 1280x720 Cancel leaves it in source mode and sends nothing
+PASS  light 1280x720 the service refuses an unconfirmed mode change by itself (409, supply_unconfirmed)
+PASS  light 1280x720 the service refuses an unconfirmed switch-on by itself (409, supply_unconfirmed)
+PASS  light 1280x720 and a voltage outside 800 to 5000 even when accepted (422, voltage_unsafe)
+PASS  light 1280x720 none of the three sent the unit anything
+PASS  light 1280x720 accepting Switch on sends the voltage and then the output
+PASS  light 1280x720 the strip says output on at 3.300 V
+PASS  light 1280x720 leaving source mode with the output on asks
+PASS  light 1280x720 accepting it sends the mode change and then there is no voltage or output to offer
+PASS  light 1280x720 going back to source mode asks nothing and sends the mode
+PASS  light 1280x720 Switch off asks nothing and sends the output off
+PASS  light 1280x720 with the output off, leaving source mode asks nothing
+PASS  light 1280x720 a voltage outside 800 to 5000 cannot be switched on from the page
+PASS  light 1280x720 while a session holds the unit every supply control is disabled ([] enabled)
+PASS  light 1280x720 and the strip says why
+PASS  light 1280x720 when it ends the controls are back
+PASS  light 1280x720 nothing the page did made the service write a byte outside the six shapes
+PASS  light 1280x720 the shell port was never opened
+PASS  light 1280x720 no page or console errors
+PASS  dark 1280x720 the unit is in source mode with its output not known
+PASS  dark 1280x720 pressing the mode it is already in sends the unit nothing
+PASS  dark 1280x720 Switch on asks in a sentence that names the voltage (Apply 4.000 V to the board?)
+PASS  dark 1280x720 and has sent the unit nothing yet
+PASS  dark 1280x720 Cancel sends the unit nothing and the output is still not known
+PASS  dark 1280x720 leaving source mode with the output unknown asks, and says it can cut the supply
+PASS  dark 1280x720 and has sent the unit nothing yet
+PASS  dark 1280x720 Cancel leaves it in source mode and sends nothing
+PASS  dark 1280x720 the service refuses an unconfirmed mode change by itself (409, supply_unconfirmed)
+PASS  dark 1280x720 the service refuses an unconfirmed switch-on by itself (409, supply_unconfirmed)
+PASS  dark 1280x720 and a voltage outside 800 to 5000 even when accepted (422, voltage_unsafe)
+PASS  dark 1280x720 none of the three sent the unit anything
+PASS  dark 1280x720 accepting Switch on sends the voltage and then the output
+PASS  dark 1280x720 the strip says output on at 3.300 V
+PASS  dark 1280x720 leaving source mode with the output on asks
+PASS  dark 1280x720 accepting it sends the mode change and then there is no voltage or output to offer
+PASS  dark 1280x720 going back to source mode asks nothing and sends the mode
+PASS  dark 1280x720 Switch off asks nothing and sends the output off
+PASS  dark 1280x720 with the output off, leaving source mode asks nothing
+PASS  dark 1280x720 a voltage outside 800 to 5000 cannot be switched on from the page
+PASS  dark 1280x720 while a session holds the unit every supply control is disabled ([] enabled)
+PASS  dark 1280x720 and the strip says why
+PASS  dark 1280x720 when it ends the controls are back
+PASS  dark 1280x720 nothing the page did made the service write a byte outside the six shapes
+PASS  dark 1280x720 the shell port was never opened
+PASS  dark 1280x720 no page or console errors
+
+52 checks, 0 failed. screenshots: /tmp/nrfwb-supply-controls-027a71kd
