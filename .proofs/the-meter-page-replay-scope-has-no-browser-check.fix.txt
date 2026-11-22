@@ -1,0 +1,71 @@
+$ python3 scripts/verify_meter_replay.py
+PASS  light 1280x900 the scope is on the replay, and the Live button is there to go back
+PASS  light 1280x900 a replay shows the whole recording: all of it, from 0 s
+PASS  light 1280x900 with all of it shown there is nowhere to go back to or zoom out to, and zooming in is possible
+PASS  light 1280x900 the vertical axis has labelled values in the unit, from zero
+PASS  light 1280x900 the time axis is labelled
+PASS  light 1280x900 before the pointer is over it the readout says how to use the trace
+PASS  light 1280x900 over the trace the pointer reads out the time and the lowest, average and highest of the point under it
+PASS  light 1280x900 and a cursor line follows it
+PASS  light 1280x900 moving along the trace changes the time it reads
+PASS  light 1280x900 zooming in halves the stretch and says how much of the recording it is
+PASS  light 1280x900 once zoomed, Whole, Back, Forward and Zoom out are there
+PASS  light 1280x900 the overview lights the part shown, about half of the whole
+PASS  light 1280x900 Forward moves the stretch later and keeps its length
+PASS  light 1280x900 the lit part of the overview moved right with it
+PASS  light 1280x900 Back returns it
+PASS  light 1280x900 the keys move it (right arrow) and show all of it again (0)
+PASS  light 1280x900 Mark an event says what the clicks do
+PASS  light 1280x900 the first click puts a line where the event starts and asks for no name yet
+PASS  light 1280x900 Escape drops it
+PASS  light 1280x900 the second click asks for a name, with a default selected
+PASS  light 1280x900 the new event says where it runs and how long
+PASS  light 1280x900 saving the event closes the form and the count says one
+PASS  light 1280x900 the saved event is listed with its length, average, peak and charge
+PASS  light 1280x900 it is shaded between two lines, named on the trace
+PASS  light 1280x900 and the shading is where it was clicked, about a quarter of the width
+PASS  light 1280x900 an event can be renamed
+PASS  light 1280x900 Move end asks for a click
+PASS  light 1280x900 the end line moved with the click, and the event is still the one event
+PASS  light 1280x900 Show zooms to the event
+PASS  light 1280x900 the event is kept with the recording: closing the replay and opening it again shows it
+PASS  light 1280x900 deleting the event takes it off the trace and the list
+PASS  light 1280x900 no sideways scroll with the replay
+PASS  light 1280x900 no failing response
+PASS  light 1280x900 no page or console errors
+PASS  dark 1280x900 the scope is on the replay, and the Live button is there to go back
+PASS  dark 1280x900 a replay shows the whole recording: all of it, from 0 s
+PASS  dark 1280x900 with all of it shown there is nowhere to go back to or zoom out to, and zooming in is possible
+PASS  dark 1280x900 the vertical axis has labelled values in the unit, from zero
+PASS  dark 1280x900 the time axis is labelled
+PASS  dark 1280x900 before the pointer is over it the readout says how to use the trace
+PASS  dark 1280x900 over the trace the pointer reads out the time and the lowest, average and highest of the point under it
+PASS  dark 1280x900 and a cursor line follows it
+PASS  dark 1280x900 moving along the trace changes the time it reads
+PASS  dark 1280x900 zooming in halves the stretch and says how much of the recording it is
+PASS  dark 1280x900 once zoomed, Whole, Back, Forward and Zoom out are there
+PASS  dark 1280x900 the overview lights the part shown, about half of the whole
+PASS  dark 1280x900 Forward moves the stretch later and keeps its length
+PASS  dark 1280x900 the lit part of the overview moved right with it
+PASS  dark 1280x900 Back returns it
+PASS  dark 1280x900 the keys move it (right arrow) and show all of it again (0)
+PASS  dark 1280x900 Mark an event says what the clicks do
+PASS  dark 1280x900 the first click puts a line where the event starts and asks for no name yet
+PASS  dark 1280x900 Escape drops it
+PASS  dark 1280x900 the second click asks for a name, with a default selected
+PASS  dark 1280x900 the new event says where it runs and how long
+PASS  dark 1280x900 saving the event closes the form and the count says one
+PASS  dark 1280x900 the saved event is listed with its length, average, peak and charge
+PASS  dark 1280x900 it is shaded between two lines, named on the trace
+PASS  dark 1280x900 and the shading is where it was clicked, about a quarter of the width
+PASS  dark 1280x900 an event can be renamed
+PASS  dark 1280x900 Move end asks for a click
+PASS  dark 1280x900 the end line moved with the click, and the event is still the one event
+PASS  dark 1280x900 Show zooms to the event
+PASS  dark 1280x900 the event is kept with the recording: closing the replay and opening it again shows it
+PASS  dark 1280x900 deleting the event takes it off the trace and the list
+PASS  dark 1280x900 no sideways scroll with the replay
+PASS  dark 1280x900 no failing response
+PASS  dark 1280x900 no page or console errors
+
+68 checks, 0 failed. screenshots: /tmp/nrfwb-meter-replay-v4aqvby8
