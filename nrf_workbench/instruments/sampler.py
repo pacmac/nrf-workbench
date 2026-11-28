@@ -13,6 +13,7 @@ import time
 
 from . import capture
 from . import events as eventlib
+from . import life as lifelib
 from . import meter as meterlib
 from . import replay
 from . import scpi
@@ -413,9 +414,9 @@ class Sampler(object):
             raise RecordingUnknown("there is no recording named %s" % recording)
         return os.path.join(self.folder, recording + ".csv")
 
-    def wake_table(self, recording, level_a=None):
-        """One row per wake of a power-profiler recording, found by the rule the live session used (waketable.py); with `level_a` (amps) each row has its stretches over it. RecordingUnknown
-        for a name that is not there; NotAProfilerRecording for the multimeter's; ValueError (a ProfileError) if the sidecar's wake profile is one the capture refuses."""
+    def _profiler_trace(self, recording):
+        """(sidecar, Trace, WakeSet or None) of a power-profiler recording, for the commands that read its wakes. RecordingUnknown for a name that is not there or a file that cannot be read;
+        NotAProfilerRecording for the multimeter's."""
         path = self._recording_path(recording)
         meta = {}
         try:
@@ -429,8 +430,20 @@ class Sampler(object):
             trace = self._traces.get(path)
         except OSError as exc:
             raise RecordingUnknown("the recording %s could not be read: %s" % (recording, exc))
-        ws = self._wakes(recording)
+        return meta, trace, self._wakes(recording)
+
+    def wake_table(self, recording, level_a=None):
+        """One row per wake of a power-profiler recording, found by the rule the live session used (waketable.py); with `level_a` (amps) each row has its stretches over it. RecordingUnknown
+        for a name that is not there; NotAProfilerRecording for the multimeter's; ValueError (a ProfileError) if the sidecar's wake profile is one the capture refuses."""
+        meta, trace, ws = self._profiler_trace(recording)
         data = waketable.build(trace, meta.get("wake") or {}, ws.spans() if ws is not None else [], level_a)
+        data["recording"] = recording
+        return data
+
+    def life(self, recording, capacity_mah=None):
+        """The wake/sleep cycle of a power-profiler recording and, with a capacity in mAh, its battery life (life.py), from the wakes `wake_table` finds. The same refusals as `wake_table`."""
+        meta, trace, _ws = self._profiler_trace(recording)
+        data = lifelib.life(trace, waketable.build(trace, meta.get("wake") or {}), capacity_mah)
         data["recording"] = recording
         return data
 

@@ -365,6 +365,23 @@ def register(registry, host):
         s = data["summary"]
         return Result.success(data, "%d wake%s, %d whole, %d outlier%s" % (s["wakes"], "" if s["wakes"] == 1 else "s", s["whole"], s["outliers"], "" if s["outliers"] == 1 else "s"))
 
+    def life(ctx, recording, capacity_mah=None):
+        if capacity_mah is not None and not capacity_mah > 0:
+            raise UsageError("capacity_mah is above 0", "capacity_mah")
+        try:
+            data = sampler(ctx).life(recording, capacity_mah)
+        except samplerlib.RecordingUnknown as exc:
+            return unknown(exc, recording)
+        except samplerlib.NotAProfilerRecording as exc:
+            return Result.refused("not_a_profiler_recording", str(exc), {"name": recording})
+        except ValueError as exc:                                  # the sidecar's wake profile is one the capture refuses
+            return Result.failed("bad_wake_profile", "the wake profile in the recording's sidecar is refused: %s" % exc, {"name": recording})
+        if not data["found"]:
+            why = "no sleep level was found" if data["reason"] == "no_sleep" else "%d whole wake%s: a cycle is between two" % (data["wakes"], "" if data["wakes"] == 1 else "s")
+            return Result.success(data, "no cycle: %s" % why)
+        said = "%d cycle%s of %.4g s, mean %.4g A" % (data["cycles"], "" if data["cycles"] == 1 else "s", data["period_s"], data["mean_a"])
+        return Result.success(data, said if data["life_days"] is None else "%s, %.4g days at %g mAh" % (said, data["life_days"], capacity_mah))
+
     def capture_one(ctx, n, t0=None, t1=None, points=None, recording=None):
         s = sampler(ctx)
         try:
@@ -461,6 +478,14 @@ def register(registry, host):
                                    Arg("t1", type="float", required=False, unit="s", doc="end of the stretch"),
                                    Arg("points", type="int", required=False, doc="buckets across the stretch, 2 to 2000, default 1000"), recording_arg),
                 requires=STREAM, result="n, wake_at_s, t0, t1, points, buckets, charge_c, mean, peak, samples, lost, truncated"))
+    add(Command("meter.life", "A power-profiler recording's wake/sleep cycle and battery life, from the same wakes as meter.wake_table: the whole wakes, the period, the cycles, the mean current over whole "
+                "cycles (from the start of the first wake to the start of the last), what a cycle spends awake and asleep (time, mean, peak, charge), and with capacity_mah how many hours and days that "
+                "capacity lasts at that mean. found is false, with the reason, when there is no sleep level or fewer than two whole wakes.", life,
+                args=(Arg("recording", doc="the recording's name, from meter.recordings"),
+                      Arg("capacity_mah", type="float", required=False, unit="mAh", doc="a battery capacity in milliamp hours, above 0: the life at it is given")),
+                requires=STORE,
+                result="recording, found, reason, wakes, cycles, starts, period_s, duration_s, mean_a, charge_mah, shortest_s, longest_s, regular, sleep_a, awake_a, peak_a, "
+                       "phases (wake, sleep: time_s, mean_a, peak_a, charge_mah, shortest_s, longest_s), capacity_mah, life_h, life_days"))
     add(Command("meter.wake_table", "One row per wake of a power-profiler recording, every wake and not only the newest kept at full rate: when it started, how long it was awake (first block over the awake level "
                 "to the last) and how long its capture is (lead-in and tail included), its charge, mean and peak current, whether it can be zoomed into, and whether it is an outlier. "
                 "Found by the rule the live session used. With level_ma, each wake also lists its stretches over that current (runs of 0.2 s blocks whose highest sample is over it), each with its start and length.", wake_table,
