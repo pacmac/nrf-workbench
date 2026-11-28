@@ -1,0 +1,33 @@
+$ python3 scripts/verify_ppk2_live.py
+PASS  light desktop Home has the profiler's check, and nothing has asked the unit yet
+PASS  light desktop Check on Home says what the unit is set to, in words, and that its output is not known
+PASS  light desktop the headline stays inside what holds it
+PASS  light desktop the Devices page has the same check
+PASS  light desktop no sideways scroll on Devices
+PASS  light desktop no failing response, no page or console errors, and the shell port was never opened
+PASS  light phone Home has the profiler's check, and nothing has asked the unit yet
+PASS  light phone Check on Home says what the unit is set to, in words, and that its output is not known
+PASS  light phone the headline stays inside what holds it
+PASS  light phone the Devices page has the same check
+PASS  light phone no sideways scroll on Devices
+PASS  light phone no failing response, no page or console errors, and the shell port was never opened
+PASS  dark desktop Home has the profiler's check, and nothing has asked the unit yet
+PASS  dark desktop Check on Home says what the unit is set to, in words, and that its output is not known
+PASS  dark desktop the headline stays inside what holds it
+PASS  dark desktop the Devices page has the same check
+PASS  dark desktop no sideways scroll on Devices
+PASS  dark desktop no failing response, no page or console errors, and the shell port was never opened
+PASS  dark phone Home has the profiler's check, and nothing has asked the unit yet
+PASS  dark phone Check on Home says what the unit is set to, in words, and that its output is not known
+PASS  dark phone the headline stays inside what holds it
+PASS  dark phone the Devices page has the same check
+PASS  dark phone no sideways scroll on Devices
+PASS  dark phone no failing response, no page or console errors, and the shell port was never opened
+PASS  without the profiler configured there is no profiler check and no Meter page
+PASS  verify_supply_controls.py: 52 checks, 0 failed (3 s)
+PASS  verify_meter_capture.py: 58 checks, 0 failed (6 s)
+PASS  verify_meter_replay.py: 68 checks, 0 failed (12 s)
+PASS  verify_meter_life.py: 40 checks, 0 failed (19 s)
+PASS  verify_meter_stages.py: 51 checks, 0 failed (72 s)
+
+30 checks, 0 failed. screenshots: /tmp/nrfwb-ppk2-shots-w7kukge6

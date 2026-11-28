@@ -383,11 +383,26 @@
   files:
   - scripts/verify_ppk2_live.py
   test:
-    command: null
-    criterion: the script's Meter page sections pass against the bench-layout page
+    command:
+    - python3
+    - scripts/verify_ppk2_live.py
+    criterion: one command runs the profiler's Home and Devices checks, the no-profiler check and the
+      five Meter-page browser scripts against the bench-layout page, and exits 0 only if all pass
     runs: 1
-  trial: null
-  fix: null
+  trial:
+    file: .proofs/the-ppk2-browser-script-checks-the-old-meter-page.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-28T16:43:22.162'
+    commit: 2e75437-dirty
+  fix:
+    file: .proofs/the-ppk2-browser-script-checks-the-old-meter-page.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-28T16:46:15.697'
+    commit: d05093f-dirty
 - id: the-meter-page-does-not-say-how-many-wakes-a-session-has-seen
   type: new
   what: a session that stops after N wakes shows no count of the wakes seen and no give-up, and the ended
