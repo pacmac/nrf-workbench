@@ -231,12 +231,30 @@
   files:
   - nrf_workbench/instruments/meter.py
   - nrf_workbench/instruments/life.py
+  - nrf_workbench/instruments/sampler.py
+  - nrf_workbench/instruments/waketable.py
   test:
-    command: null
-    criterion: meter.life returns days for a recording and capacity, equal to what the page shows
+    command:
+    - python3
+    - tests/instruments/test_life.py
+    criterion: meter.life gives a recording's wakes, period, cycles, mean over whole cycles, wake and
+      sleep phases and the life at a capacity, from the same wakes as meter.wake_table, and refuses what
+      it should
     runs: 1
-  trial: null
-  fix: null
+  trial:
+    file: .proofs/no-command-gives-battery-life.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-28T17:02:20.199'
+    commit: cfe5561-dirty
+  fix:
+    file: .proofs/no-command-gives-battery-life.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-28T17:10:52.904'
+    commit: 42b0c47-dirty
 - id: no-per-wake-table
   type: new
   what: meter.captures has no wall start, charge, awake length, count of stretches above a level or outlier

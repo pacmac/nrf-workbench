@@ -1,0 +1,185 @@
+$ python3 tests/instruments/test_life.py
+EEEEEEEEEEEE
+======================================================================
+ERROR: test_a_recording_that_is_not_there_is_refused_by_name (__main__.Refusals.test_a_recording_that_is_not_there_is_refused_by_name)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 129, in test_a_recording_that_is_not_there_is_refused_by_name
+    self.assertEqual(self.call("meter.life", {"recording": "nothing"}).code, "recording_unknown")
+                     ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_capture.py", line 424, in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 221, in call
+    raise UnknownCommand(name)
+nrf_workbench.core.registry.UnknownCommand: 'meter.life'
+
+======================================================================
+ERROR: test_it_finds_the_same_wakes_as_the_wake_table (__main__.TheCycleOfARecording.test_it_finds_the_same_wakes_as_the_wake_table)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 63, in test_it_finds_the_same_wakes_as_the_wake_table
+    d = self.life()
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 32, in life
+    res = self.call("meter.life", dict({"recording": name}, **({} if capacity is None else {"capacity_mah": capacity})))
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_capture.py", line 424, in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 221, in call
+    raise UnknownCommand(name)
+nrf_workbench.core.registry.UnknownCommand: 'meter.life'
+
+======================================================================
+ERROR: test_the_period_the_cycles_and_the_mean_over_whole_cycles (__main__.TheCycleOfARecording.test_the_period_the_cycles_and_the_mean_over_whole_cycles)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 40, in test_the_period_the_cycles_and_the_mean_over_whole_cycles
+    d = self.life()
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 32, in life
+    res = self.call("meter.life", dict({"recording": name}, **({} if capacity is None else {"capacity_mah": capacity})))
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_capture.py", line 424, in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 221, in call
+    raise UnknownCommand(name)
+nrf_workbench.core.registry.UnknownCommand: 'meter.life'
+
+======================================================================
+ERROR: test_the_wake_and_sleep_phases_add_up_to_the_cycle (__main__.TheCycleOfARecording.test_the_wake_and_sleep_phases_add_up_to_the_cycle)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 51, in test_the_wake_and_sleep_phases_add_up_to_the_cycle
+    p = self.life()["phases"]
+        ~~~~~~~~~^^
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 32, in life
+    res = self.call("meter.life", dict({"recording": name}, **({} if capacity is None else {"capacity_mah": capacity})))
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_capture.py", line 424, in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 221, in call
+    raise UnknownCommand(name)
+nrf_workbench.core.registry.UnknownCommand: 'meter.life'
+
+======================================================================
+ERROR: test_the_wakes_are_as_regular_as_they_are (__main__.TheCycleOfARecording.test_the_wakes_are_as_regular_as_they_are)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 73, in test_the_wakes_are_as_regular_as_they_are
+    d = self.life()
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 32, in life
+    res = self.call("meter.life", dict({"recording": name}, **({} if capacity is None else {"capacity_mah": capacity})))
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_capture.py", line 424, in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 221, in call
+    raise UnknownCommand(name)
+nrf_workbench.core.registry.UnknownCommand: 'meter.life'
+
+======================================================================
+ERROR: test_a_capacity_gives_hours_and_days_at_the_mean_over_whole_cycles (__main__.TheLifeAtACapacity.test_a_capacity_gives_hours_and_days_at_the_mean_over_whole_cycles)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 81, in test_a_capacity_gives_hours_and_days_at_the_mean_over_whole_cycles
+    d = self.life(capacity=1000)
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 32, in life
+    res = self.call("meter.life", dict({"recording": name}, **({} if capacity is None else {"capacity_mah": capacity})))
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_capture.py", line 424, in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 221, in call
+    raise UnknownCommand(name)
+nrf_workbench.core.registry.UnknownCommand: 'meter.life'
+
+======================================================================
+ERROR: test_a_capacity_that_is_not_above_zero_is_refused (__main__.TheLifeAtACapacity.test_a_capacity_that_is_not_above_zero_is_refused)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 100, in test_a_capacity_that_is_not_above_zero_is_refused
+    res = self.call("meter.life", {"recording": "cycle", "capacity_mah": bad})
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_capture.py", line 424, in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 221, in call
+    raise UnknownCommand(name)
+nrf_workbench.core.registry.UnknownCommand: 'meter.life'
+
+======================================================================
+ERROR: test_twice_the_capacity_lasts_twice_as_long (__main__.TheLifeAtACapacity.test_twice_the_capacity_lasts_twice_as_long)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 89, in test_twice_the_capacity_lasts_twice_as_long
+    a, b = self.life(capacity=500), self.life(capacity=1000)
+           ~~~~~~~~~^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 32, in life
+    res = self.call("meter.life", dict({"recording": name}, **({} if capacity is None else {"capacity_mah": capacity})))
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_capture.py", line 424, in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 221, in call
+    raise UnknownCommand(name)
+nrf_workbench.core.registry.UnknownCommand: 'meter.life'
+
+======================================================================
+ERROR: test_without_a_capacity_there_is_no_life_and_the_cycle_is_still_given (__main__.TheLifeAtACapacity.test_without_a_capacity_there_is_no_life_and_the_cycle_is_still_given)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 94, in test_without_a_capacity_there_is_no_life_and_the_cycle_is_still_given
+    d = self.life()
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 32, in life
+    res = self.call("meter.life", dict({"recording": name}, **({} if capacity is None else {"capacity_mah": capacity})))
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_capture.py", line 424, in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 221, in call
+    raise UnknownCommand(name)
+nrf_workbench.core.registry.UnknownCommand: 'meter.life'
+
+======================================================================
+ERROR: test_a_steady_load_has_no_wake_and_says_so (__main__.WhenThereIsNoCycle.test_a_steady_load_has_no_wake_and_says_so)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 108, in test_a_steady_load_has_no_wake_and_says_so
+    d = self.life("steady", capacity=1000)
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 32, in life
+    res = self.call("meter.life", dict({"recording": name}, **({} if capacity is None else {"capacity_mah": capacity})))
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_capture.py", line 424, in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 221, in call
+    raise UnknownCommand(name)
+nrf_workbench.core.registry.UnknownCommand: 'meter.life'
+
+======================================================================
+ERROR: test_a_wake_cut_off_by_the_end_of_the_recording_is_not_counted (__main__.WhenThereIsNoCycle.test_a_wake_cut_off_by_the_end_of_the_recording_is_not_counted)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 122, in test_a_wake_cut_off_by_the_end_of_the_recording_is_not_counted
+    d = self.life("cut")
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 32, in life
+    res = self.call("meter.life", dict({"recording": name}, **({} if capacity is None else {"capacity_mah": capacity})))
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_capture.py", line 424, in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 221, in call
+    raise UnknownCommand(name)
+nrf_workbench.core.registry.UnknownCommand: 'meter.life'
+
+======================================================================
+ERROR: test_one_wake_is_not_a_cycle (__main__.WhenThereIsNoCycle.test_one_wake_is_not_a_cycle)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 115, in test_one_wake_is_not_a_cycle
+    d = self.life("single")
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_life.py", line 32, in life
+    res = self.call("meter.life", dict({"recording": name}, **({} if capacity is None else {"capacity_mah": capacity})))
+  File "/usr/share/pac/dev/projects/rakbench/tests/instruments/test_capture.py", line 424, in call
+    return self.reg.call(name, args or {}, Context(self.host, "tester", None), capabilities={"ppk2", "meter_stream", "meter_store"})
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/share/pac/dev/projects/rakbench/nrf_workbench/core/registry.py", line 221, in call
+    raise UnknownCommand(name)
+nrf_workbench.core.registry.UnknownCommand: 'meter.life'
+
+----------------------------------------------------------------------
+Ran 12 tests in 3.317s
+
+FAILED (errors=12)
