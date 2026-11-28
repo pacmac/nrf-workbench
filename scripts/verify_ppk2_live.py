@@ -7,8 +7,8 @@ It runs, in this order, and exits 0 only if every one passed:
   1. the profiler's quick check on Home and Devices, in light and dark at a desktop and at a phone width: nothing has asked the unit until the button is pressed, the answer says what the unit is
      set to in words and that its output is not known, the headline stays inside what holds it, no sideways scroll;
   2. a bench with no profiler configured has no profiler check and no Meter page;
-  3. the five checks of the Meter page, each its own script with its own mutants: verify_supply_controls.py, verify_meter_capture.py, verify_meter_replay.py, verify_meter_life.py and
-     verify_meter_stages.py. `--quick` leaves the 21 s wake out of the last (about a minute).
+  3. the six checks of the Meter page, each its own script with its own mutants: verify_supply_controls.py, verify_meter_capture.py, verify_meter_replay.py, verify_meter_life.py,
+     verify_meter_stages.py and verify_watch_wakes.py. `--quick` leaves the 21 s wake out of verify_meter_stages.py (about a minute).
 
 This module is also the bench the other browser scripts import (`Bench`: a real service, real routes and built UI over a fake sysfs with a PPK2 and a FAKE UNIT that speaks the protocol read from the
 real one and is paced at the real 100,000 samples a second; `ALLOWED`: the six shapes the service may write to the unit; `no_sideways_scroll`). It once drove the Meter page's old layout itself;
@@ -42,7 +42,7 @@ from test_ppk2 import FakeUnit  # noqa: E402
 THEMES = ("light", "dark")
 SIZES = (("desktop", 1280, 900), ("phone", 390, 844))
 STREAM_BYTES_PER_S = 400000
-SCRIPTS = ("verify_supply_controls.py", "verify_meter_capture.py", "verify_meter_replay.py", "verify_meter_life.py", "verify_meter_stages.py")
+SCRIPTS = ("verify_supply_controls.py", "verify_meter_capture.py", "verify_meter_replay.py", "verify_meter_life.py", "verify_meter_stages.py", "verify_watch_wakes.py")
 results = []
 
 

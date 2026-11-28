@@ -228,6 +228,10 @@ export default function MeterPage({ commands, onDone }) {
   // The recording the stages section reads: the one on the scope, else the one the last session wrote, and only while the list says it is there (a deleted one is not asked for).
   const wanted = replayOf || (session && session.mode === "record" && session.name ? session.name : null);
   const scopeRecording = wanted && (recordings === null || recordings.some((r) => r.name === wanted)) ? wanted : null;
+  // The wakes the unit kept at full rate for the session are there to look at with or without a recording (a Watch keeps none on disk, but looking before deciding to record is what it is for);
+  // a session that kept none, or none has run, offers nothing. With no recording the drawer says stages are kept with one and offers no way to name a stage.
+  const keptWakes = Boolean(session && session.session > 0 && session.captures > 0);
+  const stagesOffered = Boolean(scopeRecording) || keptWakes;
   const justRecorded = !running && session && session.session > 0 && session.mode === "record" && session.name && (recordings || []).some((r) => r.name === session.name);
   // A session that waits for wakes says how many whole ones it has seen of how many it wants, and when it gives up (docs/specs/power-workbench.md, "Capture"); how a finished one ended comes from `ended_by`.
   const wantWakes = session && session.stop_after_wakes ? session.stop_after_wakes : null;
@@ -323,7 +327,7 @@ export default function MeterPage({ commands, onDone }) {
             ))}
           </div>
           <div className="ml-auto flex items-center gap-1">
-            {scopeRecording && <Button tone="quiet" className="min-h-8! px-3! py-1!" aria-expanded={drawer === "stages"} onClick={() => setDrawer(drawer === "stages" ? null : "stages")}>Stages</Button>}
+            {stagesOffered && <Button tone="quiet" className="min-h-8! px-3! py-1!" aria-expanded={drawer === "stages"} onClick={() => setDrawer(drawer === "stages" ? null : "stages")}>Stages</Button>}
             {session && session.session > 0 && <Button tone="quiet" className="min-h-8! px-3! py-1!" aria-expanded={drawer === "session"} onClick={() => setDrawer(drawer === "session" ? null : "session")}>Session</Button>}
             <button type="button" onClick={() => nav.help("meter")} aria-label="Help: Meter" title="Help: Meter"
               className="grid h-8 w-8 place-items-center rounded-full border border-slate-300 text-sm font-semibold text-slate-700 hover:bg-slate-200 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">?</button>
@@ -357,7 +361,7 @@ export default function MeterPage({ commands, onDone }) {
             {cyc && cyc.found && <CycleTable cyc={cyc} unit={unit} volts={volts} />}
           </Drawer>
         )}
-        {drawer === "stages" && scopeRecording && (
+        {drawer === "stages" && stagesOffered && (
           <Drawer title="Stages across the wakes, each wake at full rate" wide onClose={() => setDrawer(null)}>
             <Scope key={`${scopeRecording}:${session ? session.session : 0}`} commands={commands} count={session ? session.captures || 0 : 0} session={session} recording={scopeRecording} />
           </Drawer>
