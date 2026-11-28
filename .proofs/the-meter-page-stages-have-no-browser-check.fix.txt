@@ -1,0 +1,54 @@
+$ python3 scripts/verify_meter_stages.py
+PASS  light 1280x900 the wakes the unit kept are listed, each with its length and peak
+PASS  light 1280x900 the wake is drawn from 200 ms before it started, with its start marked once
+PASS  light 1280x900 the wake's figures say how long, the average, the peak and the charge
+PASS  light 1280x900 the wake's axis starts linear, with zero at the bottom (the live scope's says the same)
+PASS  light 1280x900 the log switch changes the wake's axis and says where its floor is; the live scope is untouched
+PASS  light 1280x900 dragging shows the stretch being chosen
+PASS  light 1280x900 dragging across the chart zooms to about 15 percent of the wake (90 ms)
+PASS  light 1280x900 Show all of it returns to the whole wake
+PASS  light 1280x900 no sideways scroll with the wake scope
+PASS  light 1280x900 with a recording behind the wakes the drawer says how to name a stage, and there are none yet
+PASS  light 1280x900 the selected stretch is shown in milliseconds from the wake's start
+PASS  light 1280x900 a stage cannot be added without a name
+PASS  light 1280x900 the stage appears in a table with its stretch, average, peak, charge and share
+PASS  light 1280x900 the stage is shaded on the trace and named in the colour legend
+PASS  light 1280x900 no sideways scroll with the stage table
+PASS  light 1280x900 removing the stage takes it off the table and the trace
+PASS  light 1280x900 the table groups the stages by the wakes they are for, each group naming its wakes
+PASS  light 1280x900 an odd wake shows both stages on its trace
+PASS  light 1280x900 an even wake shows only the stage that is for all wakes
+PASS  light 1280x900 the colour legend follows the wake on show
+PASS  light 1280x900 no sideways scroll with the grouped table
+PASS  light 1280x900 a finished recording's wakes open from the Recordings list
+PASS  light 1280x900 the awake period is one wake of 21.4 s, not a burst and another 21 s later
+PASS  light 1280x900 the figures say 21.4 s is shown
+PASS  light 1280x900 dragging across the receive window zooms to about a second of it, whose peak is the window's and not the burst's
+PASS  light 1280x900 no failing response
+PASS  light 1280x900 no page or console errors
+PASS  dark 1280x900 the wakes the unit kept are listed, each with its length and peak
+PASS  dark 1280x900 the wake is drawn from 200 ms before it started, with its start marked once
+PASS  dark 1280x900 the wake's figures say how long, the average, the peak and the charge
+PASS  dark 1280x900 the wake's axis starts linear, with zero at the bottom (the live scope's says the same)
+PASS  dark 1280x900 the log switch changes the wake's axis and says where its floor is; the live scope is untouched
+PASS  dark 1280x900 dragging shows the stretch being chosen
+PASS  dark 1280x900 dragging across the chart zooms to about 15 percent of the wake (90 ms)
+PASS  dark 1280x900 Show all of it returns to the whole wake
+PASS  dark 1280x900 no sideways scroll with the wake scope
+PASS  dark 1280x900 with a recording behind the wakes the drawer says how to name a stage, and there are none yet
+PASS  dark 1280x900 the selected stretch is shown in milliseconds from the wake's start
+PASS  dark 1280x900 a stage cannot be added without a name
+PASS  dark 1280x900 the stage appears in a table with its stretch, average, peak, charge and share
+PASS  dark 1280x900 the stage is shaded on the trace and named in the colour legend
+PASS  dark 1280x900 no sideways scroll with the stage table
+PASS  dark 1280x900 removing the stage takes it off the table and the trace
+PASS  dark 1280x900 the table groups the stages by the wakes they are for, each group naming its wakes
+PASS  dark 1280x900 an odd wake shows both stages on its trace
+PASS  dark 1280x900 an even wake shows only the stage that is for all wakes
+PASS  dark 1280x900 the colour legend follows the wake on show
+PASS  dark 1280x900 no sideways scroll with the grouped table
+PASS  dark 1280x900 a finished recording's wakes open from the Recordings list
+PASS  dark 1280x900 no failing response
+PASS  dark 1280x900 no page or console errors
+
+51 checks, 0 failed. screenshots: /tmp/nrfwb-meter-stages-8iwa_2dw

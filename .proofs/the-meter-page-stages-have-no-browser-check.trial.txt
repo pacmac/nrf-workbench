@@ -1,0 +1,2 @@
+$ python3 scripts/verify_meter_stages.py
+verify_meter_stages: not written yet

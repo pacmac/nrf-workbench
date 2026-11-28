@@ -940,3 +940,33 @@
     failures: 0
     at: '2026-11-22T15:53:42.849'
     commit: b5ab808-dirty
+- id: the-meter-page-stages-have-no-browser-check
+  type: new
+  what: 'the Meter page''s Stages drawer (the kept wakes, the wake scope, the stages named across them,
+    a 21 s wake as one wake) is checked in no browser script: the old script that checked them drives
+    a page that no longer exists'
+  spec: docs/specs/ppk2-stages.md
+  files:
+  - scripts/verify_meter_stages.py
+  test:
+    command:
+    - python3
+    - scripts/verify_meter_stages.py
+    criterion: 'a recording''s wakes are driven in the Stages drawer and every part holds: the wakes kept,
+      the wake scope with zoom and log axis, stages named, grouped by odd and even wakes and removed,
+      and a 21 s wake seen as one'
+    runs: 1
+  trial:
+    file: .proofs/the-meter-page-stages-have-no-browser-check.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-28T16:21:15.218'
+    commit: 61c5386-dirty
+  fix:
+    file: .proofs/the-meter-page-stages-have-no-browser-check.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-28T16:42:19.404'
+    commit: 4e74e2b-dirty
