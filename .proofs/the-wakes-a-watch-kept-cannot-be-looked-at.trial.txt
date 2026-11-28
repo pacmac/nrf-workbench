@@ -1,0 +1,7 @@
+$ python3 scripts/verify_watch_wakes.py
+FAIL  light 1280x900 a Watch that kept wakes offers the Stages drawer when it has ended
+FAIL  light 1280x900 the page could be driven  -- Locator.click: Timeout 30000ms exceeded.
+FAIL  dark 1280x900 a Watch that kept wakes offers the Stages drawer when it has ended
+FAIL  dark 1280x900 the page could be driven  -- Locator.click: Timeout 30000ms exceeded.
+
+4 checks, 4 failed. screenshots: /tmp/nrfwb-watch-wakes-czczj2v4

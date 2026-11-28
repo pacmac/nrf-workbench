@@ -985,3 +985,32 @@
     failures: 0
     at: '2026-11-28T16:42:19.404'
     commit: 4e74e2b-dirty
+- id: the-wakes-a-watch-kept-cannot-be-looked-at
+  type: bug
+  what: the Meter page offers the Stages drawer only for a recording, so the wakes a Watch kept at full
+    rate (meter.captures with no recording) cannot be looked at, though the old page showed them for any
+    session
+  spec: docs/specs/meter-page.md
+  files:
+  - ui/src/MeterPage.jsx
+  test:
+    command:
+    - python3
+    - scripts/verify_watch_wakes.py
+    criterion: a Watch that kept wakes offers the Stages drawer and lists them, says stages are kept with
+      a recording and offers no stage form, and a steady Watch offers nothing
+    runs: 1
+  trial:
+    file: .proofs/the-wakes-a-watch-kept-cannot-be-looked-at.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-11-28T16:49:32.680'
+    commit: 31a5b76-dirty
+  fix:
+    file: .proofs/the-wakes-a-watch-kept-cannot-be-looked-at.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-11-28T16:59:04.414'
+    commit: fd7c9b1-dirty

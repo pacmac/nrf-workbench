@@ -1,0 +1,19 @@
+$ python3 scripts/verify_watch_wakes.py
+PASS  light 1280x900 a Watch that kept wakes offers the Stages drawer when it has ended
+PASS  light 1280x900 it lists the wakes with their length and peak
+PASS  light 1280x900 and draws one of them
+PASS  light 1280x900 it says stages are kept with a recording, and offers no way to name one
+PASS  light 1280x900 Escape closes it
+PASS  light 1280x900 a Watch of a steady load kept no wake, so there is nothing to look at
+PASS  light 1280x900 no failing response
+PASS  light 1280x900 no page or console errors
+PASS  dark 1280x900 a Watch that kept wakes offers the Stages drawer when it has ended
+PASS  dark 1280x900 it lists the wakes with their length and peak
+PASS  dark 1280x900 and draws one of them
+PASS  dark 1280x900 it says stages are kept with a recording, and offers no way to name one
+PASS  dark 1280x900 Escape closes it
+PASS  dark 1280x900 a Watch of a steady load kept no wake, so there is nothing to look at
+PASS  dark 1280x900 no failing response
+PASS  dark 1280x900 no page or console errors
+
+16 checks, 0 failed. screenshots: /tmp/nrfwb-watch-wakes-1d5njsgp
